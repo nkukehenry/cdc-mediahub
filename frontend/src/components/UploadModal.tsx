@@ -27,13 +27,22 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     console.log('Files dropped:', acceptedFiles);
-    const newFiles: UploadFile[] = acceptedFiles.map(file => {
-      console.log('File details:', {
+    console.log('Number of files:', acceptedFiles.length);
+    
+    const newFiles: UploadFile[] = acceptedFiles.map((file, index) => {
+      console.log(`File ${index + 1} details:`, {
         name: file.name,
         size: file.size,
         type: file.type,
-        lastModified: file.lastModified
+        lastModified: file.lastModified,
+        webkitRelativePath: file.webkitRelativePath,
+        // Log all properties
+        allProperties: Object.keys(file),
+        // Check if it's actually a File object
+        isFile: file instanceof File,
+        constructor: file.constructor.name
       });
+      
       return {
         ...file,
         id: Math.random().toString(36).substr(2, 9),
@@ -42,6 +51,7 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
       };
     });
     
+    console.log('Processed files:', newFiles);
     setUploadFiles(prev => [...prev, ...newFiles]);
   }, []);
 
@@ -54,6 +64,12 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
       'text/*': ['.txt', '.md', '.json'],
     },
     maxSize: 10 * 1024 * 1024, // 10MB
+    onDropAccepted: (files) => {
+      console.log('Files accepted by dropzone:', files);
+    },
+    onDropRejected: (fileRejections) => {
+      console.log('Files rejected by dropzone:', fileRejections);
+    },
   });
 
   const removeFile = (fileId: string) => {
@@ -196,12 +212,23 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
                     
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate" title={file.name}>
-                        {file.name || 'Unknown file'}
+                        {(() => {
+                          console.log('Rendering file name:', file.name);
+                          return file.name || 'Unknown file';
+                        })()}
                       </p>
                       <div className="flex items-center space-x-2 text-xs text-gray-500">
-                        <span>{file.size && file.size > 0 ? formatFileSize(file.size) : 'Unknown size'}</span>
+                        <span>{(() => {
+                          const size = file.size && file.size > 0 ? formatFileSize(file.size) : 'Unknown size';
+                          console.log('File size calculation:', file.size, '->', size);
+                          return size;
+                        })()}</span>
                         <span>•</span>
-                        <span>{file.type || 'Unknown type'}</span>
+                        <span>{(() => {
+                          const type = file.type || 'Unknown type';
+                          console.log('File type:', file.type, '->', type);
+                          return type;
+                        })()}</span>
                       </div>
                       
                       {/* Progress Bar */}
@@ -239,21 +266,42 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end space-x-3 p-6 border-t bg-gray-50">
+        <div className="flex items-center justify-between p-6 border-t bg-gray-50">
           <button
-            onClick={handleClose}
-            disabled={isUploading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            onClick={() => {
+              console.log('Current upload files:', uploadFiles);
+              uploadFiles.forEach((file, index) => {
+                console.log(`Debug file ${index}:`, {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                  id: file.id,
+                  status: file.status,
+                  allKeys: Object.keys(file)
+                });
+              });
+            }}
+            className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
           >
-            Cancel
+            Debug Files
           </button>
-          <button
-            onClick={handleUpload}
-            disabled={uploadFiles.length === 0 || isUploading}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''}`}
-          </button>
+          
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleClose}
+              disabled={isUploading}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={uploadFiles.length === 0 || isUploading}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
