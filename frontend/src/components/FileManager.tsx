@@ -176,26 +176,14 @@ export default function FileManager({
   const handleFileUpload = async (files: File[], folderId?: string) => {
     try {
       for (const file of files) {
-        // Create a mock FileWithUrls object for the upload
-        const mockFileWithUrls: FileWithUrls = {
-          id: Math.random().toString(36).substr(2, 9),
-          filename: file.name,
-          originalName: file.name,
-          filePath: `/uploads/${file.name}`,
-          thumbnailPath: undefined,
-          fileSize: file.size,
-          mimeType: file.type,
-          folderId: folderId || undefined,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          downloadUrl: `http://localhost:3001/api/files/${Math.random().toString(36).substr(2, 9)}/download`,
-          thumbnailUrl: null
-        };
+        // Upload each file using the Redux action
         await dispatch(uploadFile({ file, folderId }));
       }
-      // onUpload?.(files); // Commented out due to type mismatch
+      // Refresh the folder tree to show the new files
+      dispatch(fetchFolderTree(null));
     } catch (error) {
       console.error('Upload failed:', error);
+      throw error; // Re-throw to let the modal handle error display
     }
   };
 

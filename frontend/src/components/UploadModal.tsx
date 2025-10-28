@@ -9,7 +9,7 @@ import { cn, validateFileType, validateFileSize } from '@/utils/fileUtils';
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (files: File[]) => void;
+  onUpload: (files: File[], folderId?: string) => Promise<void>;
   folderId?: string;
   disabled?: boolean;
 }
@@ -56,35 +56,48 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
     
     setIsUploading(true);
     
-    // Simulate upload progress
-    for (const file of uploadFiles) {
-      setUploadFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, status: 'uploading' } : f
-      ));
-      
-      // Simulate progress
-      for (let progress = 0; progress <= 100; progress += 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      // Upload each file
+      for (const file of uploadFiles) {
         setUploadFiles(prev => prev.map(f => 
-          f.id === file.id ? { ...f, progress } : f
+          f.id === file.id ? { ...f, status: 'uploading', progress: 0 } : f
         ));
+        
+        try {
+          // Call the actual upload function for each file
+          await onUpload([file], folderId);
+          
+          // Mark as success
+          setUploadFiles(prev => prev.map(f => 
+            f.id === file.id ? { ...f, status: 'success', progress: 100 } : f
+          ));
+        } catch (error) {
+          // Mark as error
+          setUploadFiles(prev => prev.map(f => 
+            f.id === file.id ? { 
+              ...f, 
+              status: 'error', 
+              error: error instanceof Error ? error.message : 'Upload failed' 
+            } : f
+          ));
+        }
       }
       
-      // Mark as success
-      setUploadFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, status: 'success', progress: 100 } : f
-      ));
-    }
-    
-    // Call the actual upload function
-    onUpload(uploadFiles);
-    
-    // Close modal after a delay
-    setTimeout(() => {
-      setUploadFiles([]);
+      // Close modal after a delay if all uploads succeeded
+      const hasErrors = uploadFiles.some(f => f.status === 'error');
+      if (!hasErrors) {
+        setTimeout(() => {
+          setUploadFiles([]);
+          setIsUploading(false);
+          onClose();
+        }, 1000);
+      } else {
+        setIsUploading(false);
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
       setIsUploading(false);
-      onClose();
-    }, 1000);
+    }
   };
 
   const handleClose = () => {
@@ -187,6 +200,11 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{file.progress}%</p>
                         </div>
+                      )}
+                      
+                      {/* Error Message */}
+                      {file.status === 'error' && file.error && (
+                        <p className="text-xs text-red-600 mt-1">{file.error}</p>
                       )}
                     </div>
                     
