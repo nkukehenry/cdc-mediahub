@@ -9,6 +9,7 @@ import { cn, formatFileSize, getFileIcon, isImageFile } from '@/utils/fileUtils'
 
 // Components
 import UploadModal from './UploadModal';
+import CreateFolderModal from './CreateFolderModal';
 import { 
   Upload, 
   RefreshCw, 
@@ -64,6 +65,7 @@ export default function FileManager({
   } = useSelector((state: RootState) => state.fileManager);
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<FileWithUrls | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
@@ -200,8 +202,11 @@ export default function FileManager({
   const handleFolderCreate = async (name: string, parentId?: string) => {
     try {
       await dispatch(createFolder({ name, parentId }));
+      // Refresh the folder tree to show the new folder
+      dispatch(fetchFolderTree(null));
     } catch (error) {
       console.error('Folder creation failed:', error);
+      throw error;
     }
   };
 
@@ -471,7 +476,10 @@ export default function FileManager({
                 <span>New file</span>
                 <ChevronDown size={14} />
               </button>
-              <button className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2">
+              <button 
+                onClick={() => setIsCreateFolderModalOpen(true)}
+                className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              >
                 <Folder size={16} />
                 <span>Create folder</span>
               </button>
@@ -602,6 +610,14 @@ export default function FileManager({
         onClose={() => setIsUploadModalOpen(false)}
         onUpload={handleFileUpload}
         folderId={currentFolder || undefined}
+      />
+
+      {/* Create Folder Modal */}
+      <CreateFolderModal
+        isOpen={isCreateFolderModalOpen}
+        onClose={() => setIsCreateFolderModalOpen(false)}
+        onCreate={handleFolderCreate}
+        parentId={currentFolder || undefined}
       />
     </div>
   );
