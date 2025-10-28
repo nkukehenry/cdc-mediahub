@@ -192,12 +192,16 @@ export default function FileManager({
   const handleFolderClick = (folder: FolderWithFiles) => {
     // Set current folder to load its contents
     dispatch(setCurrentFolder(folder.id));
+    // Expand the clicked folder in the sidebar
+    setExpandedFolders(prev => new Set([...prev, folder.id]));
     onFolderSelect?.(folder);
   };
 
   const handleSidebarFolderClick = (folder: FolderWithFiles) => {
     // Set current folder to load its contents
     dispatch(setCurrentFolder(folder.id));
+    // Expand the clicked folder in the sidebar
+    setExpandedFolders(prev => new Set([...prev, folder.id]));
     onFolderSelect?.(folder);
   };
 
@@ -244,7 +248,8 @@ export default function FileManager({
           onClick={() => handleSidebarFolderClick(folder)}
           className={cn(
             'flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors group',
-            level > 0 && 'ml-6'
+            level > 0 && 'ml-6',
+            currentFolder === folder.id ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50'
           )}
         >
           {/* Expand/Collapse Button */}
@@ -268,11 +273,14 @@ export default function FileManager({
           
           {/* Folder Icon */}
           <div className="mr-3">
-            <Folder size={16} className="text-blue-500" />
+            <Folder size={16} className={currentFolder === folder.id ? "text-blue-600" : "text-blue-500"} />
           </div>
           
           {/* Folder Name */}
-          <span className="text-sm font-medium flex-1 text-gray-700 group-hover:text-gray-900">
+          <span className={cn(
+            "text-sm font-medium flex-1",
+            currentFolder === folder.id ? "text-blue-600" : "text-gray-700 group-hover:text-gray-900"
+          )}>
             {folder.name}
           </span>
         </div>
