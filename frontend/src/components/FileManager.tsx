@@ -69,13 +69,26 @@ export default function FileManager({
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [activeView, setActiveView] = useState('all-files');
 
+  // Helper function to find a folder by ID in the tree structure
+  const findFolderById = (folders: FolderWithFiles[], folderId: string): FolderWithFiles | null => {
+    for (const folder of folders) {
+      if (folder.id === folderId) {
+        return folder;
+      }
+      const found = findFolderById(folder.subfolders, folderId);
+      if (found) return found;
+    }
+    return null;
+  };
+
   // Get root folders and files (those without a parent)
   const rootFolders = folders.filter(f => !f.parentId);
   const rootFiles = rootFolders.flatMap(folder => folder.files);
   
   // Get current folder files and folders from Redux state
-  const currentFolderFiles = folders.find(f => f.id === currentFolder)?.files || [];
-  const currentFolderSubfolders = folders.find(f => f.id === currentFolder)?.subfolders || [];
+  const currentFolderData = currentFolder ? findFolderById(folders, currentFolder) : null;
+  const currentFolderFiles = currentFolderData?.files || [];
+  const currentFolderSubfolders = currentFolderData?.subfolders || [];
   
   // Get all files for recent section (from all folders)
   const allFiles = folders.flatMap(folder => folder.files);
@@ -421,7 +434,7 @@ export default function FileManager({
                 <>
                   <span className="text-gray-400">/</span>
                   <span className="text-gray-600">
-                    {folders.find(f => f.id === currentFolder)?.name || 'Current Folder'}
+                    {currentFolderData?.name || 'Current Folder'}
                   </span>
                 </>
               )}
@@ -502,7 +515,7 @@ export default function FileManager({
           {/* All Files Section */}
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              {currentFolder ? `${folders.find(f => f.id === currentFolder)?.name || 'Current Folder'} - Files` : 'Root folders and files'}
+              {currentFolder ? `${currentFolderData?.name || 'Current Folder'} - Files` : 'Root folders and files'}
             </h2>
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               {/* Table Header */}
