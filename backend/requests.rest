@@ -1,0 +1,293 @@
+### Mutindo File Manager API Tests
+### Base URL: http://localhost:3001
+
+### Health Check
+GET http://localhost:3001/health
+
+###
+
+### Create Root Folder
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Documents"
+}
+
+###
+
+### Create Subfolder
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Images",
+  "parentId": "{{folderId}}"
+}
+
+###
+
+### List Folders (Root)
+GET http://localhost:3001/api/folders
+
+###
+
+### List Folders (Subfolder)
+GET http://localhost:3001/api/folders?parentId={{parentFolderId}}
+
+###
+
+### Update Folder
+PUT http://localhost:3001/api/folders/{{folderId}}
+Content-Type: application/json
+
+{
+  "name": "Updated Folder Name"
+}
+
+###
+
+### Upload File (Root)
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.txt"
+Content-Type: text/plain
+
+This is a test file content for upload testing.
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="folderId"
+
+{{folderId}}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Upload Image File
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample.jpg"
+Content-Type: image/jpeg
+
+< ./sample-image.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Upload PDF File
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="document.pdf"
+Content-Type: application/pdf
+
+< ./sample-document.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### List Files (Root)
+GET http://localhost:3001/api/files
+
+###
+
+### List Files (In Folder)
+GET http://localhost:3001/api/files?folderId={{folderId}}
+
+###
+
+### Search Files
+GET http://localhost:3001/api/files/search?q=test
+
+###
+
+### Search Files (Image)
+GET http://localhost:3001/api/files/search?q=jpg
+
+###
+
+### Download File
+GET http://localhost:3001/api/files/{{fileId}}/download
+
+###
+
+### Delete File
+DELETE http://localhost:3001/api/files/{{fileId}}
+
+###
+
+### Delete Folder (Empty)
+DELETE http://localhost:3001/api/folders/{{folderId}}
+
+###
+
+### Delete Folder (With Files) - Should Fail
+DELETE http://localhost:3001/api/folders/{{folderWithFilesId}}
+
+###
+
+### Error Tests
+
+### Upload Invalid File Type
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.exe"
+Content-Type: application/x-msdownload
+
+This is an executable file that should be rejected.
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Upload File Too Large
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="large-file.bin"
+Content-Type: application/octet-stream
+
+< ./large-file.bin
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Create Folder with Invalid Name
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": ""
+}
+
+###
+
+### Create Folder with Invalid Characters
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Invalid<Folder>Name"
+}
+
+###
+
+### Get Non-existent File
+GET http://localhost:3001/api/files/non-existent-id/download
+
+###
+
+### Get Non-existent Folder
+GET http://localhost:3001/api/folders/non-existent-id
+
+###
+
+### Delete Non-existent File
+DELETE http://localhost:3001/api/files/non-existent-id
+
+###
+
+### Delete Non-existent Folder
+DELETE http://localhost:3001/api/folders/non-existent-id
+
+###
+
+### Invalid Route
+GET http://localhost:3001/api/invalid-route
+
+###
+
+### Performance Tests
+
+### Upload Multiple Files (Batch Test)
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="batch1.txt"
+Content-Type: text/plain
+
+Batch upload test file 1
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="batch2.txt"
+Content-Type: text/plain
+
+Batch upload test file 2
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+POST http://localhost:3001/api/files/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="batch3.txt"
+Content-Type: text/plain
+
+Batch upload test file 3
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Create Multiple Folders
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Folder 1"
+}
+
+###
+
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Folder 2"
+}
+
+###
+
+POST http://localhost:3001/api/folders
+Content-Type: application/json
+
+{
+  "name": "Folder 3"
+}
+
+###
+
+### Test Variables (Set these after running the tests)
+### @folderId = folder-id-from-create-response
+### @parentFolderId = parent-folder-id-from-create-response
+### @fileId = file-id-from-upload-response
+### @folderWithFilesId = folder-id-that-contains-files
+
+### Example Usage:
+### 1. Start the server: npm start
+### 2. Run health check to ensure server is running
+### 3. Create folders first
+### 4. Upload files to folders
+### 5. Test file operations (list, search, download, delete)
+### 6. Test folder operations (list, update, delete)
+### 7. Test error scenarios
+
+### Notes:
+### - Replace {{variableName}} with actual IDs from responses
+### - For file uploads with actual files, replace < ./filename with actual file paths
+### - Test Redis caching by running the same requests multiple times
+### - Check server logs for detailed error information
+### - All endpoints return JSON responses with success/error structure
