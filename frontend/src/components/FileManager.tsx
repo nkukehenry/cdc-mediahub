@@ -156,6 +156,25 @@ export default function FileManager({
     }
   }, [dispatch, currentFolder]);
 
+  // Auto-expand folders that have subfolders when data loads
+  useEffect(() => {
+    const foldersWithSubfolders = new Set<string>();
+    const collectFoldersWithSubfolders = (folders: FolderWithFiles[]) => {
+      folders.forEach(folder => {
+        if (folder.subfolders.length > 0) {
+          foldersWithSubfolders.add(folder.id);
+          collectFoldersWithSubfolders(folder.subfolders);
+        }
+      });
+    };
+    collectFoldersWithSubfolders(folders);
+    
+    // Only expand if we have folders with subfolders and no folders are currently expanded
+    if (foldersWithSubfolders.size > 0 && expandedFolders.size === 0) {
+      setExpandedFolders(foldersWithSubfolders);
+    }
+  }, [folders, expandedFolders.size]);
+
   const handleFileUpload = async (files: File[], folderId?: string) => {
     try {
       for (const file of files) {
@@ -376,7 +395,7 @@ export default function FileManager({
         <div className="flex-1 px-6 pb-6">
           <h3 className="text-sm font-bold text-gray-900 mb-4">FOLDERS</h3>
           <div className="space-y-0.5">
-            {renderFolderTree(folders)}
+            {renderFolderTree(rootFolders)}
           </div>
         </div>
       </div>
