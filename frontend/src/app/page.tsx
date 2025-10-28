@@ -23,23 +23,14 @@ export default function Home() {
 
   return (
     <Provider store={store}>
-      <div className="min-h-screen bg-gray-100 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">File Manager Demo</h1>
-            <p className="mt-2 text-gray-600">
-              A modular file manager with expandable sidebar tree, grid/list views, and upload modal.
-            </p>
-          </div>
-          
-          <FileManager
-            onFileSelect={handleFileSelect}
-            onFolderSelect={handleFolderSelect}
-            onUpload={handleUpload}
-            mode="manager"
-            className="max-w-full"
-          />
-        </div>
+      <div className="h-screen w-screen overflow-hidden">
+        <FileManager
+          onFileSelect={handleFileSelect}
+          onFolderSelect={handleFolderSelect}
+          onUpload={handleUpload}
+          mode="manager"
+          className="w-full h-full"
+        />
       </div>
     </Provider>
   );
