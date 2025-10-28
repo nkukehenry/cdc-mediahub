@@ -508,50 +508,52 @@ export default function FileManager({
                 </div>
               </div>
 
-              {/* Table Body */}
-              <div className="divide-y divide-gray-200">
-                {allItems.map((item) => (
-                  <div key={item.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                    <div className="grid grid-cols-12 gap-4 items-center">
-                      <div className="col-span-1">
-                        <button 
-                          onClick={() => toggleFileSelection(item.id)}
-                          className="p-1 hover:bg-gray-200 rounded"
-                        >
-                          {selectedFileIds.has(item.id) ? (
-                            <CheckSquare size={16} className="text-blue-600" />
-                          ) : (
-                            <Square size={16} className="text-gray-400" />
-                          )}
-                        </button>
-                      </div>
-                      <div className="col-span-5 flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                          {getFileIcon(item)}
+              {/* Table Body - Scrollable */}
+              <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+                <div className="divide-y divide-gray-200">
+                  {allItems.map((item) => (
+                    <div key={item.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                      <div className="grid grid-cols-12 gap-4 items-center">
+                        <div className="col-span-1">
+                          <button 
+                            onClick={() => toggleFileSelection(item.id)}
+                            className="p-1 hover:bg-gray-200 rounded"
+                          >
+                            {selectedFileIds.has(item.id) ? (
+                              <CheckSquare size={16} className="text-blue-600" />
+                            ) : (
+                              <Square size={16} className="text-gray-400" />
+                            )}
+                          </button>
                         </div>
-                        <span 
-                          className="text-sm font-medium text-gray-900 truncate cursor-pointer hover:text-blue-600"
-                          onClick={() => item.isFolder ? handleFolderClick(item.data as FolderWithFiles) : handleFileClick(item.data as FileWithUrls)}
-                        >
-                          {item.name}
-                        </span>
-                      </div>
-                      <div className="col-span-2 text-sm text-gray-600">{item.lastModified}</div>
-                      <div className="col-span-2 text-sm text-gray-600">{item.size}</div>
-                      <div className="col-span-2 flex items-center space-x-2">
-                        <button className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors">
-                          Copy
-                        </button>
-                        <button className="p-1 hover:bg-gray-200 rounded">
-                          <Share2 size={14} className="text-gray-400" />
-                        </button>
-                        <button className="p-1 hover:bg-gray-200 rounded">
-                          <MoreVertical size={14} className="text-gray-400" />
-                        </button>
+                        <div className="col-span-5 flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                            {getFileIcon(item)}
+                          </div>
+                          <span 
+                            className="text-sm font-medium text-gray-900 truncate cursor-pointer hover:text-blue-600"
+                            onClick={() => item.isFolder ? handleFolderClick(item.data as FolderWithFiles) : handleFileClick(item.data as FileWithUrls)}
+                          >
+                            {item.name}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-sm text-gray-600">{item.lastModified}</div>
+                        <div className="col-span-2 text-sm text-gray-600">{item.size}</div>
+                        <div className="col-span-2 flex items-center space-x-2">
+                          <button className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors">
+                            Copy
+                          </button>
+                          <button className="p-1 hover:bg-gray-200 rounded">
+                            <Share2 size={14} className="text-gray-400" />
+                          </button>
+                          <button className="p-1 hover:bg-gray-200 rounded">
+                            <MoreVertical size={14} className="text-gray-400" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
