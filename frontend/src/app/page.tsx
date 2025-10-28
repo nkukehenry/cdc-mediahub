@@ -28,7 +28,7 @@ export default function Home() {
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">File Manager Demo</h1>
             <p className="mt-2 text-gray-600">
-              A modular file manager with grid and list views, drag-and-drop upload, and mobile responsiveness.
+              A modular file manager with expandable sidebar tree, grid/list views, and upload modal.
             </p>
           </div>
           

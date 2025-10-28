@@ -19,8 +19,10 @@ import {
   Grid3X3,
   List,
   Folder,
+  FolderOpen,
   File,
   ChevronRight,
+  ChevronDown,
   MoreVertical,
   HardDrive
 } from 'lucide-react';
@@ -47,6 +49,8 @@ export default function FileManager({
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<FileWithUrls | null>(null);
   const [sidebarFolders, setSidebarFolders] = useState<FolderWithFiles[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [currentFolderFiles, setCurrentFolderFiles] = useState<FileWithUrls[]>([]);
 
   useEffect(() => {
     dispatch(fetchFolderTree(currentFolder));
@@ -76,15 +80,30 @@ export default function FileManager({
     dispatch(fetchFolderTree(currentFolder));
   };
 
-  const handleFileClick = (file: FileWithUrls) => {
-    setSelectedFile(file);
-    onFileSelect?.(file);
+  const toggleFolderExpansion = (folderId: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(folderId)) {
+      newExpanded.delete(folderId);
+    } else {
+      newExpanded.add(folderId);
+    }
+    setExpandedFolders(newExpanded);
   };
 
   const handleFolderClick = (folder: FolderWithFiles) => {
     onFolderSelect?.(folder);
     dispatch({ type: 'fileManager/setCurrentFolder', payload: folder.id });
     dispatch({ type: 'fileManager/setCurrentPath', payload: [...currentPath, folder.name] });
+    setCurrentFolderFiles(folder.files);
+    setSelectedFile(null); // Clear file selection when navigating to folder
+  };
+
+  const handleSidebarFolderClick = (folder: FolderWithFiles) => {
+    // Toggle expansion first
+    toggleFolderExpansion(folder.id);
+    
+    // Then navigate to folder
+    handleFolderClick(folder);
   };
 
   const getCurrentFolderName = () => {
@@ -98,6 +117,60 @@ export default function FileManager({
 
   const getAllFolders = () => {
     return folders;
+  };
+
+  const renderFolderTree = (folders: FolderWithFiles[], level: number = 0) => {
+    return folders.map((folder) => (
+      <div key={folder.id}>
+        <div
+          onClick={() => handleSidebarFolderClick(folder)}
+          className={cn(
+            'flex items-center p-2 rounded-lg cursor-pointer transition-colors',
+            currentFolder === folder.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50',
+            level > 0 && 'ml-4'
+          )}
+        >
+          {folder.subfolders.length > 0 ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFolderExpansion(folder.id);
+              }}
+              className="mr-1 p-1 hover:bg-gray-200 rounded"
+            >
+              {expandedFolders.has(folder.id) ? (
+                <ChevronDown size={12} className="text-gray-400" />
+              ) : (
+                <ChevronRight size={12} className="text-gray-400" />
+              )}
+            </button>
+          ) : (
+            <div className="w-4 mr-1" />
+          )}
+          
+          {expandedFolders.has(folder.id) ? (
+            <FolderOpen size={16} className="text-yellow-500 mr-3" />
+          ) : (
+            <Folder size={16} className="text-yellow-500 mr-3" />
+          )}
+          
+          <span className="text-sm font-medium flex-1">{folder.name}</span>
+          <span className="text-xs text-gray-400">{folder.files.length}</span>
+        </div>
+        
+        {/* Render subfolders if expanded */}
+        {expandedFolders.has(folder.id) && folder.subfolders.length > 0 && (
+          <div className="ml-2">
+            {renderFolderTree(folder.subfolders, level + 1)}
+          </div>
+        )}
+      </div>
+    ));
+  };
+
+  const handleFileClick = (file: FileWithUrls) => {
+    setSelectedFile(file);
+    onFileSelect?.(file);
   };
 
   if (loading) {
@@ -120,7 +193,7 @@ export default function FileManager({
   }
 
   return (
-    <div className={cn('flex h-screen bg-gray-50', className)}>
+    <div className={cn('flex h-screen bg-white rounded-lg shadow-lg', className)}>
       {/* Left Sidebar */}
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         {/* User Profile Section */}
@@ -149,20 +222,7 @@ export default function FileManager({
         <div className="flex-1 p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-4">My Folders</h3>
           <div className="space-y-1">
-            {sidebarFolders.map((folder) => (
-              <div
-                key={folder.id}
-                onClick={() => handleFolderClick(folder)}
-                className={cn(
-                  'flex items-center p-2 rounded-lg cursor-pointer transition-colors',
-                  currentFolder === folder.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'
-                )}
-              >
-                <Folder size={16} className="text-yellow-500 mr-3" />
-                <span className="text-sm font-medium flex-1">{folder.name}</span>
-                <ChevronRight size={14} className="text-gray-400" />
-              </div>
-            ))}
+            {renderFolderTree(sidebarFolders)}
           </div>
         </div>
       </div>
@@ -261,7 +321,7 @@ export default function FileManager({
             {/* Files Grid/List */}
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {getAllFiles().map((file) => (
+                {currentFolderFiles.map((file) => (
                   <div
                     key={file.id}
                     onClick={() => handleFileClick(file)}
@@ -292,7 +352,7 @@ export default function FileManager({
               </div>
             ) : (
               <div className="space-y-2">
-                {getAllFiles().map((file) => (
+                {currentFolderFiles.map((file) => (
                   <div
                     key={file.id}
                     onClick={() => handleFileClick(file)}
@@ -325,7 +385,7 @@ export default function FileManager({
             )}
 
             {/* Empty State */}
-            {getAllFiles().length === 0 && getAllFolders().length === 0 && (
+            {currentFolderFiles.length === 0 && getAllFolders().length === 0 && (
               <div className="text-center py-12">
                 <HardDrive size={48} className="text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No files found</h3>
