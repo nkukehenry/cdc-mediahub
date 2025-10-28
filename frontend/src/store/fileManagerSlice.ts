@@ -209,6 +209,7 @@ const fileManagerSlice = createSlice({
       })
       .addCase(fetchFolderTree.fulfilled, (state, action) => {
         state.loading = false;
+        // Always store the complete tree structure
         state.folders = action.payload;
       })
       .addCase(fetchFolderTree.rejected, (state, action) => {

@@ -149,12 +149,8 @@ export default function FileManager({
     dispatch(fetchFolderTree(null));
   }, [dispatch]);
 
-  useEffect(() => {
-    // Load specific folder when currentFolder changes
-    if (currentFolder) {
-      dispatch(fetchFolderTree(currentFolder));
-    }
-  }, [dispatch, currentFolder]);
+  // Remove the useEffect that was causing the issue
+  // We don't need to fetch data when clicking folders since we already have the tree
 
   // Auto-expand folders that have subfolders when data loads
   useEffect(() => {
