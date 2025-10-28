@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { UploadZoneProps } from '@/types/fileManager';
-import { cn, validateFileType, validateFileSize } from '@/utils/fileUtils';
+import { cn, validateFileType, validateFileSize, formatFileSize } from '@/utils/fileUtils';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -182,12 +182,14 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 truncate" title={file.name}>
                         {file.name}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
+                      <div className="flex items-center space-x-2 text-xs text-gray-500">
+                        <span>{file.size ? formatFileSize(file.size) : 'Unknown size'}</span>
+                        <span>•</span>
+                        <span>{file.type || 'Unknown type'}</span>
+                      </div>
                       
                       {/* Progress Bar */}
                       {file.status === 'uploading' && (
