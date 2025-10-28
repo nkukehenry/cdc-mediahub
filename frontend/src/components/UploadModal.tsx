@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, File as FileIcon, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { UploadZoneProps } from '@/types/fileManager';
 import { cn, validateFileType, validateFileSize, formatFileSize } from '@/utils/fileUtils';
 
@@ -39,7 +39,7 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
         // Log all properties
         allProperties: Object.keys(file),
         // Check if it's actually a File object
-        isFile: file instanceof File,
+        isFile: file instanceof window.File,
         constructor: file.constructor.name
       });
       
@@ -206,7 +206,7 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
                       ) : file.status === 'error' ? (
                         <AlertCircle size={20} className="text-red-500" />
                       ) : (
-                        <File size={20} className="text-gray-400" />
+                        <FileIcon size={20} className="text-gray-400" />
                       )}
                     </div>
                     
