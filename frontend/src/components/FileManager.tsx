@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
-import { fetchFolderTree, uploadFile, createFolder } from '@/store/fileManagerSlice';
+import { fetchFolderTree, uploadFile, createFolder, setCurrentFolder } from '@/store/fileManagerSlice';
 import { FileManagerProps, FileWithUrls, FolderWithFiles } from '@/types/fileManager';
 import { cn, formatFileSize, getFileIcon, isImageFile } from '@/utils/fileUtils';
 
@@ -98,7 +98,15 @@ export default function FileManager({
   ];
 
   useEffect(() => {
-    dispatch(fetchFolderTree(currentFolder));
+    // Load root folders and files on startup
+    dispatch(fetchFolderTree(null));
+  }, [dispatch]);
+
+  useEffect(() => {
+    // Load specific folder when currentFolder changes
+    if (currentFolder) {
+      dispatch(fetchFolderTree(currentFolder));
+    }
   }, [dispatch, currentFolder]);
 
   const handleFileUpload = async (files: File[], folderId?: string) => {
@@ -148,10 +156,14 @@ export default function FileManager({
   };
 
   const handleFolderClick = (folder: FolderWithFiles) => {
+    // Set current folder to load its contents
+    dispatch(setCurrentFolder(folder.id));
     onFolderSelect?.(folder);
   };
 
   const handleSidebarFolderClick = (folder: FolderWithFiles) => {
+    // Set current folder to load its contents
+    dispatch(setCurrentFolder(folder.id));
     onFolderSelect?.(folder);
   };
 
@@ -272,10 +284,13 @@ export default function FileManager({
         {/* Navigation Links */}
         <div className="p-6">
           <div className="space-y-2">
-            <div className={cn(
-              'flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors',
-              activeView === 'all-files' ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
-            )}>
+            <div 
+              className={cn(
+                'flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors',
+                !currentFolder ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
+              )}
+              onClick={() => dispatch(setCurrentFolder(null))}
+            >
               <Grid3X3 size={16} className="mr-3" />
               <span className="text-sm font-medium">All files</span>
             </div>
@@ -351,6 +366,26 @@ export default function FileManager({
 
         {/* Content Area */}
         <div className="flex-1 p-6 bg-gray-50">
+          {/* Breadcrumb Navigation */}
+          <div className="mb-4">
+            <nav className="flex items-center space-x-2 text-sm">
+              <button 
+                onClick={() => dispatch(setCurrentFolder(null))}
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Root
+              </button>
+              {currentFolder && (
+                <>
+                  <span className="text-gray-400">/</span>
+                  <span className="text-gray-600">
+                    {folders.find(f => f.id === currentFolder)?.name || 'Current Folder'}
+                  </span>
+                </>
+              )}
+            </nav>
+          </div>
+
           {/* Action Buttons */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
@@ -421,7 +456,9 @@ export default function FileManager({
 
           {/* All Files Section */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">All files</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              {currentFolder ? `${folders.find(f => f.id === currentFolder)?.name || 'Current Folder'} - Files` : 'All files'}
+            </h2>
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               {/* Table Header */}
               <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
