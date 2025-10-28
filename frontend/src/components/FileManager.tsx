@@ -69,12 +69,24 @@ export default function FileManager({
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [activeView, setActiveView] = useState('all-files');
 
+  // Get root folders and files (those without a parent)
+  const rootFolders = folders.filter(f => !f.parentId);
+  const rootFiles = rootFolders.flatMap(folder => folder.files);
+  
   // Get current folder files and folders from Redux state
   const currentFolderFiles = folders.find(f => f.id === currentFolder)?.files || [];
   const currentFolderSubfolders = folders.find(f => f.id === currentFolder)?.subfolders || [];
   
-  // Combine files and folders for display
-  const allItems = [
+  // Get all files for recent section (from all folders)
+  const allFiles = folders.flatMap(folder => folder.files);
+  
+  // Sort files by updatedAt for recent section
+  const recentFiles = allFiles
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 5);
+  
+  // Combine files and folders for display based on current folder
+  const allItems = currentFolder ? [
     ...currentFolderSubfolders.map(folder => ({
       id: folder.id,
       name: folder.name,
@@ -86,6 +98,28 @@ export default function FileManager({
       data: folder
     })),
     ...currentFolderFiles.map(file => ({
+      id: file.id,
+      name: file.originalName,
+      type: file.mimeType.split('/')[0],
+      lastModified: new Date(file.updatedAt).toLocaleDateString(),
+      size: formatFileSize(file.fileSize),
+      icon: file.mimeType.split('/')[0],
+      isFolder: false,
+      data: file
+    }))
+  ] : [
+    // Show root folders and files when no current folder is selected
+    ...rootFolders.map(folder => ({
+      id: folder.id,
+      name: folder.name,
+      type: 'folder',
+      lastModified: new Date(folder.updatedAt).toLocaleDateString(),
+      size: `${folder.files.length} files`,
+      icon: 'folder',
+      isFolder: true,
+      data: folder
+    })),
+    ...rootFiles.map(file => ({
       id: file.id,
       name: file.originalName,
       type: file.mimeType.split('/')[0],
@@ -437,18 +471,21 @@ export default function FileManager({
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Recently used</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {allItems.slice(0, 5).map((item) => (
-                <div key={item.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
+              {recentFiles.map((file) => (
+                <div key={file.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
                   <div className="flex items-center justify-between mb-3">
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                      {getFileIcon(item)}
+                      {getFileIcon({
+                        icon: file.mimeType.split('/')[0],
+                        type: file.mimeType.split('/')[0]
+                      })}
                     </div>
                     <button className="p-1 hover:bg-gray-100 rounded">
                       <MoreVertical size={14} className="text-gray-400" />
                     </button>
                   </div>
-                  <h3 className="text-sm font-medium text-gray-900 truncate mb-1">{item.name}</h3>
-                  <p className="text-xs text-gray-500">{item.type === 'folder' ? `Folder: ${item.size}` : `${item.type.toUpperCase()}, ${item.size}`}</p>
+                  <h3 className="text-sm font-medium text-gray-900 truncate mb-1">{file.originalName}</h3>
+                  <p className="text-xs text-gray-500">{file.mimeType.split('/')[0].toUpperCase()}, {formatFileSize(file.fileSize)}</p>
                 </div>
               ))}
             </div>
@@ -457,7 +494,7 @@ export default function FileManager({
           {/* All Files Section */}
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              {currentFolder ? `${folders.find(f => f.id === currentFolder)?.name || 'Current Folder'} - Files` : 'All files'}
+              {currentFolder ? `${folders.find(f => f.id === currentFolder)?.name || 'Current Folder'} - Files` : 'Root folders and files'}
             </h2>
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               {/* Table Header */}
