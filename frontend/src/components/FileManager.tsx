@@ -10,6 +10,7 @@ import { cn, formatFileSize, getFileIcon, isImageFile } from '@/utils/fileUtils'
 // Components
 import UploadModal from './UploadModal';
 import CreateFolderModal from './CreateFolderModal';
+import FilePreviewModal from './FilePreviewModal';
 import { 
   Upload, 
   RefreshCw, 
@@ -66,6 +67,8 @@ export default function FileManager({
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileWithUrls | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
@@ -228,6 +231,8 @@ export default function FileManager({
 
   const handleFileClick = (file: any) => {
     setSelectedFile(file);
+    setPreviewFile(file);
+    setIsPreviewModalOpen(true);
     onFileSelect?.(file);
   };
 
@@ -606,6 +611,16 @@ export default function FileManager({
         onClose={() => setIsCreateFolderModalOpen(false)}
         onCreate={handleFolderCreate}
         parentId={currentFolder || undefined}
+      />
+
+      {/* File Preview Modal */}
+      <FilePreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => {
+          setIsPreviewModalOpen(false);
+          setPreviewFile(null);
+        }}
+        file={previewFile}
       />
     </div>
   );
