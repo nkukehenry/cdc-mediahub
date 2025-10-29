@@ -642,7 +642,10 @@ export class FileManagerServer {
 
       res.setHeader('Content-Type', fileInfo.mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileInfo.fileName}"`);
-      res.sendFile(fileInfo.filePath);
+      
+      // Ensure the file path is absolute
+      const absolutePath = path.resolve(fileInfo.filePath);
+      res.sendFile(absolutePath);
     } catch (error) {
       this.logger.error('File download failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
