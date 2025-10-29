@@ -230,6 +230,10 @@ export default function FileManager({
   };
 
   const handleFileClick = (file: any) => {
+    console.log('FileManager - File clicked:', file);
+    console.log('File downloadUrl:', file.downloadUrl);
+    console.log('File mimeType:', file.mimeType);
+    
     setSelectedFile(file);
     setPreviewFile(file);
     setIsPreviewModalOpen(true);

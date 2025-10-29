@@ -87,6 +87,11 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
   const renderPreview = () => {
     if (!file) return null;
 
+    console.log('FilePreviewModal - Rendering preview for file:', file);
+    console.log('File mimeType:', file.mimeType);
+    console.log('Is image file:', isImageFile(file.mimeType));
+    console.log('Download URL:', file.downloadUrl);
+
     if (isLoading) {
       return (
         <div className="flex items-center justify-center h-64">
@@ -107,13 +112,18 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
 
     // Image preview
     if (isImageFile(file.mimeType)) {
+      console.log('Rendering image preview with URL:', file.downloadUrl);
       return (
         <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg overflow-hidden">
           <img
             src={file.downloadUrl}
             alt={file.originalName}
             className="max-w-full max-h-full object-contain"
-            onError={() => setError('Failed to load image')}
+            onError={(e) => {
+              console.error('Image load error:', e);
+              setError('Failed to load image');
+            }}
+            onLoad={() => console.log('Image loaded successfully')}
           />
         </div>
       );
