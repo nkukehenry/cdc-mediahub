@@ -12,8 +12,8 @@ export default function ViewToggle({ mode, onModeChange, className }: ViewToggle
         className={cn(
           'flex items-center justify-center w-8 h-8 rounded-md transition-colors',
           mode === 'grid' 
-            ? 'bg-white shadow-sm text-blue-600' 
-            : 'text-gray-500 hover:text-gray-700'
+            ? 'bg-white shadow-sm text-au-green' 
+            : 'text-au-grey-text/70 hover:text-au-green'
         )}
         title="Grid view"
       >
@@ -25,8 +25,8 @@ export default function ViewToggle({ mode, onModeChange, className }: ViewToggle
         className={cn(
           'flex items-center justify-center w-8 h-8 rounded-md transition-colors',
           mode === 'list' 
-            ? 'bg-white shadow-sm text-blue-600' 
-            : 'text-gray-500 hover:text-gray-700'
+            ? 'bg-white shadow-sm text-au-green' 
+            : 'text-au-grey-text/70 hover:text-au-green'
         )}
         title="List view"
       >

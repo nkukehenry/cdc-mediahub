@@ -93,6 +93,15 @@ export class ErrorHandler implements IErrorHandler {
     return this.createError(ErrorType.CONFIGURATION_ERROR, message, { configKey }) as ConfigurationError;
   }
 
+  // Additional error types for auth and RBAC
+  createUnauthorizedError(message: string = 'Unauthorized'): FileManagerError {
+    return this.createError(ErrorType.INTERNAL_ERROR, message, { type: 'UNAUTHORIZED' });
+  }
+
+  createForbiddenError(message: string = 'Forbidden'): FileManagerError {
+    return this.createError(ErrorType.INTERNAL_ERROR, message, { type: 'FORBIDDEN' });
+  }
+
   // Error response formatter for API responses
   formatErrorResponse(error: Error): {
     error: {

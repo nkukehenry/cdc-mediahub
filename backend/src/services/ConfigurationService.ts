@@ -11,11 +11,37 @@ export class ConfigurationService {
 
   private loadConfiguration(): void {
     // Load from environment variables with defaults
+    const maxFileSizeMb = process.env.MAX_FILE_SIZE_MB ? parseInt(process.env.MAX_FILE_SIZE_MB) : undefined;
+    const maxFileSize = typeof maxFileSizeMb === 'number' && !isNaN(maxFileSizeMb)
+      ? maxFileSizeMb * 1024 * 1024
+      : parseInt(process.env.MAX_FILE_SIZE || '104857600'); // fallback to bytes env or default 100MB
+
     this.config = {
       uploadPath: process.env.UPLOAD_PATH || './uploads',
       thumbnailPath: process.env.THUMBNAIL_PATH || './thumbnails',
-      maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '104857600'), // 100MB
-      allowedMimeTypes: (process.env.ALLOWED_FILE_TYPES || '').split(',').filter(Boolean),
+      maxFileSize: maxFileSize,
+      allowedMimeTypes: (() => {
+        const fromEnv = (process.env.ALLOWED_FILE_TYPES || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (fromEnv.length > 0) return fromEnv;
+        // Sensible defaults covering images, videos, audios, documents and text
+        return [
+          'image/*',
+          'video/*',
+          'audio/*',
+          'application/pdf',
+          'text/*',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'application/rtf',
+          'application/vnd.oasis.opendocument.text',
+          'application/vnd.oasis.opendocument.spreadsheet',
+          'application/vnd.oasis.opendocument.presentation'
+        ];
+      })(),
       enableThumbnails: process.env.ENABLE_THUMBNAILS !== 'false',
       logLevel: (process.env.LOG_LEVEL as LogLevel) || LogLevel.INFO
     };
@@ -39,7 +65,7 @@ export class ConfigurationService {
     const errors: string[] = [];
 
     if (this.config.maxFileSize <= 0) {
-      errors.push('MAX_FILE_SIZE must be a positive number');
+      errors.push('MAX_FILE_SIZE or MAX_FILE_SIZE_MB must be a positive number');
     }
 
     if (this.config.allowedMimeTypes.length === 0) {
@@ -101,6 +127,10 @@ export class ConfigurationService {
       cors: {
         origin: process.env.CORS_ORIGIN || '*',
         credentials: process.env.CORS_CREDENTIALS === 'true'
+      },
+      rateLimit: {
+        windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
+        max: parseInt(process.env.RATE_LIMIT_MAX || '1000') // 1000 requests per window default
       }
     };
   }

@@ -2,7 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
-import { IFileService, FileEntity, CreateFileData } from '../interfaces';
+import { IFileService, IFileShareRepository, FileEntity, CreateFileData, ShareFileData, FileShareEntity, AccessLevel } from '../interfaces';
+import { DatabaseUtils } from '../utils/DatabaseUtils';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 import { UploadError, ThumbnailError, ValidationError } from '../interfaces';
@@ -15,7 +16,8 @@ export class FileService implements IFileService {
     private uploadPath: string,
     private thumbnailPath: string,
     private maxFileSize: number,
-    private allowedMimeTypes: string[]
+    private allowedMimeTypes: string[],
+    private fileShareRepository?: IFileShareRepository
   ) {
     this.ensureDirectories();
   }
@@ -31,7 +33,21 @@ export class FileService implements IFileService {
     }
   }
 
-  async upload(file: Express.Multer.File, folderId?: string): Promise<FileEntity> {
+  private isMimeAllowed(mimeType: string): boolean {
+    if (!mimeType) return false;
+    for (const allowed of this.allowedMimeTypes) {
+      if (!allowed) continue;
+      if (allowed.endsWith('/*')) {
+        const prefix = allowed.slice(0, allowed.length - 1); // keep trailing '/'
+        if (mimeType.startsWith(prefix)) return true;
+      } else if (allowed.toLowerCase() === mimeType.toLowerCase()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async upload(file: Express.Multer.File, userId: string, folderId?: string): Promise<FileEntity> {
     try {
       this.validateFile(file);
 
@@ -65,13 +81,14 @@ export class FileService implements IFileService {
         folderId
       };
 
-      // This would be injected from the repository
-      const savedFile = await this.saveFileToDatabase(fileData);
+      // This would be injected from the repository - now includes userId
+      const savedFile = await this.saveFileToDatabase(fileData, userId);
 
       this.logger.info('File uploaded successfully', { 
         fileId: savedFile.id, 
         originalName: file.originalname,
-        fileSize: file.size 
+        fileSize: file.size,
+        userId
       });
 
       return savedFile;
@@ -81,17 +98,24 @@ export class FileService implements IFileService {
     }
   }
 
-  async download(id: string): Promise<{ filePath: string; fileName: string; mimeType: string }> {
+  async download(id: string, userId?: string): Promise<{ filePath: string; fileName: string; mimeType: string }> {
     try {
       const file = await this.findFileById(id);
       if (!file) {
         throw this.errorHandler.createFileNotFoundError(id);
       }
 
+      this.logger.debug('File download requested', { fileId: id, userId, fileUserId: file.userId, fileName: file.originalName });
+
+      // Check file access
+      if (!await this.checkFileAccess(id, userId, file)) {
+        this.logger.warn('File download access denied', { fileId: id, userId, fileUserId: file.userId });
+        throw this.errorHandler.createValidationError('You do not have access to this file');
+      }
+
       // Check if file exists on disk
       await this.checkFileExists(file.filePath);
 
-      this.logger.debug('File download requested', { fileId: id });
       return {
         filePath: file.filePath,
         fileName: file.originalName,
@@ -126,11 +150,16 @@ export class FileService implements IFileService {
     }
   }
 
-  async deleteFile(id: string): Promise<boolean> {
+  async deleteFile(id: string, userId?: string): Promise<boolean> {
     try {
       const file = await this.findFileById(id);
       if (!file) {
         throw this.errorHandler.createFileNotFoundError(id);
+      }
+
+      // Check ownership - only owner can delete
+      if (userId && file.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to delete this file');
       }
 
       // Delete physical files
@@ -139,10 +168,19 @@ export class FileService implements IFileService {
         await this.deletePhysicalFile(file.thumbnailPath);
       }
 
+      // Clean up related references before DB delete (defensive in case FK PRAGMA is off)
+      try {
+        if (this.fileShareRepository) {
+          await this.fileShareRepository.deleteByFile(id);
+        }
+        // Remove post attachments referencing this file
+        await DatabaseUtils.executeQuery('DELETE FROM post_attachments WHERE file_id = ?', [id]);
+      } catch {}
+
       // Delete from database
       const deleted = await this.deleteFileFromDatabase(id);
 
-      this.logger.info('File deleted successfully', { fileId: id });
+      this.logger.info('File deleted successfully', { fileId: id, userId });
       return deleted;
     } catch (error) {
       this.logger.error('File deletion failed', error as Error, { fileId: id });
@@ -150,26 +188,165 @@ export class FileService implements IFileService {
     }
   }
 
-  async getFiles(folderId: string | null): Promise<FileEntity[]> {
+  async getFiles(folderId: string | null, userId?: string): Promise<FileEntity[]> {
     try {
       const files = await this.findFilesByFolder(folderId);
-      this.logger.debug('Files retrieved', { folderId, count: files.length });
-      return files;
+      
+      // Filter files based on access
+      const accessibleFiles = await Promise.all(
+        files.map(async (file) => {
+          const hasAccess = await this.checkFileAccess(file.id, userId, file);
+          return hasAccess ? file : null;
+        })
+      );
+
+      const filteredFiles = accessibleFiles.filter((f): f is FileEntity => f !== null);
+      
+      this.logger.debug('Files retrieved', { folderId, count: filteredFiles.length, userId });
+      return filteredFiles;
     } catch (error) {
       this.logger.error('Failed to get files', error as Error, { folderId });
       throw error;
     }
   }
 
-  async searchFiles(query: string): Promise<FileEntity[]> {
+  async searchFiles(query: string, userId?: string): Promise<FileEntity[]> {
     try {
       const files = await this.searchFilesInDatabase(query);
-      this.logger.debug('Files searched', { query, count: files.length });
-      return files;
+      
+      // Filter files based on access
+      const accessibleFiles = await Promise.all(
+        files.map(async (file) => {
+          const hasAccess = await this.checkFileAccess(file.id, userId, file);
+          return hasAccess ? file : null;
+        })
+      );
+
+      const filteredFiles = accessibleFiles.filter((f): f is FileEntity => f !== null);
+      
+      this.logger.debug('Files searched', { query, count: filteredFiles.length, userId });
+      return filteredFiles;
     } catch (error) {
       this.logger.error('File search failed', error as Error, { query });
       throw error;
     }
+  }
+
+  // Get files shared with a specific user
+  async getFilesSharedWithUser(userId: string): Promise<FileEntity[]> {
+    try {
+      if (!this.fileShareRepository) {
+        throw this.errorHandler.createConfigurationError('File share repository not configured');
+      }
+
+      const shares = await this.fileShareRepository.findByUser(userId);
+      const files: FileEntity[] = [];
+
+      for (const share of shares) {
+        const file = await this.findFileById(share.fileId);
+        if (file) {
+          files.push(file);
+        }
+      }
+
+      this.logger.debug('Files shared with user retrieved', { userId, count: files.length });
+      return files;
+    } catch (error) {
+      this.logger.error('Failed to get files shared with user', error as Error, { userId });
+      throw error;
+    }
+  }
+
+  async shareFile(fileId: string, userId: string, shareData: ShareFileData): Promise<FileShareEntity> {
+    try {
+      // Verify file ownership
+      const file = await this.findFileById(fileId);
+      if (!file) {
+        throw this.errorHandler.createFileNotFoundError(fileId);
+      }
+
+      if (file.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to share this file');
+      }
+
+      if (!this.fileShareRepository) {
+        throw this.errorHandler.createConfigurationError('File share repository not configured');
+      }
+
+      const share = await this.fileShareRepository.create(shareData);
+      this.logger.info('File shared successfully', { fileId, userId, shareId: share.id });
+      return share;
+    } catch (error) {
+      this.logger.error('File sharing failed', error as Error, { fileId, userId });
+      throw error;
+    }
+  }
+
+  // Share file with multiple users
+  async shareFileWithUsers(fileId: string, userId: string, sharedWithUserIds: string[], accessLevel: AccessLevel = 'read'): Promise<FileShareEntity[]> {
+    try {
+      // Verify file ownership
+      const file = await this.findFileById(fileId);
+      if (!file) {
+        throw this.errorHandler.createFileNotFoundError(fileId);
+      }
+
+      if (file.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to share this file');
+      }
+
+      if (!this.fileShareRepository) {
+        throw this.errorHandler.createConfigurationError('File share repository not configured');
+      }
+
+      if (sharedWithUserIds.length === 0) {
+        throw this.errorHandler.createValidationError('At least one user must be selected');
+      }
+
+      // Create share data for each user
+      const shareDataList = sharedWithUserIds.map(sharedUserId => ({
+        fileId,
+        sharedWithUserId: sharedUserId,
+        accessLevel
+      }));
+
+      const shares = await this.fileShareRepository.createMany(shareDataList);
+      this.logger.info('File shared with multiple users', { fileId, userId, count: shares.length });
+      return shares;
+    } catch (error) {
+      this.logger.error('Multi-user file sharing failed', error as Error, { fileId, userId });
+      throw error;
+    }
+  }
+
+  private async checkFileAccess(fileId: string, userId: string | undefined, file: FileEntity): Promise<boolean> {
+    // Owner always has access
+    if (userId && file.userId && file.userId === userId) {
+      this.logger.debug('File access granted: owner', { fileId, userId, fileUserId: file.userId });
+      return true;
+    }
+
+    // Allow access if the file is under a public folder
+    try {
+      if ((file as any).folderId) {
+        const folder = await DatabaseUtils.findOne<any>('SELECT is_public FROM folders WHERE id = ?', [(file as any).folderId]);
+        if (folder && (folder.is_public === 1 || folder.is_public === true)) {
+          this.logger.debug('File access granted: public folder', { fileId, folderId: (file as any).folderId });
+          return true;
+        }
+      }
+    } catch {}
+
+    // Check sharing if repository is available
+    if (this.fileShareRepository) {
+      const hasAccess = await this.fileShareRepository.checkAccess(fileId, userId);
+      this.logger.debug('File access check via share repository', { fileId, userId, hasAccess });
+      return hasAccess;
+    }
+
+    // If no share repository and file is not public, deny access
+    this.logger.debug('File access denied: no share repository', { fileId, userId, fileUserId: file.userId });
+    return false;
   }
 
   // Small, reusable utility functions
@@ -179,14 +356,15 @@ export class FileService implements IFileService {
     }
 
     if (file.size > this.maxFileSize) {
+      const maxMb = Math.round(this.maxFileSize / (1024 * 1024));
       throw this.errorHandler.createValidationError(
-        `File size exceeds maximum allowed size of ${this.maxFileSize} bytes`,
+        `File size exceeds maximum allowed size of ${maxMb} MB`,
         'fileSize',
         file.size
       );
     }
 
-    if (!this.allowedMimeTypes.includes(file.mimetype)) {
+    if (!this.isMimeAllowed(file.mimetype)) {
       throw this.errorHandler.createValidationError(
         `File type ${file.mimetype} is not allowed`,
         'mimeType',
@@ -225,7 +403,7 @@ export class FileService implements IFileService {
   }
 
   // These would be injected from repositories
-  private async saveFileToDatabase(fileData: CreateFileData): Promise<FileEntity> {
+  private async saveFileToDatabase(fileData: CreateFileData, userId?: string): Promise<FileEntity> {
     throw new Error('FileRepository not injected');
   }
 

@@ -19,13 +19,13 @@ export default function FolderGrid({ folders, onDoubleClick, className }: Folder
           onDoubleClick={() => onDoubleClick(folder)}
           className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
         >
-          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-2 group-hover:bg-blue-200 transition-colors">
-            <Folder size={24} className="text-blue-600" />
+          <div className="w-12 h-12 bg-au-gold/20 rounded-lg flex items-center justify-center mb-2 group-hover:bg-au-gold/30 transition-colors">
+            <Folder size={24} className="text-au-green" />
           </div>
-          <span className="text-sm font-medium text-gray-900 text-center truncate w-full" title={folder.name}>
+          <span className="text-sm font-medium text-au-grey-text text-center truncate w-full" title={folder.name}>
             {folder.name}
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-au-grey-text/70">
             {folder.files.length} file{folder.files.length !== 1 ? 's' : ''}
           </span>
         </div>

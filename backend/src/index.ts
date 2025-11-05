@@ -5,7 +5,7 @@ import { FileManagerServer } from './server';
 import { getLogger } from './utils/Logger';
 
 // Load environment variables
-dotenv.config({ path: './config.env' });
+dotenv.config();
 
 const logger = getLogger('Main');
 

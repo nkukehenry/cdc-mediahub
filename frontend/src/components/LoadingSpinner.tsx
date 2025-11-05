@@ -17,7 +17,7 @@ export default function LoadingSpinner({ className, size = 'md' }: LoadingSpinne
 
   return (
     <div className={cn('flex items-center justify-center p-8', className)}>
-      <Loader2 className={cn('animate-spin text-blue-600', sizeClasses[size])} />
+      <Loader2 className={cn('animate-spin text-au-green', sizeClasses[size])} />
     </div>
   );
 }

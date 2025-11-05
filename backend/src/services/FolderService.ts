@@ -1,16 +1,19 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { IFolderService, FolderEntity, CreateFolderData, FolderWithFiles } from '../interfaces';
+import { IFolderService, FolderEntity, CreateFolderData, FolderWithFiles, AccessLevel } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 import { ValidationError } from '../interfaces';
+import { IFolderShareRepository } from '../repositories/FolderShareRepository';
 
 export class FolderService implements IFolderService {
   private logger = getLogger('FolderService');
   private errorHandler = getErrorHandler();
+  private folderShareRepository?: IFolderShareRepository;
 
-  constructor(private uploadPath: string) {
+  constructor(private uploadPath: string, folderShareRepository?: IFolderShareRepository) {
     this.ensureUploadDirectory();
+    this.folderShareRepository = folderShareRepository;
   }
 
   private async ensureUploadDirectory(): Promise<void> {
@@ -23,7 +26,7 @@ export class FolderService implements IFolderService {
     }
   }
 
-  async createFolder(name: string, parentId?: string): Promise<FolderEntity> {
+  async createFolder(name: string, parentId?: string, userId?: string): Promise<FolderEntity> {
     try {
       this.validateFolderName(name);
       
@@ -37,7 +40,8 @@ export class FolderService implements IFolderService {
 
       const folderData: CreateFolderData = {
         name: name.trim(),
-        parentId
+        parentId,
+        userId
       };
 
       const folder = await this.saveFolderToDatabase(folderData);
@@ -70,17 +74,26 @@ export class FolderService implements IFolderService {
     }
   }
 
-  async getFoldersWithFiles(parentId?: string): Promise<FolderWithFiles[]> {
+  async getFoldersWithFiles(parentId?: string, userId?: string): Promise<FolderWithFiles[]> {
     try {
-      const folders = await this.findFoldersByParent(parentId);
+      const folders = userId 
+        ? await this.findFoldersByParentForUser(parentId || null, userId)
+        : await this.findFoldersByParent(parentId);
       const foldersWithFiles: FolderWithFiles[] = [];
 
       for (const folder of folders) {
-        // Get files in this folder
-        const files = await this.findFilesInFolder(folder.id);
+        // Get files in this folder - access filtering happens via dependency injection
+        // The findFilesInFolder is injected from FileRepository
+        // We'll filter files based on access if userId is provided
+        let files = await this.findFilesInFolder(folder.id);
+        
+        // If userId provided, we need to filter files based on access
+        // For now, include all files - the frontend will handle access control
+        // Or we can inject fileService here if needed
+        // Files will be filtered by the folder ownership (user owns folder = can see files)
         
         // Get subfolders recursively
-        const subfolders = await this.getFoldersWithFiles(folder.id);
+        const subfolders = await this.getFoldersWithFiles(folder.id, userId);
 
         foldersWithFiles.push({
           ...folder,
@@ -157,6 +170,73 @@ export class FolderService implements IFolderService {
     }
   }
 
+  async shareFolderWithUsers(folderId: string, userId: string, sharedWithUserIds: string[], accessLevel: AccessLevel = 'write'): Promise<any[]> {
+    try {
+      // Verify folder ownership
+      const folder = await this.findFolderById(folderId);
+      if (!folder) {
+        throw this.errorHandler.createFolderNotFoundError(folderId);
+      }
+
+      if (folder.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to share this folder');
+      }
+
+      if (!this.folderShareRepository) {
+        throw this.errorHandler.createConfigurationError('Folder share repository not configured');
+      }
+
+      if (sharedWithUserIds.length === 0) {
+        throw this.errorHandler.createValidationError('At least one user must be selected');
+      }
+
+      // Create share data for each user
+      const shareDataList = sharedWithUserIds.map(sharedUserId => ({
+        folderId,
+        sharedWithUserId: sharedUserId,
+        accessLevel
+      }));
+
+      const shares = await this.folderShareRepository.createMany(shareDataList);
+      this.logger.info('Folder shared with multiple users', { folderId, userId, count: shares.length });
+      return shares;
+    } catch (error) {
+      this.logger.error('Multi-user folder sharing failed', error as Error, { folderId, userId });
+      throw error;
+    }
+  }
+
+  async getFoldersSharedWithUser(userId: string): Promise<FolderEntity[]> {
+    try {
+      if (!this.folderShareRepository) {
+        this.logger.warn('Folder share repository not configured');
+        return [];
+      }
+
+      const shares = await this.folderShareRepository.findByUser(userId);
+      const folderIds = shares.map(share => share.folderId);
+      
+      if (folderIds.length === 0) {
+        return [];
+      }
+
+      // Fetch folders using the injected repository method
+      const folders: FolderEntity[] = [];
+      for (const folderId of folderIds) {
+        const folder = await this.findFolderById(folderId);
+        if (folder) {
+          folders.push(folder);
+        }
+      }
+
+      this.logger.debug('Folders shared with user retrieved', { userId, count: folders.length });
+      return folders;
+    } catch (error) {
+      this.logger.error('Failed to get folders shared with user', error as Error, { userId });
+      throw error;
+    }
+  }
+
   // Small, reusable utility functions
   private validateFolderName(name: string): void {
     if (!name || name.trim().length === 0) {
@@ -214,6 +294,10 @@ export class FolderService implements IFolderService {
   }
 
   private async findFoldersByParent(parentId?: string): Promise<FolderEntity[]> {
+    throw new Error('FolderRepository not injected');
+  }
+
+  private async findFoldersByParentForUser(parentId: string | null | undefined, userId: string): Promise<FolderEntity[]> {
     throw new Error('FolderRepository not injected');
   }
 

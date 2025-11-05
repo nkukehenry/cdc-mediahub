@@ -3,14 +3,23 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
-import { fetchFolderTree, uploadFile, createFolder, setCurrentFolder } from '@/store/fileManagerSlice';
+import { fetchFolderTree, uploadFile, createFolder, setCurrentFolder, deleteFile, deleteFolder, setFoldersSilently, setViewMode } from '@/store/fileManagerSlice';
 import { FileManagerProps, FileWithUrls, FolderWithFiles } from '@/types/fileManager';
 import { cn, formatFileSize, getFileIcon, isImageFile } from '@/utils/fileUtils';
+import { apiClient } from '@/utils/apiClient';
+import { useTranslation } from '@/hooks/useTranslation';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useFileUpload } from '@/hooks/useFileUpload';
 
 // Components
 import UploadModal from './UploadModal';
 import CreateFolderModal from './CreateFolderModal';
 import FilePreviewModal from './FilePreviewModal';
+import ShareModal from './ShareModal';
+import ConfirmDeleteModal from './ConfirmDeleteModal';
+import MoveModal from './MoveModal';
+import EmptyState from './EmptyState';
+import FileManagerNav from './file-manager/FileManagerNav';
 import { 
   Upload, 
   RefreshCw, 
@@ -24,12 +33,11 @@ import {
   FolderOpen,
   File,
   ChevronRight,
+  Home,
   ChevronDown,
   MoreVertical,
   HardDrive,
   X,
-  Star,
-  Clock,
   Trash2,
   HelpCircle,
   Bell,
@@ -43,8 +51,11 @@ import {
   FileAudio,
   FileArchive,
   CheckSquare,
-  Square
+  Square,
+  Move
 } from 'lucide-react';
+import FileListRow from './FileListRow';
+import FileGridCard from './FileGridCard';
 
 export default function FileManager({ 
   config, 
@@ -55,6 +66,8 @@ export default function FileManager({
   mode = 'manager'
 }: FileManagerProps) {
   const dispatch = useDispatch<AppDispatch>();
+  const { t } = useTranslation();
+  const { showWarning, showSuccess } = useErrorHandler();
   const { 
     folders, 
     currentFolder, 
@@ -68,11 +81,24 @@ export default function FileManager({
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareFileId, setShareFileId] = useState<string | null>(null);
+  const [shareFolderId, setShareFolderId] = useState<string | null>(null);
+  const [shareType, setShareType] = useState<'file' | 'folder' | null>(null);
+  const [recentMenuId, setRecentMenuId] = useState<string | null>(null);
+  const [sharedExpanded, setSharedExpanded] = useState(false);
+  const [sortKey, setSortKey] = useState<'name' | 'date' | 'size'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileWithUrls | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [activeView, setActiveView] = useState('all-files');
+  const [sharedFiles, setSharedFiles] = useState<FileWithUrls[]>([]);
+  const [sharedFolders, setSharedFolders] = useState<FolderWithFiles[]>([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Helper function to find a folder by ID in the tree structure
   const findFolderById = (folders: FolderWithFiles[], folderId: string): FolderWithFiles | null => {
@@ -88,10 +114,13 @@ export default function FileManager({
 
   // Get root folders and files (those without a parent)
   const rootFolders = folders.filter(f => !f.parentId);
-  const rootFiles = rootFolders.flatMap(folder => folder.files);
+  // Public link removed; 'Public' is now part of the tree and appears first.
+  const [rootFiles, setRootFiles] = useState<FileWithUrls[]>([]);
   
-  // Get current folder files and folders from Redux state
-  const currentFolderData = currentFolder ? findFolderById(folders, currentFolder) : null;
+  // Get current folder files and folders from Redux state or shared folders
+  const currentFolderData = currentFolder 
+    ? (findFolderById(folders, currentFolder) || findFolderById(sharedFolders, currentFolder))
+    : null;
   const currentFolderFiles = currentFolderData?.files || [];
   const currentFolderSubfolders = currentFolderData?.subfolders || [];
   
@@ -103,8 +132,31 @@ export default function FileManager({
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 5);
   
-  // Combine files and folders for display based on current folder
-  const allItems = currentFolder ? [
+  // Combine files and folders for display based on current folder and view
+  const allItems = activeView === 'shared' ? [
+    // Shared folders first
+    ...sharedFolders.map(folder => ({
+      id: folder.id,
+      name: folder.name,
+      type: 'folder',
+      lastModified: new Date(folder.updatedAt).toLocaleDateString(),
+      size: `${folder.files.length} files`,
+      icon: 'folder',
+      isFolder: true,
+      data: folder
+    })),
+    // Then shared files
+    ...sharedFiles.map(file => ({
+      id: file.id,
+      name: file.originalName,
+      type: file.mimeType.split('/')[0],
+      lastModified: new Date(file.updatedAt).toLocaleDateString(),
+      size: formatFileSize(file.fileSize),
+      icon: file.mimeType.split('/')[0],
+      isFolder: false,
+      data: file
+    }))
+  ] : currentFolder ? [
     ...currentFolderSubfolders.map(folder => ({
       id: folder.id,
       name: folder.name,
@@ -126,7 +178,7 @@ export default function FileManager({
       data: file
     }))
   ] : [
-    // Show root folders and files when no current folder is selected
+    // Show root folders and only files at root when no current folder is selected
     ...rootFolders.map(folder => ({
       id: folder.id,
       name: folder.name,
@@ -149,10 +201,106 @@ export default function FileManager({
     }))
   ];
 
+  // Sort currently displayed items
+  const itemsSorted = (() => {
+    const arr = [...allItems];
+    const toTs = (val: any) => {
+      if (!val) return 0;
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+    const getSize = (item: any) => {
+      if (item.isFolder) {
+        const f = item.data as any;
+        return Array.isArray(f.files) ? f.files.length : 0;
+      }
+      const f = item.data as any;
+      return typeof f.fileSize === 'number' ? f.fileSize : 0;
+    };
+    const getDate = (item: any) => {
+      const d = (item.data as any)?.updatedAt || (item.data as any)?.createdAt;
+      return toTs(d);
+    };
+    arr.sort((a: any, b: any) => {
+      let cmp = 0;
+      if (sortKey === 'name') {
+        cmp = a.name.localeCompare(b.name);
+      } else if (sortKey === 'date') {
+        cmp = getDate(a) - getDate(b);
+      } else if (sortKey === 'size') {
+        cmp = getSize(a) - getSize(b);
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  })();
+
   useEffect(() => {
     // Load root folders and files on startup
     dispatch(fetchFolderTree(null));
   }, [dispatch]);
+
+  // Track when initial load completes
+  useEffect(() => {
+    if (folders.length > 0 && isInitialLoad) {
+      setIsInitialLoad(false);
+    }
+  }, [folders.length, isInitialLoad]);
+
+  // Load shared files and folders when switching to Shared view
+  useEffect(() => {
+    const loadShared = async () => {
+      try {
+        // Load shared files
+        const filesRes = await apiClient.getSharedFiles();
+        if (filesRes.success && filesRes.data?.files) {
+          setSharedFiles(filesRes.data.files as FileWithUrls[]);
+        } else {
+          setSharedFiles([]);
+        }
+
+        // Load shared folders
+        const foldersRes = await apiClient.getSharedFolders();
+        if (foldersRes.success && foldersRes.data?.folders) {
+          // Convert FolderEntity[] to FolderWithFiles[] format
+          const foldersWithFiles: FolderWithFiles[] = foldersRes.data.folders.map((folder: any) => ({
+            ...folder,
+            files: [],
+            subfolders: []
+          }));
+          setSharedFolders(foldersWithFiles);
+        } else {
+          setSharedFolders([]);
+        }
+      } catch (e) {
+        console.error('Failed to load shared items', e);
+        setSharedFiles([]);
+        setSharedFolders([]);
+      }
+    };
+    if (activeView === 'shared' || sharedExpanded) {
+      loadShared();
+    }
+  }, [activeView, sharedExpanded]);
+
+  // Fetch root files (files without a folder) when at root
+  useEffect(() => {
+    const fetchRootFiles = async () => {
+      try {
+        if (currentFolder === null) {
+          const res = await apiClient.getFiles();
+          if (res.success && res.data?.files) {
+            setRootFiles(res.data.files as FileWithUrls[]);
+          } else {
+            setRootFiles([]);
+          }
+        }
+      } catch {
+        setRootFiles([]);
+      }
+    };
+    fetchRootFiles();
+  }, [currentFolder]);
 
   // Remove the useEffect that was causing the issue
   // We don't need to fetch data when clicking folders since we already have the tree
@@ -176,25 +324,47 @@ export default function FileManager({
     }
   }, [folders, expandedFolders.size]);
 
-  const handleFileUpload = async (files: File[], folderId?: string) => {
-    try {
-      for (const file of files) {
-        // Upload each file using the Redux action
-        await dispatch(uploadFile({ file, folderId }));
+  const { handleUploadComplete } = useFileUpload({
+    currentFolder,
+    silentRefresh: true,
+    onUploadComplete: async (uploadedFiles) => {
+      // Also refresh root files if we're at root
+      if (currentFolder === null) {
+        const rootFilesRes = await apiClient.getFiles(undefined);
+        if (rootFilesRes.success && rootFilesRes.data?.files) {
+          setRootFiles(rootFilesRes.data.files as FileWithUrls[]);
+        }
       }
-      // Refresh the folder tree to show the new files
-      dispatch(fetchFolderTree(null));
-    } catch (error) {
-      console.error('Upload failed:', error);
-      throw error; // Re-throw to let the modal handle error display
-    }
+    },
+  });
+
+  const handleFileUpload = async (files: File[], folderId?: string) => {
+    // Modal handles all upload logic, we just need to refresh after uploads complete
+    await handleUploadComplete(files);
   };
 
   const handleFolderCreate = async (name: string, parentId?: string) => {
     try {
-      await dispatch(createFolder({ name, parentId }));
-      // Refresh the folder tree to show the new folder
+      await dispatch(createFolder({ name, parentId })).unwrap();
+      // Silently refresh the folder tree to show the new folder (without loader)
+      try {
+        const res = await apiClient.getFolderTree(undefined);
+        if (res.success && res.data?.folders) {
+          // Directly update the folders in Redux without triggering loading state
+          dispatch(setFoldersSilently(res.data.folders as FolderWithFiles[]));
+        }
+        // Also refresh root files if we're at root level
+        if (currentFolder === null) {
+          const filesRes = await apiClient.getFiles(undefined);
+          if (filesRes.success && filesRes.data?.files) {
+            setRootFiles(filesRes.data.files as FileWithUrls[]);
+          }
+        }
+      } catch (refreshError) {
+        // If silent refresh fails, fallback to regular refresh
+        console.error('Silent refresh failed, falling back to regular refresh:', refreshError);
       dispatch(fetchFolderTree(null));
+      }
     } catch (error) {
       console.error('Folder creation failed:', error);
       throw error;
@@ -216,6 +386,10 @@ export default function FileManager({
   const handleFolderClick = (folder: FolderWithFiles) => {
     // Set current folder to load its contents
     dispatch(setCurrentFolder(folder.id));
+    // If clicking a folder from shared view, switch back to all-files view
+    if (activeView === 'shared') {
+      setActiveView('all-files');
+    }
     // Expand the clicked folder in the sidebar
     setExpandedFolders(prev => new Set([...prev, folder.id]));
     onFolderSelect?.(folder);
@@ -234,11 +408,30 @@ export default function FileManager({
     console.log('File downloadUrl:', file.downloadUrl);
     console.log('File mimeType:', file.mimeType);
     
+    // In picker mode, clicking a file selects it and calls onFileSelect
+    if (mode === 'picker') {
+      onFileSelect?.(file);
+      return;
+    }
+    
+    // In manager mode, open preview modal
     setSelectedFile(file);
     setPreviewFile(file);
     setIsPreviewModalOpen(true);
     onFileSelect?.(file);
   };
+
+  const selectSingle = (id: string) => {
+    setSelectedFileIds(new Set([id]));
+  };
+
+  // Close recent menu when clicking outside (use 'click' so option onClick runs first)
+  useEffect(() => {
+    if (!recentMenuId) return;
+    const handleDocClick = () => setRecentMenuId(null);
+    document.addEventListener('click', handleDocClick);
+    return () => document.removeEventListener('click', handleDocClick);
+  }, [recentMenuId]);
 
   const toggleFileSelection = (fileId: string) => {
     setSelectedFileIds(prev => {
@@ -252,23 +445,176 @@ export default function FileManager({
     });
   };
 
-  const getFileIcon = (file: any) => {
-    switch (file.icon) {
-      case 'folder':
-        return <Folder size={20} className="text-blue-500" />;
-      case 'image':
-        return <ImageIcon size={20} className="text-green-500" />;
-      case 'document':
-        return <FileText size={20} className="text-blue-600" />;
-      case 'spreadsheet':
-        return <FileSpreadsheet size={20} className="text-green-600" />;
-      case 'pdf':
-        return <FileText size={20} className="text-red-500" />;
-      case 'text':
-        return <FileText size={20} className="text-gray-500" />;
-      default:
-        return <File size={20} className="text-gray-500" />;
+  const handleConfirmDelete = async () => {
+    if (selectedFileIds.size === 0) return;
+    
+    // Split selection into files and folders
+    const allItemsMap = new Map(allItems.map(item => [item.id, item]));
+    const selectedFiles = Array.from(selectedFileIds).filter(id => {
+      const item = allItemsMap.get(id);
+      return item && !item.isFolder;
+    });
+    const selectedFolders = Array.from(selectedFileIds).filter(id => {
+      const item = allItemsMap.get(id);
+      return item && item.isFolder;
+    });
+    
+    try {
+      let failures: any[] = [];
+      let successesCount = 0;
+
+      if (selectedFiles.length > 0) {
+        const deleteFilePromises = selectedFiles.map(fileId => dispatch(deleteFile(fileId)));
+        const results = await Promise.allSettled(deleteFilePromises);
+        const _fail = results.filter(r => r.status === 'rejected');
+        const _succ = results.filter(r => r.status === 'fulfilled');
+        failures = failures.concat(_fail);
+        successesCount += _succ.length;
+      }
+
+      if (selectedFolders.length > 0) {
+        // Attempt to delete folders (backend only allows empty)
+        const deleteFolderPromises = selectedFolders.map(folderId => dispatch(deleteFolder(folderId)));
+        const results = await Promise.allSettled(deleteFolderPromises);
+        const _fail = results.filter(r => r.status === 'rejected');
+        const _succ = results.filter(r => r.status === 'fulfilled');
+        failures = failures.concat(_fail);
+        successesCount += _succ.length;
+      }
+      
+      if (failures.length > 0) {
+        showWarning(`${failures.length} ${t('errors.itemsFailedToDelete')}`);
+      }
+      
+      setSelectedFileIds(new Set());
+      // Always fetch from root to get the complete tree
+      await dispatch(fetchFolderTree(null));
+      // Close modal after successful refresh
+      setIsDeleteModalOpen(false);
+    } catch (error) {
+      showWarning(t('errors.failedToDeleteItems'));
     }
+  };
+
+  const handleMoveSelected = () => {
+    if (selectedFileIds.size === 0) return;
+    setIsMoveModalOpen(true);
+  };
+
+  // Handle share button click - share first selected file or folder
+  const handleShareSelected = () => {
+    const selectedIds = Array.from(selectedFileIds);
+    if (selectedIds.length === 0) return;
+    
+    // Check what's selected
+    const allItemsMap = new Map(allItems.map(item => [item.id, item]));
+    const selectedFiles = selectedIds.filter(id => {
+      const item = allItemsMap.get(id);
+      return item && !item.isFolder;
+    });
+    const selectedFolders = selectedIds.filter(id => {
+      const item = allItemsMap.get(id);
+      return item && item.isFolder;
+    });
+    
+    if (selectedFiles.length > 0 && selectedFolders.length > 0) {
+      showWarning(t('errors.selectFilesOrFoldersOnly'));
+      return;
+    }
+
+    if (selectedFiles.length >= 1) {
+      setShareFileId(selectedFiles[0]);
+      setShareFolderId(null);
+      setShareType('file');
+      setIsShareModalOpen(true);
+    } else if (selectedFolders.length === 1) {
+      setShareFolderId(selectedFolders[0]);
+      setShareFileId(null);
+      setShareType('folder');
+      setIsShareModalOpen(true);
+    } else {
+      showWarning(t('errors.selectFileOrFolderToShare'));
+    }
+  };
+
+  // Handle share submission
+  const handleShare = async (userIds: string[], accessLevel: 'read' | 'write') => {
+    try {
+      if (shareType === 'file') {
+        // Share all selected files
+        const allItemsMap = new Map(allItems.map(item => [item.id, item]));
+        const filesToShare = Array.from(selectedFileIds).filter(id => {
+          const it = allItemsMap.get(id);
+          return it && !it.isFolder;
+        });
+
+        const { apiClient } = await import('@/utils/apiClient');
+        const results = await Promise.allSettled(
+          filesToShare.map(fid => apiClient.shareFileWithUsers(fid, userIds, accessLevel))
+        );
+
+        const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+        if (failures.length > 0) {
+          showWarning(`${failures.length} ${t('errors.someFilesFailedToShare')}`);
+        } else {
+          showSuccess(t('errors.filesSharedSuccessfully'));
+        }
+
+        await dispatch(fetchFolderTree(null));
+      } else if (shareType === 'folder' && shareFolderId) {
+        const res = await (await import('@/utils/apiClient')).apiClient.shareFolderWithUsers(shareFolderId, userIds, accessLevel);
+        if (res.success) {
+          // Refresh folder tree
+          await dispatch(fetchFolderTree(null));
+          // Clear selection for shared folder
+          setSelectedFileIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(shareFolderId);
+            return newSet;
+          });
+        } else {
+          throw new Error(res.error?.message || 'Share failed');
+        }
+      }
+    } catch (error) {
+      console.error('Share failed:', error);
+      throw error;
+    }
+  };
+
+  const hasSelectedFiles = selectedFileIds.size > 0;
+
+  const getFileIcon = (item: any) => {
+    const iconSize = 14; // compact rows
+    // Folder
+    if (item.isFolder || item.icon === 'folder') {
+      return <Folder size={iconSize} className="text-au-green" />;
+    }
+
+    // Determine mime/type
+    const mime: string | undefined = (item.data && item.data.mimeType) || undefined;
+    const top = (item.icon || (mime ? mime.split('/')[0] : '') || '').toLowerCase();
+    const m = (mime || '').toLowerCase();
+
+    // Archives
+    if (m.includes('zip') || m.includes('rar') || m.includes('7z') || m.includes('tar') || m.includes('gz')) {
+      return <FileArchive size={iconSize} className="text-au-gold" />;
+    }
+
+    // Explicit categories
+    if (top === 'image') return <FileImage size={iconSize} className="text-au-green" />;
+    if (top === 'video') return <FileVideo size={iconSize} className="text-au-green" />;
+    if (top === 'audio') return <FileAudio size={iconSize} className="text-au-green" />;
+
+    // Documents
+    if (m.includes('pdf')) return <FileText size={iconSize} className="text-au-red" />;
+    if (m.includes('spreadsheet') || m.includes('excel') || m.includes('sheet')) return <FileSpreadsheet size={iconSize} className="text-au-green" />;
+    if (m.includes('word') || m.includes('document') || m.includes('rtf') || m.includes('presentation') || m.includes('powerpoint') || m.includes('text')) {
+      return <FileText size={iconSize} className="text-au-green" />;
+    }
+
+    // Fallback
+    return <File size={iconSize} className="text-au-grey-text" />;
   };
 
   const renderFolderTree = (folders: FolderWithFiles[], level: number = 0) => {
@@ -279,7 +625,7 @@ export default function FileManager({
           className={cn(
             'flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors group',
             level > 0 && 'ml-6',
-            currentFolder === folder.id ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50'
+            currentFolder === folder.id ? 'bg-au-gold/20 text-au-green' : 'hover:bg-au-gold/5'
           )}
         >
           {/* Expand/Collapse Button */}
@@ -292,9 +638,9 @@ export default function FileManager({
               className="mr-2 p-0.5 hover:bg-gray-200 rounded transition-colors"
             >
               {expandedFolders.has(folder.id) ? (
-                <ChevronDown size={14} className="text-blue-500" />
+                <ChevronDown size={14} className="text-au-green" />
               ) : (
-                <ChevronRight size={14} className="text-blue-500" />
+                <ChevronRight size={14} className="text-au-green" />
               )}
             </button>
           ) : (
@@ -303,13 +649,13 @@ export default function FileManager({
           
           {/* Folder Icon */}
           <div className="mr-3">
-            <Folder size={16} className={currentFolder === folder.id ? "text-blue-600" : "text-blue-500"} />
+            <Folder size={16} className={currentFolder === folder.id ? "text-au-green" : "text-au-green"} />
           </div>
           
           {/* Folder Name */}
           <span className={cn(
             "text-sm font-medium flex-1",
-            currentFolder === folder.id ? "text-blue-600" : "text-gray-700 group-hover:text-gray-900"
+            currentFolder === folder.id ? "text-au-green" : "text-au-grey-text group-hover:text-au-green"
           )}>
             {folder.name}
           </span>
@@ -325,10 +671,11 @@ export default function FileManager({
     ));
   };
 
-  if (loading) {
+  // Only show loader on initial load, not on refresh operations
+  if (loading && isInitialLoad) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-au-green"></div>
       </div>
     );
   }
@@ -337,120 +684,48 @@ export default function FileManager({
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
-          <div className="text-red-600 text-xl mb-4">Error loading file manager</div>
-          <div className="text-gray-600">{error}</div>
+          <div className="text-au-red text-xl mb-4">{t('common.error')}</div>
+          <div className="text-au-grey-text">{error || t('errors.errorLoadingFileManager')}</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cn('flex h-screen bg-white w-full', className)}>
+    <div className={cn('flex h-full bg-white w-full', className)}>
       {/* Left Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        {/* Logo */}
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-blue-600">finalui</h1>
-        </div>
-
-        {/* Navigation Links */}
-        <div className="p-6">
-          <div className="space-y-2">
-            <div 
-              className={cn(
-                'flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors',
-                !currentFolder ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
-              )}
-              onClick={() => dispatch(setCurrentFolder(null))}
-            >
-              <Grid3X3 size={16} className="mr-3" />
-              <span className="text-sm font-medium">All files</span>
-            </div>
-            <div className="flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors text-gray-700 hover:bg-gray-50">
-              <ImageIcon size={16} className="mr-3" />
-              <span className="text-sm font-medium">Photos</span>
-            </div>
-            <div className="flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors text-gray-700 hover:bg-gray-50">
-              <Star size={16} className="mr-3" />
-              <span className="text-sm font-medium">Starred</span>
-            </div>
-            <div className="flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors text-gray-700 hover:bg-gray-50">
-              <Clock size={16} className="mr-3" />
-              <span className="text-sm font-medium">Recent</span>
-            </div>
-            <div className="flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors text-gray-700 hover:bg-gray-50">
-              <Share2 size={16} className="mr-3" />
-              <span className="text-sm font-medium">Shared</span>
-            </div>
-            <div className="flex items-center py-2 px-3 rounded-lg cursor-pointer transition-colors text-gray-700 hover:bg-gray-50">
-              <Trash2 size={16} className="mr-3" />
-              <span className="text-sm font-medium">Deleted</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Folders Section */}
-        <div className="flex-1 px-6 pb-6">
-          <h3 className="text-sm font-bold text-gray-900 mb-4">FOLDERS</h3>
-          <div className="space-y-0.5">
-            {renderFolderTree(rootFolders)}
-          </div>
-        </div>
-      </div>
+      <FileManagerNav
+        currentFolder={currentFolder}
+        activeView={activeView}
+        onHomeClick={() => { dispatch(setCurrentFolder(null)); setActiveView('all-files'); }}
+        onSharedClick={() => { setActiveView('shared'); dispatch(setCurrentFolder(null)); if (!sharedExpanded) setSharedExpanded(true); }}
+        title={t('fileManager.myFiles')}
+        myFilesLabel={t('fileManager.myFiles')}
+        homeLabel={t('fileManager.home')}
+        sharedLabel={t('fileManager.sharedWithMe')}
+        sidebarTree={<>{renderFolderTree(rootFolders)}</>}
+        sharedTree={<>{renderFolderTree(sharedFolders)}</>}
+        sharedExpanded={sharedExpanded}
+        onToggleShared={() => setSharedExpanded(prev => !prev)}
+      />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Top Header */}
-        <div className="bg-white border-b border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            {/* Search Bar */}
-            <div className="flex items-center space-x-4 flex-1">
-              <div className="relative max-w-md">
-                <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search folder or file"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                Search
-              </button>
-            </div>
-
-            {/* Right Side Icons */}
-            <div className="flex items-center space-x-3">
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <HelpCircle size={20} className="text-gray-600" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Settings size={20} className="text-gray-600" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell size={20} className="text-gray-600" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <User size={20} className="text-gray-600" />
-              </button>
-            </div>
-          </div>
-        </div>
-
+      <div className="flex-1 flex flex-col lg:ml-0">
         {/* Content Area */}
-        <div className="flex-1 p-6 bg-gray-50">
+        <div className="flex-1 p-3 md:p-4 lg:p-6 bg-gray-50">
           {/* Breadcrumb Navigation */}
           <div className="mb-4">
             <nav className="flex items-center space-x-2 text-sm">
               <button 
                 onClick={() => dispatch(setCurrentFolder(null))}
-                className="text-blue-600 hover:text-blue-800 font-medium"
+                className="text-au-green hover:text-au-corporate-green font-medium"
               >
-                Root
+                {t('fileManager.homeFolder')}
               </button>
               {currentFolder && (
                 <>
-                  <span className="text-gray-400">/</span>
-                  <span className="text-gray-600">
+                  <span className="text-au-grey-text/40">/</span>
+                  <span className="text-au-grey-text">
                     {currentFolderData?.name || 'Current Folder'}
                   </span>
                 </>
@@ -458,144 +733,311 @@ export default function FileManager({
             </nav>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => setIsUploadModalOpen(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-              >
-                <Upload size={16} />
-                <span>Upload</span>
-              </button>
-              <button className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2">
-                <Plus size={16} />
-                <span>New file</span>
-                <ChevronDown size={14} />
-              </button>
-              <button 
-                onClick={() => setIsCreateFolderModalOpen(true)}
-                className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
-              >
-                <Folder size={16} />
-                <span>Create folder</span>
-              </button>
-              <button className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2">
-                <Upload size={16} />
-                <span>Request file</span>
-              </button>
-            </div>
+          {/* Action Buttons and View Options */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+            {/* Action Buttons - Hidden in picker mode */}
+            {mode !== 'picker' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button 
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="px-2.5 py-1.5 text-xs bg-au-green text-au-white rounded-lg hover:bg-au-corporate-green transition-colors flex items-center space-x-1.5"
+                >
+                  <Upload size={14} />
+                  <span className="hidden sm:inline">{t('fileManager.upload')}</span>
+                </button>
+                <button 
+                  onClick={() => setIsCreateFolderModalOpen(true)}
+                  className="px-2.5 py-1.5 text-xs bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1.5"
+                >
+                  <Folder size={14} />
+                  <span className="hidden sm:inline">{t('fileManager.createFolder')}</span>
+                </button>
+                <button 
+                  onClick={handleShareSelected}
+                  disabled={!hasSelectedFiles}
+                  className={cn(
+                    "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
+                    hasSelectedFiles 
+                      ? "hover:bg-au-green/10 hover:text-au-green hover:border-au-green cursor-pointer" 
+                      : "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Share2 size={14} />
+                  <span className="hidden sm:inline">{t('fileManager.share')}</span>
+                </button>
+                <button 
+                  onClick={handleMoveSelected}
+                  disabled={!hasSelectedFiles}
+                  className={cn(
+                    "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
+                    hasSelectedFiles 
+                      ? "hover:bg-au-gold/5 cursor-pointer" 
+                      : "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Move size={14} />
+                  <span className="hidden sm:inline">{t('fileManager.move')}</span>
+                </button>
+                <button 
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  disabled={!hasSelectedFiles}
+                  className={cn(
+                    "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
+                    hasSelectedFiles 
+                      ? "hover:bg-au-red/10 hover:text-au-red hover:border-au-red cursor-pointer" 
+                      : "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Trash2 size={14} />
+                  <span className="hidden sm:inline">{t('fileManager.delete')}</span>
+                </button>
+              </div>
+            )}
 
             {/* View and Sort Options */}
-            <div className="flex items-center space-x-3">
-              <select className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option>Sort by</option>
-                <option>Name</option>
-                <option>Date</option>
-                <option>Size</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              <div className="flex items-center gap-2">
+                <select
+                  className="px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-xs md:text-sm"
+                  value={sortKey}
+                  onChange={(e) => {
+                    const val = e.target.value as 'name' | 'date' | 'size';
+                    setSortKey(val);
+                  }}
+                >
+                  <option value="name">Name</option>
+                  <option value="date">Date</option>
+                  <option value="size">Size</option>
+                </select>
+                <button
+                  onClick={() => setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                  className="px-2 py-2 border border-gray-300 rounded-lg text-xs md:text-sm text-au-grey-text hover:bg-gray-100"
+                  aria-label="Toggle sort direction"
+                  title={`Sort ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+                >
+                  {sortDir === 'asc' ? 'ASC' : 'DESC'}
+                </button>
+              </div>
               <div className="flex items-center space-x-1">
-                <button className="p-2 rounded-lg transition-colors text-gray-400 hover:text-gray-600">
+                <button
+                  onClick={() => dispatch(setViewMode('grid'))}
+                  className={cn(
+                    'p-2 rounded-lg transition-colors',
+                    viewMode === 'grid' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
+                  )}
+                  aria-label="Grid view"
+                >
                   <Grid3X3 size={16} />
                 </button>
-                <button className="p-2 rounded-lg transition-colors bg-blue-100 text-blue-600">
+                <button
+                  onClick={() => dispatch(setViewMode('list'))}
+                  className={cn(
+                    'p-2 rounded-lg transition-colors',
+                    viewMode === 'list' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
+                  )}
+                  aria-label="List view"
+                >
                   <List size={16} />
                 </button>
               </div>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden md:block">
                 <HelpCircle size={16} className="text-gray-400" />
               </button>
             </div>
           </div>
 
-          {/* Recently Used Section */}
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recently used</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Recent Files Section */}
+          {recentFiles.length > 0 && (
+          <div className="mb-6 md:mb-8">
+            <h2 className="text-base md:text-lg font-semibold text-au-grey-text mb-3 md:mb-4">Recent Files</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
               {recentFiles.map((file) => (
-                <div key={file.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                <div
+                  key={file.id}
+                  className="relative bg-white rounded-lg border border-gray-200 p-2 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => handleFileClick(file)}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
                       {getFileIcon({
                         icon: file.mimeType.split('/')[0],
                         type: file.mimeType.split('/')[0]
                       })}
                     </div>
-                    <button className="p-1 hover:bg-gray-100 rounded">
-                      <MoreVertical size={14} className="text-gray-400" />
+                    <button
+                      className="p-0.5 hover:bg-gray-100 rounded"
+                      onClick={(e) => { e.stopPropagation(); setRecentMenuId(recentMenuId === file.id ? null : file.id); }}
+                      aria-label="More actions"
+                    >
+                      <MoreVertical size={12} className="text-gray-400" />
                     </button>
                   </div>
-                  <h3 className="text-sm font-medium text-gray-900 truncate mb-1">{file.originalName}</h3>
-                  <p className="text-xs text-gray-500">{file.mimeType.split('/')[0].toUpperCase()}, {formatFileSize(file.fileSize)}</p>
+                  <h3 className="text-xs font-medium text-gray-900 truncate mb-0.5">{file.originalName}</h3>
+                  <p className="text-[10px] text-gray-500">{file.mimeType.split('/')[0].toUpperCase()}, {formatFileSize(file.fileSize)}</p>
+
+                  {recentMenuId === file.id && (
+                    <div className="absolute right-2 top-8 z-10 w-32 bg-white border border-gray-200 rounded-md shadow-lg py-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                        onClick={() => {
+                          setRecentMenuId(null);
+                          // Share single file
+                          setShareFileId(file.id);
+                          setShareFolderId(null);
+                          setShareType('file');
+                          setIsShareModalOpen(true);
+                        }}
+                      >
+                        Share
+                      </button>
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                        onClick={() => {
+                          setRecentMenuId(null);
+                          selectSingle(file.id);
+                          setIsMoveModalOpen(true);
+                        }}
+                      >
+                        Move
+                      </button>
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 text-red-600"
+                        onClick={async () => {
+                          setRecentMenuId(null);
+                          selectSingle(file.id);
+                          setIsDeleteModalOpen(true);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
+          )}
 
           {/* All Files Section */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              {currentFolder ? `${currentFolderData?.name || 'Current Folder'} - Files` : 'Root folders and files'}
+            <h2 className="text-lg font-semibold text-au-grey-text mb-4">
+              {(() => {
+                // Build breadcrumb text: Home[/Shared with Me][/{folder}/{subfolder}]
+                const segments: string[] = ['Home'];
+                if (activeView === 'shared' && !currentFolder) {
+                  segments.push(t('fileManager.sharedWithMe'));
+                  return segments.join(' / ');
+                }
+                if (currentFolderData) {
+                  const pathNames: string[] = [];
+                  let cursor: any = currentFolderData;
+                  // Walk up via parentId using available trees (owned + shared)
+                  while (cursor) {
+                    pathNames.unshift(cursor.name);
+                    if (!cursor.parentId) break;
+                    cursor = findFolderById(folders, cursor.parentId) || findFolderById(sharedFolders, cursor.parentId);
+                    if (!cursor) break;
+                  }
+                  return `${segments.join(' / ')} / ${pathNames.join(' / ')}`;
+                }
+                return segments.join(' / ');
+              })()}
             </h2>
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {/* Empty state - show when no files or folders */}
+              {((currentFolder && currentFolderFiles.length === 0 && currentFolderSubfolders.length === 0) ||
+                (!currentFolder && rootFolders.length === 0 && rootFiles.length === 0)) ? (
+                <EmptyState 
+                  type={currentFolder ? 'folder' : 'root'}
+                  icon={currentFolder ? 'folder' : 'folderPlus'}
+                />
+              ) : (
+              <>
+              {viewMode === 'list' ? (
+                <>
               {/* Table Header */}
-              <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
-                <div className="grid grid-cols-12 gap-4 text-sm font-medium text-gray-700">
+                  <div className="bg-gray-50 px-3 md:px-6 py-2 border-b border-gray-200">
+                    <div className="grid grid-cols-12 gap-2 md:gap-4 text-xs font-medium text-au-grey-text">
                   <div className="col-span-1"></div>
-                  <div className="col-span-5">Name</div>
-                  <div className="col-span-2">Last modified</div>
-                  <div className="col-span-2">Size</div>
-                  <div className="col-span-2">Manage</div>
+                  <div className="col-span-5">{t('fileManager.name')}</div>
+                  <div className="col-span-2 hidden md:block">{t('fileManager.lastModified')}</div>
+                  <div className="col-span-2 hidden sm:block">{t('fileManager.size')}</div>
+                  <div className="col-span-2 sm:col-span-1">{t('fileManager.manage')}</div>
                 </div>
               </div>
 
               {/* Table Body - Scrollable */}
               <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
                 <div className="divide-y divide-gray-200">
-                  {allItems.map((item) => (
-                    <div key={item.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                      <div className="grid grid-cols-12 gap-4 items-center">
-                        <div className="col-span-1">
-                          <button 
-                            onClick={() => toggleFileSelection(item.id)}
-                            className="p-1 hover:bg-gray-200 rounded"
-                          >
-                            {selectedFileIds.has(item.id) ? (
-                              <CheckSquare size={16} className="text-blue-600" />
-                            ) : (
-                              <Square size={16} className="text-gray-400" />
-                            )}
-                          </button>
+                  {itemsSorted.map((item) => (
+                        <FileListRow
+                          key={item.id}
+                          item={item as any}
+                          selected={selectedFileIds.has(item.id)}
+                          onToggleSelect={(id) => toggleFileSelection(id)}
+                          onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
+                          onShare={(it) => {
+                            if (it.isFolder) {
+                              setShareFolderId(it.id);
+                              setShareFileId(null);
+                              setShareType('folder');
+                            } else {
+                              setShareFileId(it.id);
+                              setShareFolderId(null);
+                              setShareType('file');
+                            }
+                            setIsShareModalOpen(true);
+                          }}
+                          onMove={(it) => {
+                            const single = new Set<string>();
+                            single.add(it.id);
+                            setSelectedFileIds(single);
+                            setIsMoveModalOpen(true);
+                          }}
+                          icon={getFileIcon(item)}
+                        />
+                      ))}
                         </div>
-                        <div className="col-span-5 flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                            {getFileIcon(item)}
                           </div>
-                          <span 
-                            className="text-sm font-medium text-gray-900 truncate cursor-pointer hover:text-blue-600"
-                            onClick={() => item.isFolder ? handleFolderClick(item.data as FolderWithFiles) : handleFileClick(item.data as FileWithUrls)}
-                          >
-                            {item.name}
-                          </span>
-                        </div>
-                        <div className="col-span-2 text-sm text-gray-600">{item.lastModified}</div>
-                        <div className="col-span-2 text-sm text-gray-600">{item.size}</div>
-                        <div className="col-span-2 flex items-center space-x-2">
-                          <button className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors">
-                            Copy
-                          </button>
-                          <button className="p-1 hover:bg-gray-200 rounded">
-                            <Share2 size={14} className="text-gray-400" />
-                          </button>
-                          <button className="p-1 hover:bg-gray-200 rounded">
-                            <MoreVertical size={14} className="text-gray-400" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                </>
+              ) : (
+                <div className="p-2 md:p-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
+                    {itemsSorted.map((item) => (
+                      <FileGridCard
+                        key={item.id}
+                        item={item as any}
+                        selected={selectedFileIds.has(item.id)}
+                        onToggleSelect={(id) => toggleFileSelection(id)}
+                        onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
+                        onShare={(it) => {
+                          if (it.isFolder) {
+                            setShareFolderId(it.id);
+                            setShareFileId(null);
+                            setShareType('folder');
+                          } else {
+                            setShareFileId(it.id);
+                            setShareFolderId(null);
+                            setShareType('file');
+                          }
+                          setIsShareModalOpen(true);
+                        }}
+                        onMove={(it) => {
+                          const single = new Set<string>();
+                          single.add(it.id);
+                          setSelectedFileIds(single);
+                          setIsMoveModalOpen(true);
+                        }}
+                        icon={getFileIcon(item)}
+                      />
                   ))}
                 </div>
               </div>
+              )}
+              </>
+              )}
             </div>
           </div>
         </div>
@@ -615,6 +1057,107 @@ export default function FileManager({
         onClose={() => setIsCreateFolderModalOpen(false)}
         onCreate={handleFolderCreate}
         parentId={currentFolder || undefined}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleConfirmDelete}
+        count={selectedFileIds.size}
+      />
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => {
+          setIsShareModalOpen(false);
+          setShareFileId(null);
+          setShareFolderId(null);
+          setShareType(null);
+        }}
+        onShare={handleShare}
+        fileId={shareFileId || undefined}
+        folderId={shareFolderId || undefined}
+      />
+
+      <MoveModal
+        isOpen={isMoveModalOpen}
+        onClose={() => setIsMoveModalOpen(false)}
+        onConfirm={async (destinationFolderId) => {
+          try {
+            // Filter to only files (not folders)
+            const allItemsMap = new Map(allItems.map(item => [item.id, item]));
+            const selectedFiles = Array.from(selectedFileIds).filter(id => {
+              const item = allItemsMap.get(id);
+              return item && !item.isFolder;
+            });
+            
+            if (selectedFiles.length === 0) {
+              showWarning('Please select files (not folders) to move. Folders cannot be moved using this action.');
+              setIsMoveModalOpen(false);
+              return;
+            }
+            
+            // Use API client directly to move files
+            console.log('Moving files:', selectedFiles, 'to folder:', destinationFolderId);
+            const { apiClient } = await import('@/utils/apiClient');
+            const res = await apiClient.moveFiles(selectedFiles, destinationFolderId);
+            console.log('Move response:', res);
+            
+            if (res.success) {
+              const movedCount = res.data?.moved || 0;
+              console.log(`Successfully moved ${movedCount} file(s)`);
+              
+              if (movedCount === 0) {
+                showWarning('No files were moved. They may already be in the destination folder.');
+              } else {
+                showSuccess(`Moved ${movedCount} file(s)`);
+              }
+              
+              setSelectedFileIds(new Set());
+              // Always fetch from root to get the complete tree
+              await dispatch(fetchFolderTree(null));
+
+              // If at Home, refresh root files list as well
+              if (currentFolder === null) {
+                try {
+                  const res = await apiClient.getFiles(undefined);
+                  if (res.success && res.data?.files) {
+                    setRootFiles(res.data.files as FileWithUrls[]);
+                  }
+                } catch {}
+              }
+
+              // If viewing Shared, reload shared folders/files
+              if (activeView === 'shared') {
+                try {
+                  const filesRes = await apiClient.getSharedFiles();
+                  if (filesRes.success && filesRes.data?.files) {
+                    setSharedFiles(filesRes.data.files as FileWithUrls[]);
+                  }
+                  const foldersRes = await apiClient.getSharedFolders();
+                  if (foldersRes.success && foldersRes.data?.folders) {
+                    const foldersWithFiles: FolderWithFiles[] = foldersRes.data.folders.map((folder: any) => ({
+                      ...folder,
+                      files: [],
+                      subfolders: []
+                    }));
+                    setSharedFolders(foldersWithFiles);
+                  }
+                } catch {}
+              }
+
+              // Close modal after successful refresh
+              setIsMoveModalOpen(false);
+            } else {
+              console.error('Move failed:', res.error);
+              showWarning(`${t('errors.failedToMoveFiles')}: ${res.error?.message || t('errors.unknownError')}`);
+            }
+          } catch (e) {
+            console.error('Move files failed', e);
+            showWarning(`${t('errors.failedToMoveFiles')}: ${e instanceof Error ? e.message : t('errors.unknownError')}`);
+          }
+        }}
+        folders={folders}
       />
 
       {/* File Preview Modal */}

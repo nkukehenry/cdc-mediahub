@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Download, Eye, FileIcon, Image, FileText, Video, Music, Archive, File, FileSpreadsheet, FileCode } from 'lucide-react';
 import { FileWithUrls } from '@/types/fileManager';
 import { cn, formatFileSize, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
+import { useTranslation } from '@/hooks/useTranslation';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface FilePreviewModalProps {
   isOpen: boolean;
@@ -13,42 +16,117 @@ interface FilePreviewModalProps {
 }
 
 export default function FilePreviewModal({ isOpen, onClose, file, className }: FilePreviewModalProps) {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Fetch file with auth headers and create blob URL
   useEffect(() => {
     if (isOpen && file) {
       setError(null);
       setIsLoading(true);
-      
-      // Simulate loading for better UX
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, file]);
 
-  const handleDownload = () => {
-    if (file?.downloadUrl) {
-      window.open(file.downloadUrl, '_blank');
+      const fetchFile = async () => {
+        try {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+          if (!token) {
+            setError(t('errors.authenticationRequired'));
+            setIsLoading(false);
+            return;
+          }
+
+          const response = await fetch(`${API_BASE_URL}/api/files/${file.id}/download`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`${t('errors.failedToLoadFile')}: ${response.statusText}`);
+          }
+
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          
+          // Clean up previous blob URL
+          if (blobUrlRef.current) {
+            URL.revokeObjectURL(blobUrlRef.current);
+          }
+          
+          blobUrlRef.current = url;
+          setBlobUrl(url);
+          setIsLoading(false);
+        } catch (err) {
+          console.error('Failed to fetch file for preview:', err);
+          setError(err instanceof Error ? err.message : t('errors.failedToLoadFile'));
+          setIsLoading(false);
+        }
+      };
+
+      fetchFile();
+
+      // Cleanup blob URL on unmount or file change
+      return () => {
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        setBlobUrl(null);
+      };
+    }
+  }, [isOpen, file?.id]);
+
+  const handleDownload = async () => {
+    if (!file) return;
+    
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+      if (!token) {
+        setError(t('errors.authenticationRequired'));
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/files/${file.id}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(t('errors.downloadFailed'));
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.originalName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed:', err);
+      setError(err instanceof Error ? err.message : t('errors.downloadFailed'));
     }
   };
 
   const getFileIcon = () => {
     if (!file) return <FileIcon size={48} className="text-gray-400" />;
     
-    if (isImageFile(file.mimeType)) return <Image size={48} className="text-blue-500" />;
-    if (isVideoFile(file.mimeType)) return <Video size={48} className="text-purple-500" />;
-    if (isAudioFile(file.mimeType)) return <Music size={48} className="text-green-500" />;
-    if (isPdfFile(file.mimeType)) return <FileText size={48} className="text-red-500" />;
-    if (isWordDocument(file.mimeType)) return <FileText size={48} className="text-blue-600" />;
-    if (isExcelDocument(file.mimeType)) return <FileSpreadsheet size={48} className="text-green-600" />;
-    if (isTextFile(file.mimeType)) return <FileCode size={48} className="text-gray-600" />;
-    if (isArchiveFile(file.mimeType)) return <Archive size={48} className="text-orange-500" />;
+    if (isImageFile(file.mimeType)) return <Image size={48} className="text-au-green" />;
+    if (isVideoFile(file.mimeType)) return <Video size={48} className="text-au-green" />;
+    if (isAudioFile(file.mimeType)) return <Music size={48} className="text-au-green" />;
+    if (isPdfFile(file.mimeType)) return <FileText size={48} className="text-au-red" />;
+    if (isWordDocument(file.mimeType)) return <FileText size={48} className="text-au-green" />;
+    if (isExcelDocument(file.mimeType)) return <FileSpreadsheet size={48} className="text-au-green" />;
+    if (isTextFile(file.mimeType)) return <FileCode size={48} className="text-au-grey-text" />;
+    if (isArchiveFile(file.mimeType)) return <Archive size={48} className="text-au-gold" />;
     
-    return <FileIcon size={48} className="text-gray-400" />;
+    return <FileIcon size={48} className="text-au-grey-text/50" />;
   };
 
   // File type detection functions
@@ -63,7 +141,26 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     return mimeType.includes('excel') || 
            mimeType.includes('spreadsheet') ||
            mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-           mimeType === 'application/vnd.ms-excel';
+           mimeType === 'application/vnd.ms-excel' ||
+           mimeType === 'application/vnd.oasis.opendocument.spreadsheet';
+  };
+
+  const isPowerPointDocument = (mimeType: string) => {
+    return mimeType.includes('powerpoint') ||
+           mimeType.includes('presentation') ||
+           mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+           mimeType === 'application/vnd.ms-powerpoint' ||
+           mimeType === 'application/vnd.oasis.opendocument.presentation';
+  };
+
+  const isOfficeDocument = (mimeType: string) => {
+    return isWordDocument(mimeType) || 
+           isExcelDocument(mimeType) || 
+           isPowerPointDocument(mimeType) ||
+           mimeType === 'application/vnd.oasis.opendocument.text' ||
+           mimeType === 'application/rtf' ||
+           mimeType === 'application/msword' ||
+           mimeType === 'application/vnd.ms-office';
   };
 
   const isTextFile = (mimeType: string) => {
@@ -87,43 +184,41 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
   const renderPreview = () => {
     if (!file) return null;
 
-    console.log('FilePreviewModal - Rendering preview for file:', file);
-    console.log('File mimeType:', file.mimeType);
-    console.log('Is image file:', isImageFile(file.mimeType));
-    console.log('Download URL:', file.downloadUrl);
-
     if (isLoading) {
       return (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-green"></div>
         </div>
       );
     }
 
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+        <div className="flex flex-col items-center justify-center h-64 text-au-grey-text">
           {getFileIcon()}
           <p className="text-sm mt-4">Preview not available</p>
-          <p className="text-xs text-gray-400 mt-1">{error}</p>
+          <p className="text-xs text-au-grey-text/50 mt-1">{error}</p>
         </div>
       );
     }
 
+    // Wait for blob URL to be ready
+    if (!blobUrl) {
+      return null;
+    }
+
     // Image preview
     if (isImageFile(file.mimeType)) {
-      console.log('Rendering image preview with URL:', file.downloadUrl);
       return (
-        <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg overflow-hidden">
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden", isFullscreen ? "w-full h-full" : "h-64") }>
           <img
-            src={file.downloadUrl}
+            src={blobUrl}
             alt={file.originalName}
-            className="max-w-full max-h-full object-contain"
+            className={cn(isFullscreen ? "w-full h-full object-contain" : "max-w-full max-h-full object-contain")}
             onError={(e) => {
               console.error('Image load error:', e);
-              setError('Failed to load image');
+              setError(t('errors.failedToLoadImage'));
             }}
-            onLoad={() => console.log('Image loaded successfully')}
           />
         </div>
       );
@@ -132,13 +227,13 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Video preview
     if (isVideoFile(file.mimeType)) {
       return (
-        <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "w-full h-full" : "h-96") }>
           <video
             controls
-            className="max-w-full max-h-full"
-            onError={() => setError('Failed to load video')}
+            className={cn(isFullscreen ? "w-full h-full" : "max-w-full max-h-full")}
+            onError={() => setError(t('errors.failedToLoadVideo'))}
           >
-            <source src={file.downloadUrl} type={file.mimeType} />
+            <source src={blobUrl} type={file.mimeType} />
             Your browser does not support the video tag.
           </video>
         </div>
@@ -148,54 +243,66 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Audio preview
     if (isAudioFile(file.mimeType)) {
       return (
-        <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "h-full" : "h-32 py-8") }>
           <audio
             controls
-            className="w-full"
-            onError={() => setError('Failed to load audio')}
+            className={cn(isFullscreen ? "w-full" : "w-full max-w-md")}
+            onError={() => setError(t('errors.failedToLoadAudio'))}
           >
-            <source src={file.downloadUrl} type={file.mimeType} />
+            <source src={blobUrl} type={file.mimeType} />
             Your browser does not support the audio tag.
           </audio>
         </div>
       );
     }
 
-    // PDF preview (using iframe)
+    // PDF preview (using iframe with blob URL) - larger for documents
     if (isPdfFile(file.mimeType)) {
       return (
-        <div className="h-64 bg-gray-50 rounded-lg overflow-hidden">
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
           <iframe
-            src={`${file.downloadUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-            className="w-full h-full"
-            onError={() => setError('Failed to load PDF')}
+            src={`${blobUrl}#toolbar=1&navpanes=1&scrollbar=1`}
+            className={cn("w-full h-full")}
+            onError={() => setError(t('errors.failedToLoadPdf'))}
+            title="PDF Preview"
           />
         </div>
       );
     }
 
-    // Text file preview
+    // Text file preview - larger for documents
     if (isTextFile(file.mimeType)) {
       return (
-        <div className="h-64 bg-gray-50 rounded-lg overflow-hidden">
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
           <iframe
-            src={file.downloadUrl}
-            className="w-full h-full"
-            onError={() => setError('Failed to load text file')}
+            src={blobUrl}
+            className={cn("w-full h-full")}
+            onError={() => setError(t('errors.failedToLoadTextFile'))}
+            title="Text File Preview"
           />
         </div>
       );
     }
 
-    // Word/Excel documents - use Office Online viewer
-    if (isWordDocument(file.mimeType) || isExcelDocument(file.mimeType)) {
-      const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.downloadUrl)}`;
+    // Office documents (Word, Excel, PowerPoint) - use Google Docs viewer with preview URL
+    if (isOfficeDocument(file.mimeType)) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+      if (!token) {
+        setError(t('errors.authenticationRequired'));
+        return null;
+      }
+
+      // Use preview endpoint with token for Google Docs viewer
+      const previewUrl = `${API_BASE_URL}/api/files/${file.id}/preview?token=${encodeURIComponent(token)}`;
+      const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(previewUrl)}&embedded=true`;
+      
       return (
-        <div className="h-64 bg-gray-50 rounded-lg overflow-hidden">
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
           <iframe
-            src={officeViewerUrl}
-            className="w-full h-full"
-            onError={() => setError('Failed to load document')}
+            src={googleViewerUrl}
+            className={cn("w-full h-full")}
+            onError={() => setError(t('errors.documentPreviewNotSupported'))}
+            title="Document Preview"
           />
         </div>
       );
@@ -216,13 +323,24 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
         {getFileIcon()}
-        <p className="text-sm mt-4">Preview not available</p>
-        <p className="text-xs text-gray-400 mt-1">Click download to view this file</p>
+        <p className="text-sm mt-4">{t('modals.previewNotAvailable')}</p>
+        <p className="text-xs text-gray-400 mt-1">{t('modals.downloadToView')}</p>
       </div>
     );
   };
 
   if (!isOpen || !file) return null;
+
+  // Determine if this is a document type that needs larger modal
+  const isDocumentType = isPdfFile(file.mimeType) || 
+                         isTextFile(file.mimeType) || 
+                         isOfficeDocument(file.mimeType);
+  
+  const modalSizeClass = isFullscreen
+    ? "w-screen h-screen max-w-none max-h-none m-0"
+    : (isDocumentType 
+      ? "max-w-5xl w-full mx-4 max-h-[100vh]"
+      : "max-w-2xl w-full mx-4 max-h-[95vh]");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -233,57 +351,69 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
       />
       
       {/* Modal */}
-      <div className={cn("relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden", className)}>
+      <div className={cn("relative bg-white", isFullscreen ? 'rounded-none flex flex-col' : 'rounded-lg', "shadow-xl", modalSizeClass, className, "overflow-hidden")}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
-            <Eye size={24} className="text-blue-600" />
+            <Eye size={24} className="text-au-green" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">File Preview</h2>
-              <p className="text-sm text-gray-500">{file.originalName}</p>
+              <h2 className="text-xl font-semibold text-au-grey-text">File Preview</h2>
+              <p className="text-sm text-au-grey-text/70">{file.originalName}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X size={20} className="text-gray-500" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsFullscreen(prev => !prev)}
+              className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-au-grey-text hover:bg-gray-50"
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className={cn(isFullscreen ? "h-[calc(100vh-80px)] overflow-auto p-0" : "p-6") }>
           {/* Preview Area */}
-          <div className="mb-6">
+          <div className={cn(isFullscreen ? "h-full" : "mb-6") }>
             {renderPreview()}
           </div>
 
           {/* File Information */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">File Information</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Name:</span>
-                <p className="font-medium text-gray-900 truncate" title={file.originalName}>
-                  {file.originalName}
-                </p>
-              </div>
-              <div>
-                <span className="text-gray-500">Size:</span>
-                <p className="font-medium text-gray-900">{formatFileSize(file.fileSize)}</p>
-              </div>
-              <div>
-                <span className="text-gray-500">Type:</span>
-                <p className="font-medium text-gray-900">{file.mimeType}</p>
-              </div>
-              <div>
-                <span className="text-gray-500">Created:</span>
-                <p className="font-medium text-gray-900">
-                  {new Date(file.createdAt).toLocaleDateString()}
-                </p>
+          {!isFullscreen && (
+            <div className="bg-gray-50 rounded-lg p-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1 text-xs">
+                <div>
+                  <span className="text-au-grey-text/60">Name:</span>
+                  <p className="font-medium text-au-grey-text truncate" title={file.originalName}>
+                    {file.originalName}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-au-grey-text/60">Size:</span>
+                  <p className="font-medium text-au-grey-text">{formatFileSize(file.fileSize)}</p>
+                </div>
+                <div>
+                  <span className="text-au-grey-text/60">Type:</span>
+                  <p className="font-medium text-au-grey-text truncate" title={file.mimeType}>
+                    {file.mimeType}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-au-grey-text/60">Created:</span>
+                  <p className="font-medium text-au-grey-text">
+                    {new Date(file.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -296,7 +426,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
           </button>
           <button
             onClick={handleDownload}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            className="px-4 py-2 text-sm font-medium text-au-white bg-au-green rounded-lg hover:bg-au-corporate-green transition-colors flex items-center"
           >
             <Download size={16} className="mr-2" />
             Download

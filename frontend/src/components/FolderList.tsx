@@ -22,18 +22,18 @@ export default function FolderList({ folders, onDoubleClick, className }: Folder
             onDoubleClick={() => onDoubleClick(folder)}
             className="flex items-center p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
           >
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 transition-colors">
-              <Folder size={16} className="text-blue-600" />
+            <div className="w-8 h-8 bg-au-gold/20 rounded-lg flex items-center justify-center mr-3 group-hover:bg-au-gold/30 transition-colors">
+              <Folder size={16} className="text-au-green" />
             </div>
             
             <div className="flex-1 min-w-0">
               <div className="flex items-center">
-                <span className="text-sm font-medium text-gray-900 truncate" title={folder.name}>
+                <span className="text-sm font-medium text-au-grey-text truncate" title={folder.name}>
                   {folder.name}
                 </span>
-                <ChevronRight size={14} className="text-gray-400 ml-2" />
+                <ChevronRight size={14} className="text-au-grey-text/40 ml-2" />
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-au-grey-text/70">
                 {folder.files.length} file{folder.files.length !== 1 ? 's' : ''}
                 {totalSize > 0 && ` • ${formatFileSize(totalSize)}`}
               </div>

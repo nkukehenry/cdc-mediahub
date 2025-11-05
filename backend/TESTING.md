@@ -95,7 +95,7 @@ Invoke-WebRequest -Uri http://localhost:3001/api/folders -Method POST -ContentTy
 
 ## Configuration
 
-Edit `config.env` to customize:
+Edit `.env` to customize:
 - `PORT` - Server port (default: 3001)
 - `UPLOAD_PATH` - File upload directory
 - `THUMBNAIL_PATH` - Thumbnail directory
@@ -103,6 +103,7 @@ Edit `config.env` to customize:
 - `ALLOWED_FILE_TYPES` - Comma-separated MIME types
 - `REDIS_HOST` - Redis server host
 - `REDIS_PORT` - Redis server port
+- `DATABASE_URL` - MySQL connection URL
 
 ## Testing Workflow
 
@@ -143,7 +144,7 @@ Edit `config.env` to customize:
 ### Server won't start
 - Check if port 3001 is available
 - Verify all dependencies are installed
-- Check `config.env` file exists
+- Check `.env` file exists (copy from `.env.example` if needed)
 
 ### File upload fails
 - Check file size limits

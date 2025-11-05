@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { FileManagerState, FileWithUrls, FolderWithFiles } from '@/types/fileManager';
+import { apiClient } from '@/utils/apiClient';
 
 // Default configuration
 const defaultConfig = {
@@ -14,103 +15,47 @@ const defaultConfig = {
   enableFileUpload: true,
 };
 
-// Helper functions
-const buildApiUrl = (endpoint: string, params?: Record<string, string>) => {
-  const baseUrl = defaultConfig.apiBaseUrl;
-  const url = new URL(`${baseUrl}${endpoint}`);
-  
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, value);
-    });
-  }
-  
-  return url.toString();
-};
-
-const handleApiError = (response: Response, operation: string) => {
-  if (!response.ok) {
-    throw new Error(`${operation} failed: ${response.statusText}`);
-  }
-};
-
-const createFormData = (file: File, folderId?: string) => {
-  const formData = new FormData();
-  formData.append('file', file);
-  if (folderId) formData.append('folderId', folderId);
-  return formData;
-};
-
-const createJsonBody = (data: Record<string, any>) => {
-  return JSON.stringify(data);
-};
-
-// Async thunks
+// Async thunks - using apiClient for authenticated requests
 export const fetchFolderTree = createAsyncThunk(
   'fileManager/fetchFolderTree',
   async (parentId: string | null = null) => {
-    const endpoint = '/api/folders/tree';
-    const params = parentId ? { parentId } : undefined;
-    const url = buildApiUrl(endpoint, params);
-    
-    const response = await fetch(url);
-    handleApiError(response, 'Fetch folders');
-    
-    const data = await response.json();
-    return data.data.folders;
+    const response = await apiClient.getFolderTree(parentId || undefined);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || 'Failed to fetch folder tree');
+    }
+    return response.data.folders as FolderWithFiles[];
   }
 );
 
 export const uploadFile = createAsyncThunk(
   'fileManager/uploadFile',
   async ({ file, folderId }: { file: File; folderId?: string }) => {
-    const endpoint = '/api/files/upload';
-    const url = buildApiUrl(endpoint);
-    const formData = createFormData(file, folderId);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-    });
-    
-    handleApiError(response, 'Upload');
-    
-    const data = await response.json();
-    return data.data.file;
+    const response = await apiClient.uploadFile(file, folderId);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || 'Upload failed');
+    }
+    return response.data.file as FileWithUrls;
   }
 );
 
 export const createFolder = createAsyncThunk(
   'fileManager/createFolder',
   async ({ name, parentId }: { name: string; parentId?: string }) => {
-    const endpoint = '/api/folders';
-    const url = buildApiUrl(endpoint);
-    const body = createJsonBody({ name, parentId });
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
-    
-    handleApiError(response, 'Create folder');
-    
-    const data = await response.json();
-    return data.data.folder;
+    const response = await apiClient.createFolder(name, parentId);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || 'Create folder failed');
+    }
+    return response.data.folder;
   }
 );
 
 export const deleteFile = createAsyncThunk(
   'fileManager/deleteFile',
   async (fileId: string) => {
-    const endpoint = `/api/files/${fileId}`;
-    const url = buildApiUrl(endpoint);
-    
-    const response = await fetch(url, {
-      method: 'DELETE',
-    });
-    
-    handleApiError(response, 'Delete file');
+    const response = await apiClient.deleteFile(fileId);
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Delete file failed');
+    }
     return fileId;
   }
 );
@@ -118,14 +63,10 @@ export const deleteFile = createAsyncThunk(
 export const deleteFolder = createAsyncThunk(
   'fileManager/deleteFolder',
   async (folderId: string) => {
-    const endpoint = `/api/folders/${folderId}`;
-    const url = buildApiUrl(endpoint);
-    
-    const response = await fetch(url, {
-      method: 'DELETE',
-    });
-    
-    handleApiError(response, 'Delete folder');
+    const response = await apiClient.deleteFolder(folderId);
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Delete folder failed');
+    }
     return folderId;
   }
 );
@@ -133,15 +74,22 @@ export const deleteFolder = createAsyncThunk(
 export const searchFiles = createAsyncThunk(
   'fileManager/searchFiles',
   async (query: string) => {
-    const endpoint = '/api/files/search';
-    const params = { q: query };
-    const url = buildApiUrl(endpoint, params);
-    
-    const response = await fetch(url);
-    handleApiError(response, 'Search');
-    
-    const data = await response.json();
-    return data.data.files;
+    const response = await apiClient.searchFiles(query);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || 'Search failed');
+    }
+    return response.data.files as FileWithUrls[];
+  }
+);
+
+export const moveFiles = createAsyncThunk(
+  'fileManager/moveFiles',
+  async ({ fileIds, destinationFolderId }: { fileIds: string[]; destinationFolderId: string | null }) => {
+    const response = await apiClient.moveFiles(fileIds, destinationFolderId);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || 'Move files failed');
+    }
+    return response.data.moved as number;
   }
 );
 
@@ -150,7 +98,7 @@ const initialState: FileManagerState = {
   folders: [],
   currentFolder: null,
   currentPath: [],
-  viewMode: 'grid',
+  viewMode: 'list',
   loading: false,
   error: null,
   selectedFiles: [],
@@ -198,6 +146,10 @@ const fileManagerSlice = createSlice({
     },
     clearError: (state) => {
       state.error = null;
+    },
+    setFoldersSilently: (state, action: PayloadAction<FolderWithFiles[]>) => {
+      state.folders = action.payload;
+      // Don't set loading or error - this is a silent update
     },
   },
   extraReducers: (builder) => {
@@ -281,6 +233,18 @@ const fileManagerSlice = createSlice({
       .addCase(searchFiles.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Search failed';
+      })
+      // Move files
+      .addCase(moveFiles.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(moveFiles.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(moveFiles.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Move files failed';
       });
   },
 });
@@ -290,6 +254,7 @@ export const {
   setCurrentPath,
   setViewMode,
   setSelectedFiles,
+  setFoldersSilently,
   toggleFileSelection,
   clearSelection,
   setSearchQuery,

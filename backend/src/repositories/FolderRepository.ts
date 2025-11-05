@@ -11,11 +11,24 @@ export class FolderRepository implements IFolderRepository {
     try {
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
+      const dataWithOwner = folderData as any;
+      // Inherit public flag from parent if parent is public
+      let isPublic = 0;
+      if (folderData.parentId) {
+        const parent = await DatabaseUtils.findOne<any>(
+          'SELECT is_public FROM folders WHERE id = ?',
+          [folderData.parentId]
+        );
+        if (parent && (parent.is_public ?? 0) === 1) {
+          isPublic = 1;
+        }
+      }
       
       const folder: FolderEntity = {
         id,
         name: folderData.name,
         parentId: folderData.parentId,
+        userId: dataWithOwner.userId,
         createdAt: new Date(now),
         updatedAt: new Date(now)
       };
@@ -24,6 +37,8 @@ export class FolderRepository implements IFolderRepository {
         id: folder.id,
         name: folder.name,
         parent_id: folder.parentId,
+        user_id: folder.userId,
+        is_public: isPublic,
         created_at: now,
         updated_at: now
       });
@@ -66,7 +81,10 @@ export class FolderRepository implements IFolderRepository {
 
       if (parentId === null || parentId === undefined) {
         // Query for root folders (parent_id IS NULL OR parent_id = '')
-        query = 'SELECT * FROM folders WHERE parent_id IS NULL OR parent_id = ? ORDER BY name';
+        // Ensure 'Public' folder is always at the top
+        query = `SELECT * FROM folders 
+                 WHERE (parent_id IS NULL OR parent_id = ?)
+                 ORDER BY CASE WHEN name = 'Public' THEN 0 ELSE 1 END, name`;
         params = [''];
       } else {
         // Query for subfolders
@@ -79,6 +97,39 @@ export class FolderRepository implements IFolderRepository {
     } catch (error) {
       this.logger.error('Failed to find folders by parent', error as Error, { parentId });
       throw this.errorHandler.createDatabaseError('Failed to find folders by parent', 'select', 'folders');
+    }
+  }
+
+  // Find folders accessible to a user (owned by user OR shared with user)
+  async findByParentForUser(parentId: string | null, userId: string): Promise<FolderEntity[]> {
+    try {
+      let query: string;
+      let params: any[];
+
+      if (parentId === null || parentId === undefined) {
+        // Query for root folders: owned by user OR shared with user OR public
+        // Ensure 'Public' folder is always at the top
+        query = `SELECT DISTINCT f.* FROM folders f
+                 LEFT JOIN folder_shares fs ON f.id = fs.folder_id AND fs.shared_with_user_id = ?
+                 WHERE (f.parent_id IS NULL)
+                 AND (f.user_id = ? OR fs.shared_with_user_id = ? OR IFNULL(f.is_public, 0) = 1)
+                 ORDER BY CASE WHEN f.name = 'Public' THEN 0 ELSE 1 END, f.name`;
+        params = [userId, userId, userId];
+      } else {
+        // Query for subfolders: owned by user OR shared with user OR public
+        query = `SELECT DISTINCT f.* FROM folders f
+                 LEFT JOIN folder_shares fs ON f.id = fs.folder_id AND fs.shared_with_user_id = ?
+                 WHERE f.parent_id = ? 
+                 AND (f.user_id = ? OR fs.shared_with_user_id = ? OR IFNULL(f.is_public, 0) = 1)
+                 ORDER BY f.name`;
+        params = [userId, parentId, userId, userId];
+      }
+
+      const folders = await DatabaseUtils.findMany<any>(query, params);
+      return folders.map(folder => this.mapToFolderEntity(folder));
+    } catch (error) {
+      this.logger.error('Failed to find folders by parent for user', error as Error, { parentId, userId });
+      throw this.errorHandler.createDatabaseError('Failed to find folders by parent for user', 'select', 'folders');
     }
   }
 
@@ -146,6 +197,7 @@ export class FolderRepository implements IFolderRepository {
       id: dbFolder.id,
       name: dbFolder.name,
       parentId: dbFolder.parent_id,
+      userId: dbFolder.user_id,
       createdAt: new Date(dbFolder.created_at),
       updatedAt: new Date(dbFolder.updated_at)
     };

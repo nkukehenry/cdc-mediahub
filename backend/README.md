@@ -29,7 +29,7 @@ npm install
 
 ### Configuration
 
-Copy `config.env` and update the configuration:
+Copy `.env.example` to `.env` and update the configuration:
 
 ```env
 PORT=3001

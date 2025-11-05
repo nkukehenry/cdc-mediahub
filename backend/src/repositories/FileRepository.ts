@@ -7,10 +7,21 @@ export class FileRepository implements IFileRepository {
   private logger = getLogger('FileRepository');
   private errorHandler = getErrorHandler();
 
-  async create(fileData: CreateFileData): Promise<FileEntity> {
+  async create(fileData: CreateFileData, userId?: string, accessType: string = 'private'): Promise<FileEntity> {
     try {
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
+      // Files within a public folder must be public
+      let effectiveAccessType = accessType;
+      if (fileData.folderId) {
+        const parentFolder = await DatabaseUtils.findOne<any>(
+          'SELECT is_public FROM folders WHERE id = ?',
+          [fileData.folderId]
+        );
+        if (parentFolder && (parentFolder.is_public ?? 0) === 1) {
+          effectiveAccessType = 'public';
+        }
+      }
       
       const file: FileEntity = {
         id,
@@ -21,6 +32,8 @@ export class FileRepository implements IFileRepository {
         fileSize: fileData.fileSize,
         mimeType: fileData.mimeType,
         folderId: fileData.folderId,
+        userId,
+        accessType: effectiveAccessType as any,
         createdAt: new Date(now),
         updatedAt: new Date(now)
       };
@@ -34,6 +47,8 @@ export class FileRepository implements IFileRepository {
         file_size: file.fileSize,
         mime_type: file.mimeType,
         folder_id: file.folderId,
+        user_id: file.userId,
+        access_type: file.accessType || 'private',
         created_at: now,
         updated_at: now
       });
@@ -43,7 +58,7 @@ export class FileRepository implements IFileRepository {
         values
       );
 
-      this.logger.debug('File created', { fileId: id });
+      this.logger.debug('File created', { fileId: id, userId });
       return file;
     } catch (error) {
       this.logger.error('Failed to create file', error as Error);
@@ -94,8 +109,20 @@ export class FileRepository implements IFileRepository {
 
   async update(id: string, data: Partial<FileEntity>): Promise<FileEntity> {
     try {
+      // Map camelCase entity fields to snake_case DB columns
+      const mapped: any = {};
+      if (data.filename !== undefined) mapped.filename = data.filename;
+      if (data.originalName !== undefined) mapped.original_name = data.originalName;
+      if (data.filePath !== undefined) mapped.file_path = data.filePath;
+      if (data.thumbnailPath !== undefined) mapped.thumbnail_path = data.thumbnailPath;
+      if (data.fileSize !== undefined) mapped.file_size = data.fileSize;
+      if (data.mimeType !== undefined) mapped.mime_type = data.mimeType;
+      if (data.folderId !== undefined) mapped.folder_id = data.folderId;
+      if (data.userId !== undefined) mapped.user_id = data.userId;
+      if (data.accessType !== undefined) mapped.access_type = data.accessType;
+
       const updateData = {
-        ...data,
+        ...mapped,
         updated_at: DatabaseUtils.getCurrentTimestamp()
       };
 
@@ -122,12 +149,12 @@ export class FileRepository implements IFileRepository {
 
   async delete(id: string): Promise<boolean> {
     try {
-      const result = await DatabaseUtils.executeQuery(
+      await DatabaseUtils.executeQuery(
         'DELETE FROM files WHERE id = ?',
         [id]
       );
-
-      const deleted = result.changes > 0;
+      const changeRow = await DatabaseUtils.findOne<any>('SELECT changes() AS changes');
+      const deleted = (changeRow?.changes ?? 0) > 0;
       this.logger.debug('File delete attempt', { fileId: id, deleted });
       return deleted;
     } catch (error) {
@@ -159,6 +186,8 @@ export class FileRepository implements IFileRepository {
       fileSize: dbFile.file_size,
       mimeType: dbFile.mime_type,
       folderId: dbFile.folder_id,
+      userId: dbFile.user_id,
+      accessType: dbFile.access_type,
       createdAt: new Date(dbFile.created_at),
       updatedAt: new Date(dbFile.updated_at)
     };

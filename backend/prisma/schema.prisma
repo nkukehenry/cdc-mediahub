@@ -1,0 +1,290 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(uuid())
+  username      String        @unique
+  email         String        @unique
+  password      String
+  firstName     String?       @map("first_name")
+  lastName      String?       @map("last_name")
+  avatar        String?
+  isActive      Boolean       @default(true) @map("is_active")
+  language      String        @default("en")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at")
+  fileShares    FileShare[]
+  files         File[]
+  folderShares  FolderShare[]
+  folders       Folder[]
+  authoredPosts PostAuthor[]
+  views         PostView[]
+  approvedPosts Post[]        @relation("PostApprover")
+  createdPosts  Post[]        @relation("PostCreator")
+  roles         UserRole[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Folder {
+  id         String        @id @default(uuid())
+  name       String
+  parentId   String?       @map("parent_id")
+  userId     String?       @map("user_id")
+  accessType String?       @default("private") @map("access_type")
+  isPublic   Boolean       @default(false) @map("is_public")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @default(now()) @updatedAt @map("updated_at")
+  files      File[]
+  shares     FolderShare[]
+  parent     Folder?       @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children   Folder[]      @relation("FolderHierarchy")
+  user       User?         @relation(fields: [userId], references: [id])
+
+  @@map("folders")
+}
+
+model File {
+  id            String           @id @default(uuid())
+  filename      String           @map("filename")
+  originalName  String           @map("original_name")
+  filePath      String           @map("file_path")
+  thumbnailPath String?          @map("thumbnail_path")
+  fileSize      BigInt           @map("file_size")
+  mimeType      String           @map("mime_type")
+  folderId      String?          @map("folder_id")
+  userId        String?          @map("user_id")
+  accessType    String?          @default("private") @map("access_type")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @default(now()) @updatedAt @map("updated_at")
+  shares        FileShare[]
+  folder        Folder?          @relation(fields: [folderId], references: [id])
+  user          User?            @relation(fields: [userId], references: [id])
+  attachments   PostAttachment[]
+
+  @@map("files")
+}
+
+model FileShare {
+  id               String   @id @default(uuid())
+  fileId           String   @map("file_id")
+  sharedWithUserId String?  @map("shared_with_user_id")
+  accessLevel      String?  @default("read") @map("access_level")
+  createdAt        DateTime @default(now()) @map("created_at")
+  sharedWithUser   User?    @relation(fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  file             File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("file_shares")
+}
+
+model FolderShare {
+  id               String   @id @default(uuid())
+  folderId         String   @map("folder_id")
+  sharedWithUserId String?  @map("shared_with_user_id")
+  accessLevel      String?  @default("write") @map("access_level")
+  createdAt        DateTime @default(now()) @map("created_at")
+  sharedWithUser   User?    @relation(fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  folder           Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@map("folder_shares")
+}
+
+model Category {
+  id            String                @id @default(uuid())
+  name          String                @unique
+  slug          String                @unique
+  description   String?
+  coverImage    String?               @map("cover_image")
+  showOnMenu    Boolean               @default(true) @map("show_on_menu")
+  menuOrder     Int                   @default(0) @map("menu_order")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at")
+  subcategories CategorySubcategory[]
+  posts         Post[]
+
+  @@map("categories")
+}
+
+model Subcategory {
+  id          String                @id @default(uuid())
+  name        String
+  slug        String
+  description String?
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @default(now()) @updatedAt @map("updated_at")
+  categories  CategorySubcategory[]
+  posts       PostSubcategory[]
+
+  @@unique([name, slug])
+  @@map("subcategories")
+}
+
+model CategorySubcategory {
+  id            String      @id @default(uuid())
+  categoryId    String      @map("category_id")
+  subcategoryId String      @map("subcategory_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  subcategory   Subcategory @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  category      Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, subcategoryId])
+  @@map("category_subcategories")
+}
+
+model Post {
+  id              String            @id @default(uuid())
+  title           String
+  slug            String            @unique
+  description     String?           @db.Text
+  metaTitle       String?           @map("meta_title")
+  metaDescription String?           @db.Text
+  coverImage      String?           @map("cover_image")
+  categoryId      String            @map("category_id")
+  creatorId       String            @map("creator_id")
+  approvedById    String?           @map("approved_by")
+  status          String            @default("pending")
+  publicationDate DateTime?         @map("publication_date")
+  hasComments     Boolean           @default(true) @map("has_comments")
+  views           Int               @default(0)
+  uniqueHits      Int               @default(0) @map("unique_hits")
+  isFeatured      Boolean           @default(false) @map("is_featured")
+  isLeaderboard   Boolean           @default(false) @map("is_leaderboard")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at")
+  attachments     PostAttachment[]
+  authors         PostAuthor[]
+  subcategories   PostSubcategory[]
+  views_history   PostView[]
+  approvedBy      User?             @relation("PostApprover", fields: [approvedById], references: [id])
+  creator         User              @relation("PostCreator", fields: [creatorId], references: [id])
+  category        Category          @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@index([creatorId])
+  @@index([status])
+  @@index([isFeatured])
+  @@index([isLeaderboard])
+  @@index([publicationDate])
+  @@map("posts")
+}
+
+model PostSubcategory {
+  id            String      @id @default(uuid())
+  postId        String      @map("post_id")
+  subcategoryId String      @map("subcategory_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  subcategory   Subcategory @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  post          Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, subcategoryId])
+  @@map("post_subcategories")
+}
+
+model PostAttachment {
+  id           String   @id @default(uuid())
+  postId       String   @map("post_id")
+  fileId       String   @map("file_id")
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  file         File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, fileId])
+  @@map("post_attachments")
+}
+
+model PostAuthor {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  authorId  String   @map("author_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, authorId])
+  @@map("post_authors")
+}
+
+model PostView {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String?  @map("user_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent") @db.Text
+  viewedAt  DateTime @default(now()) @map("viewed_at")
+  user      User?    @relation(fields: [userId], references: [id])
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@map("post_views")
+}
+
+model NavLink {
+  id        String   @id @default(uuid())
+  label     String
+  url       String?
+  route     String?
+  external  Boolean  @default(false)
+  order     Int      @default(0) @map("display_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("nav_links")
+}
