@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, TrendingUp, Layers, Settings, ChevronDown, Folder } from 'lucide-react';
+import { Home, TrendingUp, Layers, Settings, ChevronDown, Folder, Menu, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/fileUtils';
 import { apiClient } from '@/utils/apiClient';
@@ -23,6 +23,7 @@ export default function PublicSidebar() {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
     loadCategories();
@@ -69,16 +70,61 @@ export default function PublicSidebar() {
     ? categories 
     : categories.slice(0, 5);
 
+  // Close drawer when route changes on mobile
+  useEffect(() => {
+    setIsMobileDrawerOpen(false);
+  }, [pathname]);
+
   return (
-    <aside className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 overflow-y-auto">
-      {/* Logo */}
-      <div className="p-4">
-        <Link href="/">
-          <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            MDB
-          </span>
-        </Link>
-      </div>
+    <>
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileDrawerOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+        aria-label="Open menu"
+      >
+        <Menu className="w-6 h-6 text-gray-700" />
+      </button>
+
+      {/* Mobile Overlay */}
+      {isMobileDrawerOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileDrawerOpen(false)}
+        />
+      )}
+
+      {/* Sidebar/Drawer */}
+      <aside className={cn(
+        "fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 overflow-y-auto z-50",
+        "transform transition-transform duration-300 ease-in-out",
+        "lg:translate-x-0",
+        isMobileDrawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}>
+        {/* Mobile Header with Close Button */}
+        <div className="lg:hidden flex items-center justify-between p-4 border-b border-gray-200">
+          <Link href="/" onClick={() => setIsMobileDrawerOpen(false)}>
+            <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              MDB
+            </span>
+          </Link>
+          <button
+            onClick={() => setIsMobileDrawerOpen(false)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-6 h-6 text-gray-700" />
+          </button>
+        </div>
+
+        {/* Logo - Desktop only */}
+        <div className="hidden lg:block p-4">
+          <Link href="/">
+            <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              MDB
+            </span>
+          </Link>
+        </div>
 
       {/* Main Navigation */}
       <nav className="px-4 space-y-1 mb-4">

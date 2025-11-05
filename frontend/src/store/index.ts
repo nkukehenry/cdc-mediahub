@@ -3,6 +3,7 @@ import fileManagerReducer from './fileManagerSlice';
 import publicationsReducer from './publicationsSlice';
 import navLinksReducer from './navLinksSlice';
 import analyticsReducer from './analyticsSlice';
+import youtubeReducer from './youtubeSlice';
 import { errorMiddleware } from './middleware/errorMiddleware';
 
 export const store = configureStore({
@@ -11,6 +12,7 @@ export const store = configureStore({
     publications: publicationsReducer,
     navLinks: navLinksReducer,
     analytics: analyticsReducer,
+    youtube: youtubeReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

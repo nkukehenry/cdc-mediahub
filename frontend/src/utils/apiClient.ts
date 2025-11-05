@@ -525,6 +525,39 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // YouTube Live Events methods
+  async getYouTubeLiveEvents(): Promise<ApiResponse<{ events: Array<{
+    id: string;
+    title: string;
+    description: string;
+    thumbnailUrl: string;
+    channelTitle: string;
+    publishedAt: string;
+    scheduledStartTime?: string;
+    actualStartTime?: string;
+    actualEndTime?: string;
+    viewCount?: number;
+    concurrentViewers?: number;
+    videoUrl: string;
+    status: 'upcoming' | 'live' | 'completed';
+  }> }>> {
+    return this.request<{ events: Array<{
+      id: string;
+      title: string;
+      description: string;
+      thumbnailUrl: string;
+      channelTitle: string;
+      publishedAt: string;
+      scheduledStartTime?: string;
+      actualStartTime?: string;
+      actualEndTime?: string;
+      viewCount?: number;
+      concurrentViewers?: number;
+      videoUrl: string;
+      status: 'upcoming' | 'live' | 'completed';
+    }> }>('/api/public/youtube/live-events');
+  }
 }
 
 export const apiClient = new ApiClient();

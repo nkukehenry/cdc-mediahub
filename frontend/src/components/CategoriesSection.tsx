@@ -113,7 +113,7 @@ export default function CategoriesSection() {
               <h2 className="text-lg md:text-xl font-bold text-au-grey-text mb-3">
                 Browse Categories
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                 {[...Array(6)].map((_, i) => (
                   <div key={i} className="bg-gray-200 overflow-hidden animate-pulse aspect-[2/1]">
                     <div className="w-full h-full" />
@@ -143,7 +143,7 @@ export default function CategoriesSection() {
             <h2 className="text-lg md:text-xl font-bold text-au-grey-text mb-3">
               Browse Categories
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
               {categories.slice(0, 6).map((category, index) => (
                 <Link
                   key={category.id}

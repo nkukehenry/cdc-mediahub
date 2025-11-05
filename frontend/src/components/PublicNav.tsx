@@ -654,7 +654,6 @@ export default function PublicNav() {
                 categories.map((category) => {
                   const isCategoryOpen = openMegaMenu === category.id;
                   const hasSubcategories = category.subcategories.length > 0;
-                  const hasPublications = category.publications.length > 0;
 
                   return (
                     <div key={category.id} className="mb-2">
@@ -671,7 +670,7 @@ export default function PublicNav() {
                         >
                           {category.name.toUpperCase()}
                         </Link>
-                        {(hasSubcategories || hasPublications) && (
+                        {hasSubcategories && (
                           <button
                             onClick={() => setOpenMegaMenu(isCategoryOpen ? null : category.id)}
                             className="p-2 text-au-grey-text hover:bg-gray-100 rounded"
@@ -681,8 +680,8 @@ export default function PublicNav() {
                         )}
                       </div>
 
-                      {/* Mobile Mega Menu Content */}
-                      {isCategoryOpen && (hasSubcategories || hasPublications) && (
+                      {/* Mobile Mega Menu Content - Only show subcategories on mobile */}
+                      {isCategoryOpen && hasSubcategories && (
                         <div className="ml-4 mt-2 space-y-4 pb-2 border-l-2 border-gray-200 pl-4">
                           {/* Subcategories - Only show if there are subcategories */}
                           {hasSubcategories && (
@@ -707,52 +706,7 @@ export default function PublicNav() {
                             </div>
                           )}
 
-                          {/* Publications */}
-                          {hasPublications && (
-                            <div>
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Latest Publications</h4>
-                              <div className={cn(
-                                "grid gap-2",
-                                hasSubcategories ? "grid-cols-2" : "grid-cols-3"
-                              )}>
-                                {category.publications.map((publication) => (
-                                  <Link
-                                    key={publication.id}
-                                    href={`/publication/${publication.slug}`}
-                                    onClick={() => {
-                                      setIsMobileMenuOpen(false);
-                                      setOpenMegaMenu(null);
-                                    }}
-                                    className="group relative bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 aspect-[2/1]"
-                                  >
-                                    {/* Cover Image */}
-                                    <div className="relative w-full h-full overflow-hidden">
-                                      <img
-                                        src={getCoverImageUrl(publication.coverImage)}
-                                        alt={publication.title}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                        onError={(e) => {
-                                          const target = e.target as HTMLImageElement;
-                                          target.src = '/placeholder-image.jpg';
-                                        }}
-                                      />
-                                      
-                                      {/* Dark Overlay */}
-                                      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/50" />
 
-                                      {/* Content Overlay - Bottom */}
-                                      <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
-                                        {/* Title */}
-                                        <h4 className="text-xs font-bold text-white mb-1 line-clamp-2">
-                                          {publication.title}
-                                        </h4>
-                                      </div>
-                                    </div>
-                                  </Link>
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>

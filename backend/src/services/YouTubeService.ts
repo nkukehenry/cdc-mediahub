@@ -121,24 +121,61 @@ export class YouTubeService {
       }
 
       // Search for live videos and upcoming live streams
-      const searchUrl = new URL(`${this.API_BASE_URL}/search`);
-      searchUrl.searchParams.set('part', 'snippet');
-      searchUrl.searchParams.set('channelId', channelId);
-      searchUrl.searchParams.set('eventType', 'live');
-      searchUrl.searchParams.set('type', 'video');
-      searchUrl.searchParams.set('maxResults', '10');
-      searchUrl.searchParams.set('key', apiKey);
+      // First, search for currently live videos
+      const liveSearchUrl = new URL(`${this.API_BASE_URL}/search`);
+      liveSearchUrl.searchParams.set('part', 'snippet');
+      liveSearchUrl.searchParams.set('channelId', channelId);
+      liveSearchUrl.searchParams.set('eventType', 'live');
+      liveSearchUrl.searchParams.set('type', 'video');
+      liveSearchUrl.searchParams.set('maxResults', '10');
+      liveSearchUrl.searchParams.set('key', apiKey);
 
-      const searchResponse = await fetch(searchUrl.toString());
+      const liveSearchResponse = await fetch(liveSearchUrl.toString());
 
-      if (!searchResponse.ok) {
-        throw new Error(`YouTube API error: ${searchResponse.statusText}`);
+      if (!liveSearchResponse.ok) {
+        throw new Error(`YouTube API error: ${liveSearchResponse.statusText}`);
       }
 
-      const searchData = await searchResponse.json() as YouTubeSearchResponse;
+      const liveSearchData = await liveSearchResponse.json() as YouTubeSearchResponse;
 
-      if (!searchData.items || searchData.items.length === 0) {
-        this.logger.debug('No live events found');
+      // Search for upcoming live streams
+      const upcomingSearchUrl = new URL(`${this.API_BASE_URL}/search`);
+      upcomingSearchUrl.searchParams.set('part', 'snippet');
+      upcomingSearchUrl.searchParams.set('channelId', channelId);
+      upcomingSearchUrl.searchParams.set('eventType', 'upcoming');
+      upcomingSearchUrl.searchParams.set('type', 'video');
+      upcomingSearchUrl.searchParams.set('maxResults', '10');
+      upcomingSearchUrl.searchParams.set('key', apiKey);
+
+      const upcomingSearchResponse = await fetch(upcomingSearchUrl.toString());
+
+      if (!upcomingSearchResponse.ok) {
+        throw new Error(`YouTube API error: ${upcomingSearchResponse.statusText}`);
+      }
+
+      const upcomingSearchData = await upcomingSearchResponse.json() as YouTubeSearchResponse;
+
+      // Combine both results
+      const allVideoIds = new Set<string>();
+      
+      if (liveSearchData.items) {
+        liveSearchData.items.forEach((item: any) => {
+          if (item.id?.videoId) {
+            allVideoIds.add(item.id.videoId);
+          }
+        });
+      }
+
+      if (upcomingSearchData.items) {
+        upcomingSearchData.items.forEach((item: any) => {
+          if (item.id?.videoId) {
+            allVideoIds.add(item.id.videoId);
+          }
+        });
+      }
+
+      if (allVideoIds.size === 0) {
+        this.logger.debug('No live or upcoming events found');
         const emptyResult: YouTubeLiveEvent[] = [];
         
         // Cache empty result for shorter time (1 minute) to avoid excessive API calls
@@ -150,10 +187,7 @@ export class YouTubeService {
       }
 
       // Get video IDs
-      const videoIds = searchData.items
-        .map((item: any) => item.id.videoId)
-        .filter(Boolean)
-        .join(',');
+      const videoIds = Array.from(allVideoIds).join(',');
 
       // Fetch detailed video information including live streaming details
       const videosUrl = new URL(`${this.API_BASE_URL}/videos`);
@@ -169,7 +203,7 @@ export class YouTubeService {
 
       const videosData = await videosResponse.json() as YouTubeApiResponse;
 
-      // Transform to our format
+      // Transform to our format - only include videos that are/were live streams
       const liveEvents: YouTubeLiveEvent[] = videosData.items
         .map((item: any) => {
           // For videos endpoint, id is a string, not an object
@@ -180,14 +214,45 @@ export class YouTubeService {
           const snippet = item.snippet;
           const stats = item.statistics;
 
+          // Only include videos that are/were live streams
+          // Check if it has liveBroadcastContent indicating it's a live stream
+          // OR has liveStreamingDetails (which means it was scheduled/streamed live)
+          const isLiveStream = 
+            snippet.liveBroadcastContent === 'live' || 
+            snippet.liveBroadcastContent === 'upcoming' ||
+            liveDetails !== undefined;
+
+          if (!isLiveStream) {
+            // Skip regular videos
+            return null;
+          }
+
           // Determine status
           let status: 'upcoming' | 'live' | 'completed' = 'completed';
           if (snippet.liveBroadcastContent === 'live') {
             status = 'live';
           } else if (snippet.liveBroadcastContent === 'upcoming') {
             status = 'upcoming';
-          } else if (liveDetails?.actualEndTime) {
-            status = 'completed';
+          } else if (liveDetails) {
+            // Has live streaming details
+            if (liveDetails.actualEndTime) {
+              status = 'completed';
+            } else if (liveDetails.actualStartTime && !liveDetails.actualEndTime) {
+              // Started but not ended - could be live or completed (check current time)
+              const now = new Date();
+              const endTime = liveDetails.actualEndTime ? new Date(liveDetails.actualEndTime) : null;
+              if (!endTime) {
+                // No end time yet - might still be live
+                status = snippet.liveBroadcastContent === 'live' ? 'live' : 'completed';
+              } else {
+                status = 'completed';
+              }
+            } else if (liveDetails.scheduledStartTime && !liveDetails.actualStartTime) {
+              status = 'upcoming';
+            } else {
+              // Has some live details but unclear status - mark as completed if it has end time
+              status = liveDetails.actualEndTime ? 'completed' : 'completed';
+            }
           }
 
           return {

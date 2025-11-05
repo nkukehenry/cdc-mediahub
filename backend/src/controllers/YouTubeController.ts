@@ -14,7 +14,7 @@ export class YouTubeController {
       const liveEvents = await this.youtubeService.getLiveEvents();
       res.json({
         success: true,
-        data: { liveEvents }
+        data: { events: liveEvents }
       });
     } catch (error) {
       this.logger.error('Get live events failed', error as Error);

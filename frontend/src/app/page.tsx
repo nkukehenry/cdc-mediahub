@@ -2,7 +2,8 @@
 
 import PublicNav from '@/components/PublicNav';
 import SearchBar from '@/components/SearchBar';
-import UnifiedSlider from '@/components/UnifiedSlider';
+import FeaturedSlider from '@/components/FeaturedSlider';
+import LeadershipSlider from '@/components/LeadershipSlider';
 import CategoriesSection from '@/components/CategoriesSection';
 import LatestPublications from '@/components/LatestPublications';
 import { Provider } from 'react-redux';
@@ -21,10 +22,19 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Unified 3D Slider */}
+        {/* Featured and Leadership Sliders */}
         <div className="py-8 px-12 md:px-16 lg:px-24 xl:px-32">
           <div className="container mx-auto">
-            <UnifiedSlider limit={20} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Featured Slider */}
+              <div className="w-full">
+                <FeaturedSlider limit={10} />
+              </div>
+              {/* Leadership Slider */}
+              <div className="w-full">
+                <LeadershipSlider limit={10} />
+              </div>
+            </div>
           </div>
         </div>
 
