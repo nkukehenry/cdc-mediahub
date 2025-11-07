@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy } from 'lucide-react';
-import { cn } from '@/utils/fileUtils';
+import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, Eye } from 'lucide-react';
+import { cn, getImageUrl, PLACEHOLDER_IMAGE_PATH, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { showSuccess, showError } from '@/utils/errorHandler';
 import { apiClient } from '@/utils/apiClient';
@@ -10,7 +10,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import RichTextEditor from './RichTextEditor';
 import FilePickerModal from './FilePickerModal';
+import FilePreviewModal from './FilePreviewModal';
 import { FileWithUrls } from '@/types/fileManager';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Category {
   id: string;
@@ -25,16 +27,23 @@ interface Subcategory {
 }
 
 interface PublicationWizardProps {
+  publicationId?: string; // For edit mode
   onSuccess?: () => void;
   onCancel?: () => void;
   mode?: 'admin' | 'public';
 }
 
-export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' }: PublicationWizardProps) {
+export default function PublicationWizard({ publicationId, onSuccess, onCancel, mode = 'admin' }: PublicationWizardProps) {
   const { t } = useTranslation();
   const router = useRouter();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingPublication, setLoadingPublication] = useState(false);
+  const isEditMode = !!publicationId;
+  
+  // Check if user has permission to update publication status
+  const canUpdateStatus = user?.permissions?.includes('posts:edit') || user?.permissions?.includes('posts:update') || false;
 
   // Step 1: Basic Information
   const [title, setTitle] = useState('');
@@ -54,16 +63,19 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
   const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
   const [metaTitle, setMetaTitle] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
+  const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   // Step 3: Description
   const [description, setDescription] = useState('');
 
   // Step 4: Settings & Publishing
-  const [status, setStatus] = useState<'draft' | 'pending'>('draft');
+  const [status, setStatus] = useState<'draft' | 'pending' | 'approved' | 'rejected'>('draft');
   const [publicationDate, setPublicationDate] = useState('');
   const [hasComments, setHasComments] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
   const [isLeaderboard, setIsLeaderboard] = useState(false);
+  const [existingCoverImage, setExistingCoverImage] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -71,16 +83,23 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
     loadCategories();
   }, []);
 
-  // Generate slug from title
+  // Load publication data when in edit mode
   useEffect(() => {
-    if (title && !slug) {
+    if (publicationId) {
+      loadPublication();
+    }
+  }, [publicationId]);
+
+  // Generate slug from title (only in create mode)
+  useEffect(() => {
+    if (!isEditMode && title && !slug) {
       const generatedSlug = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
       setSlug(generatedSlug);
     }
-  }, [title, slug]);
+  }, [title, slug, isEditMode]);
 
   // Load subcategories when category changes
   useEffect(() => {
@@ -121,6 +140,101 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
     }
   };
 
+  const loadPublication = async () => {
+    if (!publicationId) return;
+    
+    setLoadingPublication(true);
+    try {
+      const response = await apiClient.getPublicationById(publicationId);
+      if (response.success && response.data?.post) {
+        const publication = response.data.post;
+        
+        // Populate all fields with existing data
+        setTitle(publication.title || '');
+        setSlug(publication.slug || '');
+        setCategoryId(publication.categoryId || '');
+        setDescription(publication.description || '');
+        setMetaTitle(publication.metaTitle || '');
+        setMetaDescription(publication.metaDescription || '');
+        setStatus(publication.status || 'draft');
+        setPublicationDate(publication.publicationDate ? publication.publicationDate.split('T')[0] : '');
+        setHasComments(publication.hasComments !== false);
+        setIsFeatured(publication.isFeatured || false);
+        setIsLeaderboard(publication.isLeaderboard || false);
+        
+        // Handle cover image
+        if (publication.coverImage) {
+          setExistingCoverImage(publication.coverImage);
+          // If coverImage is a path, we'll show it but not set it as coverFile
+          // coverFile is only set when user selects a new file
+        }
+        
+        // Handle subcategories
+        if (publication.subcategories && Array.isArray(publication.subcategories)) {
+          setSubcategoryIds(publication.subcategories.map((sub: any) => sub.id));
+        }
+        
+        // Handle attachments - use attachment data if available, otherwise just IDs
+        if (publication.attachments && Array.isArray(publication.attachments) && publication.attachments.length > 0) {
+          const attachmentIds = publication.attachments.map((att: any) => att.fileId || att.id || att.file?.id);
+          setAttachmentFileIds(attachmentIds.filter(Boolean));
+          
+          // Try to construct FileWithUrls from attachment data
+          const attachmentFiles: FileWithUrls[] = publication.attachments
+            .map((att: any) => {
+              // If attachment has file object, use it
+              if (att.file) {
+                return {
+                  id: att.file.id || att.fileId || att.id,
+                  filename: att.file.filename || att.file.originalName || '',
+                  originalName: att.file.originalName || att.file.filename || '',
+                  filePath: att.file.filePath || att.file.path || '',
+                  thumbnailPath: att.file.thumbnailPath,
+                  fileSize: att.file.fileSize || 0,
+                  mimeType: att.file.mimeType || '',
+                  folderId: att.file.folderId,
+                  createdAt: att.file.createdAt || '',
+                  updatedAt: att.file.updatedAt || '',
+                  downloadUrl: att.file.downloadUrl || '',
+                  thumbnailUrl: att.file.thumbnailUrl || null,
+                } as FileWithUrls;
+              }
+              // Otherwise create minimal FileWithUrls from attachment data
+              if (att.fileId || att.id) {
+                return {
+                  id: att.fileId || att.id,
+                  filename: att.filename || att.originalName || 'Unknown',
+                  originalName: att.originalName || att.filename || 'Unknown',
+                  filePath: att.filePath || att.path || '',
+                  thumbnailPath: att.thumbnailPath,
+                  fileSize: att.fileSize || 0,
+                  mimeType: att.mimeType || 'application/octet-stream',
+                  folderId: att.folderId,
+                  createdAt: att.createdAt || '',
+                  updatedAt: att.updatedAt || '',
+                  downloadUrl: att.downloadUrl || '',
+                  thumbnailUrl: att.thumbnailUrl || null,
+                } as FileWithUrls;
+              }
+              return null;
+            })
+            .filter((file): file is FileWithUrls => file !== null);
+          
+          if (attachmentFiles.length > 0) {
+            setAttachmentFiles(attachmentFiles);
+          }
+        }
+      } else {
+        showError(t('publications.failedToLoadPublication'));
+      }
+    } catch (error) {
+      console.error('Failed to load publication:', error);
+      showError(t('publications.failedToLoadPublication'));
+    } finally {
+      setLoadingPublication(false);
+    }
+  };
+
   const loadCategorySubcategories = async () => {
     if (!categoryId) return;
     try {
@@ -141,20 +255,121 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
         showError(t('publications.pleaseSelectImageFile'));
         return;
       }
+      console.log('Cover file selected:', selectedFile);
+      console.log('File path:', selectedFile.filePath);
+      console.log('Download URL:', selectedFile.downloadUrl);
+      console.log('Thumbnail URL:', selectedFile.thumbnailUrl);
       setCoverFile(selectedFile);
+      // Clear existing cover image when new file is selected
+      if (isEditMode) {
+        setExistingCoverImage(null);
+      }
     } else {
       setCoverFile(null);
     }
   };
 
   const handleFilePickerSelect = (files: FileWithUrls[]) => {
+    console.log('Attachment files selected:', files);
     setAttachmentFiles(files);
     setAttachmentFileIds(files.map(f => f.id));
+    console.log('Attachment file IDs set:', files.map(f => f.id));
+    console.log('Current attachmentFiles state will be:', files);
+    
+    // Clear attachment errors when files are selected
+    if (errors.attachments) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.attachments;
+        return newErrors;
+      });
+    }
+    
+    // Validate first attachment matches category type if applicable
+    if (categoryId && files.length > 0) {
+      const selectedCategory = categories.find(c => c.id === categoryId);
+      if (selectedCategory) {
+        const categoryNameLower = selectedCategory.name.toLowerCase();
+        const categorySlugLower = selectedCategory.slug.toLowerCase();
+        const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+        const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+        
+        if (isAudioCategory || isVideoCategory) {
+          const firstAttachment = files[0];
+          const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                         (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+          
+          if (!firstAttachmentMatches) {
+            setErrors(prev => ({
+              ...prev,
+              attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+            }));
+          }
+        }
+      }
+    }
   };
 
   const removeAttachment = (fileId: string) => {
-    setAttachmentFiles(prev => prev.filter(f => f.id !== fileId));
-    setAttachmentFileIds(prev => prev.filter(id => id !== fileId));
+    const updatedFiles = attachmentFiles.filter(f => f.id !== fileId);
+    const updatedIds = attachmentFileIds.filter(id => id !== fileId);
+    setAttachmentFiles(updatedFiles);
+    setAttachmentFileIds(updatedIds);
+    
+    // Re-validate after removal if category requires attachments
+    if (categoryId && updatedFiles.length > 0) {
+      const selectedCategory = categories.find(c => c.id === categoryId);
+      if (selectedCategory) {
+        const categoryNameLower = selectedCategory.name.toLowerCase();
+        const categorySlugLower = selectedCategory.slug.toLowerCase();
+        const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+        const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+        
+        if (isAudioCategory || isVideoCategory) {
+          const firstAttachment = updatedFiles[0];
+          if (firstAttachment) {
+            const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                           (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+            
+            if (!firstAttachmentMatches) {
+              setErrors(prev => ({
+                ...prev,
+                attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+              }));
+            } else {
+              // Clear error if validation passes
+              setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.attachments;
+                return newErrors;
+              });
+            }
+          }
+        }
+      }
+    }
+  };
+
+  const handleAttachmentPreview = (file: FileWithUrls) => {
+    setPreviewFile(file);
+    setIsPreviewModalOpen(true);
+  };
+
+  // Helper function to get file icon based on mime type
+  const getAttachmentIcon = (mimeType: string) => {
+    if (isImageFile(mimeType)) return <ImageIcon size={16} className="text-au-green" />;
+    if (isVideoFile(mimeType)) return <Video size={16} className="text-au-green" />;
+    if (isAudioFile(mimeType)) return <Music size={16} className="text-au-green" />;
+    if (isPdfFile(mimeType)) return <FileText size={16} className="text-red-500" />;
+    if (mimeType.includes('word') || mimeType.includes('document') || 
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mimeType === 'application/msword') return <FileText size={16} className="text-blue-500" />;
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet') ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        mimeType === 'application/vnd.ms-excel') return <FileSpreadsheet size={16} className="text-green-600" />;
+    if (mimeType.includes('text/')) return <FileCode size={16} className="text-gray-600" />;
+    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return <Archive size={16} className="text-orange-500" />;
+    return <FileIcon size={16} className="text-gray-400" />;
   };
 
   const toggleSubcategory = (subcategoryId: string) => {
@@ -165,6 +380,72 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
         return [...prev, subcategoryId];
       }
     });
+  };
+
+  // Validate audio/video category requirements
+  const validateAudioVideoCategory = () => {
+    if (!categoryId) return true;
+    
+    const selectedCategory = categories.find(c => c.id === categoryId);
+    if (!selectedCategory) return true;
+    
+    const categoryNameLower = selectedCategory.name.toLowerCase();
+    const categorySlugLower = selectedCategory.slug.toLowerCase();
+    const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+    const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+    
+    if (isAudioCategory || isVideoCategory) {
+      if (attachmentFiles.length === 0) {
+        setErrors(prev => ({
+          ...prev,
+          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+        }));
+        return false;
+      }
+      
+      // Mandate that the FIRST attachment matches the category type
+      const firstAttachment = attachmentFiles[0];
+      if (!firstAttachment) {
+        setErrors(prev => ({
+          ...prev,
+          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+        }));
+        return false;
+      }
+      
+      // Check if the first attachment matches the category type
+      const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                     (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+      
+      if (!firstAttachmentMatches) {
+        setErrors(prev => ({
+          ...prev,
+          attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+        }));
+        return false;
+      }
+      
+      // Also check that at least one attachment matches (for the requirement)
+      const hasMatchingAttachment = attachmentFiles.some(file => {
+        if (isAudioCategory && file.mimeType?.startsWith('audio/')) {
+          return true;
+        }
+        if (isVideoCategory && file.mimeType?.startsWith('video/')) {
+          return true;
+        }
+        return false;
+      });
+      
+      if (!hasMatchingAttachment) {
+        setErrors(prev => ({
+          ...prev,
+          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+        }));
+        return false;
+      }
+    }
+    
+    return true;
   };
 
   const validateStep = (step: number): boolean => {
@@ -193,47 +474,130 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
   const handleSubmit = async () => {
     if (!validateStep(1)) return;
 
+    // Validate audio/video category requirements
+    if (!validateAudioVideoCategory()) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // Get cover image file path from selected file
+      // Get cover image file path from selected file or use existing
       let coverImageUrl: string | undefined = undefined;
       
       if (coverFile) {
         // Use filePath as stored in database (backend expects file path, not download URL)
         coverImageUrl = coverFile.filePath;
+      } else if (existingCoverImage && isEditMode) {
+        // Keep existing cover image if no new one selected
+        coverImageUrl = existingCoverImage;
       }
 
-      const response = await apiClient.createPublication({
-        title: title.trim(),
-        slug: slug.trim(),
-        description: description.trim() || undefined,
-        metaTitle: metaTitle.trim() || undefined,
-        metaDescription: metaDescription.trim() || undefined,
-        coverImage: coverImageUrl,
-        categoryId,
-        subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
-        attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
-        status,
-        publicationDate: publicationDate || undefined,
-        hasComments,
-        isFeatured,
-        isLeaderboard,
-      });
+      if (isEditMode && publicationId) {
+        // Update existing publication
+        const response = await apiClient.updatePublication(publicationId, {
+          title: title.trim(),
+          slug: slug.trim(),
+          description: description.trim() || undefined,
+          metaTitle: metaTitle.trim() || undefined,
+          metaDescription: metaDescription.trim() || undefined,
+          coverImage: coverImageUrl,
+          categoryId,
+          subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
+          attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
+          status,
+          publicationDate: publicationDate || undefined,
+          hasComments,
+          isFeatured,
+          isLeaderboard,
+        });
 
-      if (response.success) {
-        showSuccess(t('publications.publicationCreated'));
-        if (onSuccess) {
-          onSuccess();
-        } else if (mode === 'admin') {
-          router.push('/admin/publications');
+        if (response.success) {
+          showSuccess(t('publications.publicationUpdated') || 'Publication updated successfully');
+          if (onSuccess) {
+            onSuccess();
+          } else if (mode === 'admin') {
+            router.push('/admin/publications');
+          } else {
+            router.push('/publications');
+          }
         } else {
-          router.push('/publications');
+          // Use the exact error message from the server, no localization
+          const errorMessage = response.error?.message || 'Failed to update publication';
+          console.error('Update publication failed:', response.error);
+          showError(errorMessage);
         }
       } else {
-        showError(response.error?.message || t('publications.failedToCreatePublication'));
+        // Create new publication
+        const response = await apiClient.createPublication({
+          title: title.trim(),
+          slug: slug.trim(),
+          description: description.trim() || undefined,
+          metaTitle: metaTitle.trim() || undefined,
+          metaDescription: metaDescription.trim() || undefined,
+          coverImage: coverImageUrl,
+          categoryId,
+          subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
+          attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
+          status,
+          publicationDate: publicationDate || undefined,
+          hasComments,
+          isFeatured,
+          isLeaderboard,
+        });
+
+        if (response.success) {
+          showSuccess(t('publications.publicationCreated'));
+          if (onSuccess) {
+            onSuccess();
+          } else if (mode === 'admin') {
+            router.push('/admin/publications');
+          } else {
+            router.push('/publications');
+          }
+        } else {
+          // Use the exact error message from the server, no localization
+          const errorMessage = response.error?.message || 'Failed to create publication';
+          console.error('Create publication failed:', response.error);
+          showError(errorMessage);
+        }
       }
-    } catch (error) {
-      showError(t('publications.failedToCreatePublication'));
+    } catch (error: any) {
+      console.error('Publication operation error:', error);
+      console.error('Error structure:', {
+        message: error?.message,
+        error: error?.error,
+        errorMessage: error?.error?.message,
+        string: typeof error === 'string' ? error : 'not a string'
+      });
+      
+      // Extract error message from various error formats - prioritize server message
+      // When API client throws, it uses: throw new Error(data.error?.message || ...)
+      // So error.message should contain the server's error message
+      let errorMessage = '';
+      
+      // Priority 1: Direct message property (from thrown Error with server message)
+      if (error?.message) {
+        errorMessage = error.message;
+      } 
+      // Priority 2: Nested error object with message
+      else if (error?.error?.message) {
+        errorMessage = error.error.message;
+      } 
+      // Priority 3: String error
+      else if (typeof error === 'string') {
+        errorMessage = error;
+      } 
+      // Fallback (should rarely happen)
+      else {
+        errorMessage = isEditMode 
+          ? 'Failed to update publication'
+          : 'Failed to create publication';
+      }
+      
+      console.log('Extracted error message for toast:', errorMessage);
+      // Always show the exact server message, no localization
+      showError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -247,6 +611,15 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
     }
   };
 
+  // Show loading state while fetching publication data
+  if (loadingPublication) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-au-grey-text">{t('common.loading')}...</div>
+      </div>
+    );
+  }
+
   return (
       <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-3 md:px-4 lg:px-6 py-4 md:py-6 lg:py-8">
@@ -254,7 +627,9 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
           <div className="mb-4 md:mb-6 lg:mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
-                <h1 className="text-xl md:text-2xl font-semibold text-au-grey-text">{t('publications.createPublication')}</h1>
+                <h1 className="text-xl md:text-2xl font-semibold text-au-grey-text">
+                  {isEditMode ? (t('publications.editPublication') || 'Edit Publication') : t('publications.createPublication')}
+                </h1>
                 <p className="text-xs md:text-sm text-au-grey-text/70 mt-1">
                   {currentStep === 1 && t('publications.step1')}
                   {currentStep === 2 && t('publications.step2')}
@@ -358,7 +733,50 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
                 </label>
                 <select
                   value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  onChange={(e) => {
+                    const newCategoryId = e.target.value;
+                    setCategoryId(newCategoryId);
+                    
+                    // Validate attachments when category changes
+                    if (newCategoryId && attachmentFiles.length > 0) {
+                      const selectedCategory = categories.find(c => c.id === newCategoryId);
+                      if (selectedCategory) {
+                        const categoryNameLower = selectedCategory.name.toLowerCase();
+                        const categorySlugLower = selectedCategory.slug.toLowerCase();
+                        const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+                        const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+                        
+                        if (isAudioCategory || isVideoCategory) {
+                          const firstAttachment = attachmentFiles[0];
+                          if (firstAttachment) {
+                            const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                                           (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+                            
+                            if (!firstAttachmentMatches) {
+                              setErrors(prev => ({
+                                ...prev,
+                                attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+                              }));
+                            } else {
+                              // Clear error if validation passes
+                              setErrors(prev => {
+                                const newErrors = { ...prev };
+                                delete newErrors.attachments;
+                                return newErrors;
+                              });
+                            }
+                          }
+                        } else {
+                          // Clear attachment errors for non-audio/video categories
+                          setErrors(prev => {
+                            const newErrors = { ...prev };
+                            delete newErrors.attachments;
+                            return newErrors;
+                          });
+                        }
+                      }
+                    }
+                  }}
                   className={cn(
                     "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors",
                     errors.categoryId ? "border-red-500" : "border-gray-300"
@@ -455,22 +873,44 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
                 <label className="block text-sm font-medium text-au-grey-text mb-1">
                   {t('publications.coverImage')}
                 </label>
-                {coverFile ? (
+                {coverFile || existingCoverImage ? (
                   <div className="relative">
                     <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
                       <img
-                        src={coverFile.downloadUrl || coverFile.thumbnailUrl || coverFile.filePath}
+                        key={coverFile?.id || existingCoverImage || 'cover-preview'}
+                        src={coverFile 
+                          ? (coverFile.filePath 
+                              ? getImageUrl(coverFile.filePath) 
+                              : (coverFile.downloadUrl && !coverFile.downloadUrl.includes('unsplash') 
+                                  ? coverFile.downloadUrl 
+                                  : (coverFile.thumbnailUrl && !coverFile.thumbnailUrl.includes('unsplash')
+                                      ? coverFile.thumbnailUrl 
+                                      : getImageUrl(PLACEHOLDER_IMAGE_PATH)))
+                            )
+                          : (existingCoverImage ? getImageUrl(existingCoverImage) : getImageUrl(PLACEHOLDER_IMAGE_PATH))
+                        }
                         alt={t('publications.coverImagePreview')}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
+                          // Always fallback to placeholder image
+                          if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
+                            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                          }
+                        }}
+                        onLoad={() => {
+                          console.log('Image loaded successfully');
                         }}
                       />
                     </div>
                     <button
                       type="button"
-                      onClick={() => setCoverFile(null)}
+                      onClick={() => {
+                        setCoverFile(null);
+                        if (isEditMode) {
+                          setExistingCoverImage(null);
+                        }
+                      }}
                       className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                       disabled={isLoading}
                     >
@@ -493,7 +933,23 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
               <div>
                 <label className="block text-sm font-medium text-au-grey-text mb-1">
                   {t('publications.attachments')}
+                  {(() => {
+                    const selectedCategory = categories.find(c => c.id === categoryId);
+                    if (selectedCategory) {
+                      const categoryNameLower = selectedCategory.name.toLowerCase();
+                      const categorySlugLower = selectedCategory.slug.toLowerCase();
+                      const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+                      const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+                      if (isAudioCategory || isVideoCategory) {
+                        return <span className="text-red-500 ml-1">*</span>;
+                      }
+                    }
+                    return null;
+                  })()}
                 </label>
+                {errors.attachments && (
+                  <p className="text-sm text-red-500 mb-2">{errors.attachments}</p>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsFilePickerOpen(true)}
@@ -511,11 +967,25 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
                 {attachmentFiles.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {attachmentFiles.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded text-sm">
-                        <span className="text-au-grey-text truncate flex-1">{file.originalName}</span>
+                      <div key={file.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded text-sm hover:bg-gray-100 transition-colors group">
                         <button
                           type="button"
-                          onClick={() => removeAttachment(file.id)}
+                          onClick={() => handleAttachmentPreview(file)}
+                          className="flex items-center gap-2 flex-1 text-left min-w-0"
+                          disabled={isLoading}
+                        >
+                          <span className="flex-shrink-0">
+                            {getAttachmentIcon(file.mimeType || 'application/octet-stream')}
+                          </span>
+                          <span className="text-au-grey-text truncate flex-1">{file.originalName}</span>
+                          <Eye size={14} className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeAttachment(file.id);
+                          }}
                           className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0"
                           disabled={isLoading}
                         >
@@ -612,15 +1082,32 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
                 <label className="block text-sm font-medium text-au-grey-text mb-1">
                   {t('publications.status')}
                 </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'draft' | 'pending')}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
-                  disabled={isLoading}
-                >
-                  <option value="draft">{t('nav.draftPublications')}</option>
-                  <option value="pending">{t('nav.pendingPublications')}</option>
-                </select>
+                {canUpdateStatus ? (
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as 'draft' | 'pending' | 'approved' | 'rejected')}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
+                    disabled={isLoading}
+                  >
+                    <option value="draft">{t('nav.draftPublications')}</option>
+                    <option value="pending">{t('nav.pendingPublications')}</option>
+                    {isEditMode && (
+                      <>
+                        <option value="approved">{t('publications.statusApproved') || 'Approved'}</option>
+                        <option value="rejected">{t('publications.statusRejected') || 'Rejected'}</option>
+                      </>
+                    )}
+                  </select>
+                ) : (
+                  <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                    <span className="text-au-grey-text font-medium">
+                      {status === 'approved' ? (t('publications.statusApproved') || 'Approved') :
+                       status === 'pending' ? t('nav.pendingPublications') :
+                       status === 'rejected' ? (t('publications.statusRejected') || 'Rejected') :
+                       t('nav.draftPublications')}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -720,7 +1207,7 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
                   </>
                 ) : (
                   <>
-                    <span>{t('publications.create')}</span>
+                    <span>{isEditMode ? (t('publications.update') || t('publications.updatePublication') || 'Update Publication') : t('publications.create')}</span>
                     <CheckCircle2 size={14} className="md:w-4 md:h-4" />
                   </>
                 )}
@@ -750,6 +1237,13 @@ export default function PublicationWizard({ onSuccess, onCancel, mode = 'admin' 
         filterMimeTypes={['image/*']}
         title={t('publications.coverImage')}
         description={t('publications.selectImageOrVideo')}
+      />
+
+      {/* File Preview Modal */}
+      <FilePreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        file={previewFile}
       />
     </div>
   );

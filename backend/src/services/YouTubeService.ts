@@ -15,7 +15,9 @@ interface YouTubeLiveEvent {
   viewCount?: number;
   concurrentViewers?: number;
   videoUrl: string;
-  status: 'upcoming' | 'live' | 'completed';
+  status: 'live' | 'upcoming' | 'recent_video';
+  isLive: boolean;
+  type: 'live' | 'upcoming' | 'recent_video' | '';
 }
 
 interface YouTubeChannelResponse {
@@ -28,24 +30,34 @@ interface YouTubeChannelResponse {
   }>;
 }
 
-interface YouTubeSearchResponse {
+interface YouTubePlaylistResponse {
   items?: Array<{
-    id?: {
-      videoId?: string;
-    };
-  }>;
-}
-
-interface YouTubeApiResponse {
-  items: Array<{
-    id: string | { videoId?: string };
     snippet: {
       title: string;
       description: string;
       thumbnails: {
-        high: { url: string };
-        medium: { url: string };
-        default: { url: string };
+        medium?: { url: string };
+        default?: { url: string };
+      };
+      resourceId: {
+        videoId: string;
+      };
+      publishedAt: string;
+    };
+  }>;
+  nextPageToken?: string;
+}
+
+interface YouTubeVideoResponse {
+  items: Array<{
+    id: string;
+    snippet: {
+      title: string;
+      description: string;
+      thumbnails: {
+        high?: { url: string };
+        medium?: { url: string };
+        default?: { url: string };
       };
       channelTitle: string;
       publishedAt: string;
@@ -81,14 +93,16 @@ export class YouTubeService {
   }
 
   private getChannelId(): string {
-    const channelId = process.env.YOUTUBE_CHANNEL;
+    let channelId = process.env.YOUTUBE_CHANNEL;
     if (!channelId) {
       throw new Error('YOUTUBE_CHANNEL is not configured');
     }
+    // Remove @ symbol if present
+    channelId = channelId.replace('@', '');
     return channelId;
   }
 
-  async getLiveEvents(): Promise<YouTubeLiveEvent[]> {
+  async getLiveEvents(maxResults: number = 20): Promise<YouTubeLiveEvent[]> {
     try {
       // Check cache first
       if (this.cacheService) {
@@ -120,65 +134,30 @@ export class YouTubeService {
         return [];
       }
 
-      // Search for live videos and upcoming live streams
-      // First, search for currently live videos
-      const liveSearchUrl = new URL(`${this.API_BASE_URL}/search`);
-      liveSearchUrl.searchParams.set('part', 'snippet');
-      liveSearchUrl.searchParams.set('channelId', channelId);
-      liveSearchUrl.searchParams.set('eventType', 'live');
-      liveSearchUrl.searchParams.set('type', 'video');
-      liveSearchUrl.searchParams.set('maxResults', '10');
-      liveSearchUrl.searchParams.set('key', apiKey);
+      // Step 2: Fetch videos from uploads playlist
+      const playlistUrl = new URL(`${this.API_BASE_URL}/playlistItems`);
+      playlistUrl.searchParams.set('part', 'snippet');
+      playlistUrl.searchParams.set('playlistId', uploadsPlaylistId);
+      playlistUrl.searchParams.set('maxResults', maxResults.toString());
+      playlistUrl.searchParams.set('key', apiKey);
 
-      const liveSearchResponse = await fetch(liveSearchUrl.toString());
+      const playlistResponse = await fetch(playlistUrl.toString(), {
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
 
-      if (!liveSearchResponse.ok) {
-        throw new Error(`YouTube API error: ${liveSearchResponse.statusText}`);
+      if (!playlistResponse.ok) {
+        throw new Error(`YouTube API error: ${playlistResponse.statusText}`);
       }
 
-      const liveSearchData = await liveSearchResponse.json() as YouTubeSearchResponse;
+      const playlistData = await playlistResponse.json() as YouTubePlaylistResponse;
 
-      // Search for upcoming live streams
-      const upcomingSearchUrl = new URL(`${this.API_BASE_URL}/search`);
-      upcomingSearchUrl.searchParams.set('part', 'snippet');
-      upcomingSearchUrl.searchParams.set('channelId', channelId);
-      upcomingSearchUrl.searchParams.set('eventType', 'upcoming');
-      upcomingSearchUrl.searchParams.set('type', 'video');
-      upcomingSearchUrl.searchParams.set('maxResults', '10');
-      upcomingSearchUrl.searchParams.set('key', apiKey);
-
-      const upcomingSearchResponse = await fetch(upcomingSearchUrl.toString());
-
-      if (!upcomingSearchResponse.ok) {
-        throw new Error(`YouTube API error: ${upcomingSearchResponse.statusText}`);
-      }
-
-      const upcomingSearchData = await upcomingSearchResponse.json() as YouTubeSearchResponse;
-
-      // Combine both results
-      const allVideoIds = new Set<string>();
-      
-      if (liveSearchData.items) {
-        liveSearchData.items.forEach((item: any) => {
-          if (item.id?.videoId) {
-            allVideoIds.add(item.id.videoId);
-          }
-        });
-      }
-
-      if (upcomingSearchData.items) {
-        upcomingSearchData.items.forEach((item: any) => {
-          if (item.id?.videoId) {
-            allVideoIds.add(item.id.videoId);
-          }
-        });
-      }
-
-      if (allVideoIds.size === 0) {
-        this.logger.debug('No live or upcoming events found');
+      if (!playlistData.items || playlistData.items.length === 0) {
+        this.logger.debug('No videos found in uploads playlist');
         const emptyResult: YouTubeLiveEvent[] = [];
         
-        // Cache empty result for shorter time (1 minute) to avoid excessive API calls
         if (this.cacheService) {
           await this.cacheService.set(this.CACHE_KEY, emptyResult, 60);
         }
@@ -186,111 +165,115 @@ export class YouTubeService {
         return emptyResult;
       }
 
-      // Get video IDs
-      const videoIds = Array.from(allVideoIds).join(',');
+      // Collect all video IDs from playlist
+      const videoIds: string[] = [];
+      const videoSnippets: Map<string, any> = new Map();
 
-      // Fetch detailed video information including live streaming details
+      for (const item of playlistData.items) {
+        const videoId = item.snippet?.resourceId?.videoId;
+        if (videoId) {
+          videoIds.push(videoId);
+          videoSnippets.set(videoId, item.snippet);
+        }
+      }
+
+      if (videoIds.length === 0) {
+        return [];
+      }
+
+      // Step 3: Fetch detailed video information for each video
+      const videoIdsString = videoIds.join(',');
       const videosUrl = new URL(`${this.API_BASE_URL}/videos`);
-      videosUrl.searchParams.set('part', 'snippet,statistics,liveStreamingDetails');
-      videosUrl.searchParams.set('id', videoIds);
+      videosUrl.searchParams.set('part', 'snippet,liveStreamingDetails');
+      videosUrl.searchParams.set('id', videoIdsString);
       videosUrl.searchParams.set('key', apiKey);
 
-      const videosResponse = await fetch(videosUrl.toString());
+      const videosResponse = await fetch(videosUrl.toString(), {
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
 
       if (!videosResponse.ok) {
         throw new Error(`YouTube API error: ${videosResponse.statusText}`);
       }
 
-      const videosData = await videosResponse.json() as YouTubeApiResponse;
+      const videosData = await videosResponse.json() as YouTubeVideoResponse;
 
-      // Transform to our format - only include videos that are/were live streams
-      const liveEvents: YouTubeLiveEvent[] = videosData.items
-        .map((item: any) => {
-          // For videos endpoint, id is a string, not an object
-          const videoId = typeof item.id === 'string' ? item.id : item.id?.videoId;
-          if (!videoId) return null;
+      // Step 4: Transform videos to our format - categorize all videos
+      const events: YouTubeLiveEvent[] = [];
 
-          const liveDetails = item.liveStreamingDetails;
-          const snippet = item.snippet;
-          const stats = item.statistics;
+      for (const item of videosData.items) {
+        const videoId = item.id;
+        const snippet = item.snippet;
+        const liveDetails = item.liveStreamingDetails;
+        const playlistSnippet = videoSnippets.get(videoId);
 
-          // Only include videos that are/were live streams
-          // Check if it has liveBroadcastContent indicating it's a live stream
-          // OR has liveStreamingDetails (which means it was scheduled/streamed live)
-          const isLiveStream = 
-            snippet.liveBroadcastContent === 'live' || 
-            snippet.liveBroadcastContent === 'upcoming' ||
-            liveDetails !== undefined;
+        let status: 'live' | 'upcoming' | 'recent_video' = 'recent_video';
+        let isLive = false;
+        let type: 'live' | 'upcoming' | 'recent_video' | '' = 'recent_video';
 
-          if (!isLiveStream) {
-            // Skip regular videos
-            return null;
-          }
-
-          // Determine status
-          let status: 'upcoming' | 'live' | 'completed' = 'completed';
-          if (snippet.liveBroadcastContent === 'live') {
+        // Categorize based on liveBroadcastContent
+        switch (snippet.liveBroadcastContent || 'none') {
+          case 'live':
             status = 'live';
-          } else if (snippet.liveBroadcastContent === 'upcoming') {
+            isLive = true;
+            type = 'live';
+            break;
+          
+          case 'upcoming':
             status = 'upcoming';
-          } else if (liveDetails) {
-            // Has live streaming details
-            if (liveDetails.actualEndTime) {
-              status = 'completed';
-            } else if (liveDetails.actualStartTime && !liveDetails.actualEndTime) {
-              // Started but not ended - could be live or completed (check current time)
-              const now = new Date();
-              const endTime = liveDetails.actualEndTime ? new Date(liveDetails.actualEndTime) : null;
-              if (!endTime) {
-                // No end time yet - might still be live
-                status = snippet.liveBroadcastContent === 'live' ? 'live' : 'completed';
-              } else {
-                status = 'completed';
-              }
-            } else if (liveDetails.scheduledStartTime && !liveDetails.actualStartTime) {
-              status = 'upcoming';
-            } else {
-              // Has some live details but unclear status - mark as completed if it has end time
-              status = liveDetails.actualEndTime ? 'completed' : 'completed';
+            isLive = false;
+            type = 'upcoming';
+            break;
+          
+          case 'none':
+            status = 'recent_video';
+            isLive = false;
+            type = 'recent_video';
+            break;
+          
+          default:
+            // Optional: if title contains "live", mark as empty type
+            if (snippet.title.toLowerCase().includes('live')) {
+              isLive = false;
+              type = '';
             }
-          }
+            break;
+        }
 
-          return {
-            id: videoId,
-            title: snippet.title,
-            description: snippet.description,
-            thumbnailUrl: snippet.thumbnails.high?.url || snippet.thumbnails.medium?.url || snippet.thumbnails.default?.url,
-            channelTitle: snippet.channelTitle,
-            publishedAt: snippet.publishedAt,
-            scheduledStartTime: liveDetails?.scheduledStartTime,
-            actualStartTime: liveDetails?.actualStartTime,
-            actualEndTime: liveDetails?.actualEndTime,
-            viewCount: stats?.viewCount ? parseInt(stats.viewCount) : undefined,
-            concurrentViewers: liveDetails?.concurrentViewers ? parseInt(liveDetails.concurrentViewers) : undefined,
-            videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            status,
-          } as YouTubeLiveEvent;
-        })
-        .filter((event): event is YouTubeLiveEvent => event !== null);
+        const event: YouTubeLiveEvent = {
+          id: videoId,
+          title: snippet.title,
+          description: snippet.description,
+          thumbnailUrl: playlistSnippet?.thumbnails?.medium?.url || 
+                        snippet.thumbnails.medium?.url || 
+                        snippet.thumbnails.default?.url || 
+                        '',
+          channelTitle: snippet.channelTitle,
+          publishedAt: playlistSnippet?.publishedAt || snippet.publishedAt,
+          scheduledStartTime: liveDetails?.scheduledStartTime,
+          actualStartTime: liveDetails?.actualStartTime,
+          actualEndTime: liveDetails?.actualEndTime,
+          viewCount: undefined, // Not fetching statistics to match PHP
+          concurrentViewers: liveDetails?.concurrentViewers ? parseInt(liveDetails.concurrentViewers) : undefined,
+          videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          status,
+          isLive,
+          type,
+        };
 
-      // Sort by status (live first, then upcoming, then completed) and by start time
-      liveEvents.sort((a, b) => {
-        const statusOrder = { live: 0, upcoming: 1, completed: 2 };
-        const statusDiff = statusOrder[a.status] - statusOrder[b.status];
-        if (statusDiff !== 0) return statusDiff;
-
-        const aTime = a.actualStartTime || a.scheduledStartTime || a.publishedAt;
-        const bTime = b.actualStartTime || b.scheduledStartTime || b.publishedAt;
-        return new Date(bTime).getTime() - new Date(aTime).getTime();
-      });
+        events.push(event);
+      }
 
       // Cache the results
       if (this.cacheService) {
-        await this.cacheService.set(this.CACHE_KEY, liveEvents, this.CACHE_TTL);
+        await this.cacheService.set(this.CACHE_KEY, events, this.CACHE_TTL);
       }
 
-      this.logger.info(`Fetched ${liveEvents.length} live events from YouTube`);
-      return liveEvents;
+      this.logger.info(`Fetched ${events.length} YouTube events (live, upcoming, and recent)`);
+      return events;
     } catch (error) {
       this.logger.error('Failed to fetch YouTube live events', error as Error);
       this.errorHandler.handle(error as Error, { operation: 'fetch_youtube_live_events' });

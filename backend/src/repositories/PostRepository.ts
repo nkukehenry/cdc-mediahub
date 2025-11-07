@@ -84,9 +84,11 @@ export class PostRepository implements IPublicationRepository {
 
       // Add attachments
       if (postData.attachmentFileIds && postData.attachmentFileIds.length > 0) {
+        this.logger.debug('Adding attachments to post', { postId: id, fileIds: postData.attachmentFileIds });
         for (let i = 0; i < postData.attachmentFileIds.length; i++) {
           await this.addAttachment(id, postData.attachmentFileIds[i], i);
         }
+        this.logger.debug('Attachments added successfully', { postId: id, count: postData.attachmentFileIds.length });
       }
 
       // Add authors
@@ -417,14 +419,29 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async findPublished(limit?: number, offset?: number): Promise<PublicationEntity[]> {
+  async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<PublicationEntity[]> {
     try {
       const now = new Date().toISOString();
-      let query = `SELECT * FROM posts 
-                   WHERE status = ? 
-                   AND (publication_date IS NULL OR publication_date <= ?)
-                   ORDER BY publication_date DESC, created_at DESC`;
-      const params: any[] = ['approved', now];
+      let query = `SELECT DISTINCT p.* FROM posts p`;
+      const params: any[] = [];
+      const conditions: string[] = ['p.status = ?', '(p.publication_date IS NULL OR p.publication_date <= ?)'];
+      params.push('approved', now);
+      
+      // Join with subcategories if filtering by subcategory
+      if (subcategoryId) {
+        query += ' INNER JOIN post_subcategories ps ON p.id = ps.post_id';
+        conditions.push('ps.subcategory_id = ?');
+        params.push(subcategoryId);
+      }
+      
+      // Filter by category
+      if (categoryId) {
+        conditions.push('p.category_id = ?');
+        params.push(categoryId);
+      }
+      
+      query += ` WHERE ${conditions.join(' AND ')}`;
+      query += ' ORDER BY p.publication_date DESC, p.created_at DESC';
       
       if (limit !== undefined) {
         query += ' LIMIT ?';
@@ -440,6 +457,37 @@ export class PostRepository implements IPublicationRepository {
     } catch (error) {
       this.logger.error('Failed to find published posts', error as Error);
       throw this.errorHandler.createDatabaseError('Failed to find published posts', 'select', 'posts');
+    }
+  }
+
+  async countPublished(categoryId?: string, subcategoryId?: string): Promise<number> {
+    try {
+      const now = new Date().toISOString();
+      let query = `SELECT COUNT(DISTINCT p.id) as count FROM posts p`;
+      const params: any[] = [];
+      const conditions: string[] = ['p.status = ?', '(p.publication_date IS NULL OR p.publication_date <= ?)'];
+      params.push('approved', now);
+      
+      // Join with subcategories if filtering by subcategory
+      if (subcategoryId) {
+        query += ' INNER JOIN post_subcategories ps ON p.id = ps.post_id';
+        conditions.push('ps.subcategory_id = ?');
+        params.push(subcategoryId);
+      }
+      
+      // Filter by category
+      if (categoryId) {
+        conditions.push('p.category_id = ?');
+        params.push(categoryId);
+      }
+      
+      query += ` WHERE ${conditions.join(' AND ')}`;
+      
+      const result = await DatabaseUtils.findOne<any>(query, params);
+      return result?.count || 0;
+    } catch (error) {
+      this.logger.error('Failed to count published posts', error as Error);
+      throw this.errorHandler.createDatabaseError('Failed to count published posts', 'select', 'posts');
     }
   }
 
@@ -515,16 +563,19 @@ export class PostRepository implements IPublicationRepository {
 
       // Update attachments if provided
       if (data.attachmentFileIds !== undefined) {
+        this.logger.debug('Updating attachments for post', { postId: id, fileIds: data.attachmentFileIds });
         // Remove all existing attachments
-        await DatabaseUtils.executeQuery(
+        const deleteResult = await DatabaseUtils.executeQuery(
           'DELETE FROM post_attachments WHERE post_id = ?',
           [id]
         );
+        this.logger.debug('Deleted existing attachments', { postId: id, deletedCount: deleteResult.changes });
         // Add new ones
         if (data.attachmentFileIds.length > 0) {
           for (let i = 0; i < data.attachmentFileIds.length; i++) {
             await this.addAttachment(id, data.attachmentFileIds[i], i);
           }
+          this.logger.debug('Added new attachments', { postId: id, count: data.attachmentFileIds.length });
         }
       }
 
@@ -646,15 +697,74 @@ export class PostRepository implements IPublicationRepository {
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
 
-      await DatabaseUtils.executeQuery(
+      this.logger.debug('Adding attachment to post_attachments', { attachmentId: id, postId, fileId, displayOrder });
+      
+      // First verify the file exists
+      const fileCheck = await DatabaseUtils.findOne<{ id: string }>(
+        'SELECT id FROM files WHERE id = ?',
+        [fileId]
+      );
+      
+      if (!fileCheck) {
+        const error = new Error(`File with ID ${fileId} not found`);
+        this.logger.error('File not found for attachment', error, { postId, fileId, displayOrder });
+        throw this.errorHandler.createFileNotFoundError(fileId);
+      }
+
+      // Verify the post exists
+      const postCheck = await DatabaseUtils.findOne<{ id: string }>(
+        'SELECT id FROM posts WHERE id = ?',
+        [postId]
+      );
+      
+      if (!postCheck) {
+        const error = new Error(`Post with ID ${postId} not found`);
+        this.logger.error('Post not found for attachment', error, { postId, fileId, displayOrder });
+        throw this.errorHandler.createDatabaseError(`Post with ID ${postId} not found`, 'insert', 'post_attachments');
+      }
+
+      const result = await DatabaseUtils.executeQuery(
         `INSERT OR IGNORE INTO post_attachments (id, post_id, file_id, display_order, created_at) VALUES (?, ?, ?, ?, ?)`,
         [id, postId, fileId, displayOrder, now]
       );
 
+      if (!result) {
+        const error = new Error('executeQuery returned undefined');
+        this.logger.error('executeQuery returned undefined', error, { postId, fileId, displayOrder });
+        throw this.errorHandler.createDatabaseError('Failed to add attachment to post: query returned no result', 'insert', 'post_attachments');
+      }
+
+      if (result.changes === 0) {
+        this.logger.warn('Attachment already exists (ignored)', { postId, fileId });
+      } else {
+        this.logger.debug('Attachment added successfully', { attachmentId: id, postId, fileId });
+      }
+
       return true;
     } catch (error) {
-      this.logger.error('Failed to add attachment to post', error as Error, { postId, fileId });
-      throw this.errorHandler.createDatabaseError('Failed to add attachment to post', 'insert', 'post_attachments');
+      const dbError = error as any;
+      const errorMessage = dbError?.message || (error as Error).message;
+      const errorCode = dbError?.code;
+      
+      this.logger.error('Failed to add attachment to post', error as Error, { 
+        postId, 
+        fileId, 
+        displayOrder,
+        errorMessage,
+        errorCode,
+        errorStack: (error as Error).stack
+      });
+      
+      // If it's already a custom error (FileNotFoundError), re-throw it
+      if (dbError?.name === 'FileNotFoundError') {
+        throw error;
+      }
+      
+      throw this.errorHandler.createDatabaseError(
+        `Failed to add attachment to post: ${errorMessage}`,
+        'insert',
+        'post_attachments'
+      );
     }
   }
 

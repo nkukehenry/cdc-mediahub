@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, TouchEvent, MouseEvent } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from "@/utils/fileUtils";
 
 interface Publication {
   id: string;
@@ -29,11 +30,6 @@ const isVideoCategory = (categoryName?: string): boolean => {
   return name.includes('video');
 };
 
-const getCoverImageUrl = (coverImage?: string) => {
-  if (!coverImage) return 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&h=450&fit=crop';
-  if (coverImage.startsWith('http')) return coverImage;
-  return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${coverImage}`;
-};
 
 interface ContentSliderProps {
   publications: Publication[];
@@ -237,12 +233,12 @@ export default function ContentSlider({ publications, title, badgeLabel, classNa
                   >
                     <div className="relative aspect-video overflow-hidden">
                       <img
-                        src={getCoverImageUrl(publication.coverImage)}
+                        src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                         alt={publication.title}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
-                          target.src = 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&h=450&fit=crop';
+                          target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                         }}
                       />
 

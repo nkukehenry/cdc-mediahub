@@ -4,6 +4,7 @@ import publicationsReducer from './publicationsSlice';
 import navLinksReducer from './navLinksSlice';
 import analyticsReducer from './analyticsSlice';
 import youtubeReducer from './youtubeSlice';
+import settingsReducer from './settingsSlice';
 import { errorMiddleware } from './middleware/errorMiddleware';
 
 export const store = configureStore({
@@ -13,6 +14,7 @@ export const store = configureStore({
     navLinks: navLinksReducer,
     analytics: analyticsReducer,
     youtube: youtubeReducer,
+    settings: settingsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

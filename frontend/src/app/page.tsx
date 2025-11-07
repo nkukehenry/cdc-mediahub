@@ -1,11 +1,13 @@
 'use client';
 
 import PublicNav from '@/components/PublicNav';
+import PublicFooter from '@/components/PublicFooter';
 import SearchBar from '@/components/SearchBar';
 import FeaturedSlider from '@/components/FeaturedSlider';
 import LeadershipSlider from '@/components/LeadershipSlider';
 import CategoriesSection from '@/components/CategoriesSection';
 import LatestPublications from '@/components/LatestPublications';
+import YouTubeLiveEvents from '@/components/YouTubeLiveEvents';
 import { Provider } from 'react-redux';
 import { store } from '@/store';
 
@@ -43,6 +45,12 @@ export default function Home() {
 
         {/* Latest Publications Section */}
         <LatestPublications />
+
+        {/* YouTube Live Events Section */}
+        <YouTubeLiveEvents limit={6} showViewAll={true} />
+
+        {/* Footer */}
+        <PublicFooter />
       </div>
     </Provider>
   );

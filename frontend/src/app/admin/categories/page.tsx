@@ -8,7 +8,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { showSuccess } from '@/utils/errorHandler';
 import CategoryFormModal from '@/components/CategoryFormModal';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
-import { cn } from '@/utils/fileUtils';
+import { cn, getImageUrl } from '@/utils/fileUtils';
 
 interface Category {
   id: string;
@@ -267,7 +267,7 @@ export default function CategoriesPage() {
                       {category.coverImage ? (
                         <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
                           <img 
-                            src={category.coverImage.startsWith('http') ? category.coverImage : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${category.coverImage.startsWith('/') ? '' : '/'}${category.coverImage}`}
+                            src={getImageUrl(category.coverImage)}
                             alt={category.name}
                             className="w-full h-full object-cover rounded-lg"
                             onError={(e) => {

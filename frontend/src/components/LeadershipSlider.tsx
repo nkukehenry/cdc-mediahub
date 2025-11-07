@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 interface Publication {
   id: string;
@@ -31,14 +32,6 @@ interface Publication {
 interface LeadershipSliderProps {
   limit?: number;
 }
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-const getCoverImageUrl = (coverImage?: string) => {
-  if (!coverImage) return 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=1200&h=800&fit=crop';
-  if (coverImage.startsWith('http')) return coverImage;
-  return `${API_BASE_URL}/${coverImage}`;
-};
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return '';
@@ -140,12 +133,12 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
       {/* Large Image */}
       <div className="w-full h-[250px] md:h-[400px] relative overflow-hidden">
         <img
-          src={getCoverImageUrl(currentPublication.coverImage)}
+          src={getImageUrl(currentPublication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
           alt={currentPublication.title}
           className="w-full h-full object-cover"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
-            target.src = 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=1200&h=800&fit=crop';
+            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
           }}
         />
 
@@ -154,7 +147,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
 
         {/* Red Category Tag - Top */}
         <div className="absolute top-4 left-4 z-20">
-          <span className="inline-block bg-red-600 text-white text-xs font-semibold tracking-wider uppercase px-3 py-1">
+          <span className="inline-block bg-au-red text-white text-xs font-semibold tracking-wider uppercase px-3 py-1">
             LEADERSHIP
           </span>
         </div>
@@ -188,12 +181,12 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
                   className="w-24 h-16 bg-gray-900/80 hover:bg-gray-900/90 overflow-hidden cursor-pointer transition-all hover:scale-105 border-2 border-white/30 hover:border-white/50 flex-shrink-0"
                 >
                   <img
-                    src={getCoverImageUrl(nextSlide1.coverImage)}
+                    src={getImageUrl(nextSlide1.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                     alt={nextSlide1.title}
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      target.src = 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=200&h=300&fit=crop';
+                      target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                     }}
                   />
                 </button>
@@ -206,12 +199,12 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
                   className="w-24 h-16 bg-gray-900/80 hover:bg-gray-900/90 overflow-hidden cursor-pointer transition-all hover:scale-105 border-2 border-white/30 hover:border-white/50 flex-shrink-0"
                 >
                   <img
-                    src={getCoverImageUrl(nextSlide2.coverImage)}
+                    src={getImageUrl(nextSlide2.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                     alt={nextSlide2.title}
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      target.src = 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=200&h=300&fit=crop';
+                      target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                     }}
                   />
                 </button>

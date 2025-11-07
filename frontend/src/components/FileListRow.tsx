@@ -21,9 +21,24 @@ interface FileListRowProps {
   onShare: (item: ItemData) => void;
   onMove: (item: ItemData) => void;
   icon: React.ReactNode;
+  mode?: 'manager' | 'picker';
 }
 
-export default function FileListRow({ item, selected, onToggleSelect, onOpen, onShare, onMove, icon }: FileListRowProps) {
+export default function FileListRow({ item, selected, onToggleSelect, onOpen, onShare, onMove, icon, mode = 'manager' }: FileListRowProps) {
+  const handleToggleSelect = () => {
+    onToggleSelect(item.id);
+  };
+
+  const handleNameClick = () => {
+    if (mode === 'picker' && !item.isFolder) {
+      // In picker mode, clicking the name selects the file
+      onToggleSelect(item.id);
+    } else {
+      // In manager mode, open the file/folder
+      onOpen(item);
+    }
+  };
+
   return (
     <div 
       key={item.id} 
@@ -32,7 +47,7 @@ export default function FileListRow({ item, selected, onToggleSelect, onOpen, on
       <div className="grid grid-cols-12 gap-4 items-center">
         <div className="col-span-1">
           <button 
-            onClick={() => onToggleSelect(item.id)}
+            onClick={handleToggleSelect}
             className="p-0.5 hover:bg-au-gold/10 rounded"
             aria-label={selected ? 'Deselect' : 'Select'}
           >
@@ -49,7 +64,7 @@ export default function FileListRow({ item, selected, onToggleSelect, onOpen, on
           </div>
           <button 
             className="text-xs font-medium text-au-grey-text truncate hover:text-au-green text-left"
-            onClick={() => onOpen(item)}
+            onClick={handleNameClick}
             title={item.name}
           >
             {item.name}

@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { DatabaseConnection } from './database/DatabaseConnection';
 import { DatabaseUtils } from './utils/DatabaseUtils';
 import { FileRepository } from './repositories/FileRepository';
@@ -17,6 +18,7 @@ import { NavLinkRepository } from './repositories/NavLinkRepository';
 import { PostRepository } from './repositories/PostRepository';
 import { FileShareRepository } from './repositories/FileShareRepository';
 import { FolderShareRepository } from './repositories/FolderShareRepository';
+import { SettingsRepository } from './repositories/SettingsRepository';
 import { UserEntity } from './interfaces';
 import { FileService } from './services/FileService';
 import { FolderService } from './services/FolderService';
@@ -27,9 +29,12 @@ import { SubcategoryService } from './services/SubcategoryService';
 import { NavLinkService } from './services/NavLinkService';
 import { AnalyticsService } from './services/AnalyticsService';
 import { YouTubeService } from './services/YouTubeService';
+import { SettingsService } from './services/SettingsService';
+import { UserService } from './services/UserService';
+import { EmailService } from './services/EmailService';
 import { CacheFactory, FileManagerCacheStrategy } from './services/CacheService';
 import { ConfigurationService } from './services/ConfigurationService';
-import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController } from './controllers';
+import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController, CacheController, SettingsController, UserController } from './controllers';
 import { AuthMiddleware, RBACMiddleware } from './middleware';
 import { getLogger } from './utils/Logger';
 import { getErrorHandler } from './utils/ErrorHandler';
@@ -61,6 +66,7 @@ export class FileManagerServer {
   private postRepository!: PostRepository;
   private fileShareRepository!: FileShareRepository;
   private folderShareRepository!: FolderShareRepository;
+  private settingsRepository!: SettingsRepository;
   
   // Services
   private fileService!: FileService;
@@ -72,6 +78,9 @@ export class FileManagerServer {
   private navLinkService!: NavLinkService;
   private analyticsService!: AnalyticsService;
   private youtubeService!: YouTubeService;
+  private settingsService!: SettingsService;
+  private userService!: UserService;
+  private emailService!: EmailService;
 
   // Controllers
   private authController!: AuthController;
@@ -81,6 +90,9 @@ export class FileManagerServer {
   private navLinkController!: NavLinkController;
   private analyticsController!: AnalyticsController;
   private youtubeController!: YouTubeController;
+  private cacheController!: CacheController;
+  private settingsController!: SettingsController;
+  private userController!: UserController;
 
   // Middleware
   private authMiddleware!: AuthMiddleware;
@@ -155,6 +167,7 @@ export class FileManagerServer {
     this.postRepository = new PostRepository();
     this.fileShareRepository = new FileShareRepository();
     this.folderShareRepository = new FolderShareRepository();
+    this.settingsRepository = new SettingsRepository();
 
     // Services
     const appConfig = this.config.getConfig();
@@ -186,6 +199,13 @@ export class FileManagerServer {
     this.navLinkService = new NavLinkService(this.navLinkRepository);
     this.analyticsService = new AnalyticsService();
     this.youtubeService = new YouTubeService(this.cacheService);
+    this.settingsService = new SettingsService(this.settingsRepository);
+    
+    // Email Service
+    const emailConfig = this.config.getEmailConfig();
+    this.emailService = new EmailService(emailConfig);
+    
+    this.userService = new UserService(this.userRepository, this.roleRepository, this.emailService);
 
     // Controllers
     this.authController = new AuthController(this.authService);
@@ -195,6 +215,9 @@ export class FileManagerServer {
     this.navLinkController = new NavLinkController(this.navLinkService);
     this.analyticsController = new AnalyticsController(this.analyticsService);
     this.youtubeController = new YouTubeController(this.youtubeService);
+    this.cacheController = new CacheController(this.cacheService);
+    this.settingsController = new SettingsController(this.settingsService);
+    this.userController = new UserController(this.userService);
 
     // Middleware
     this.authMiddleware = new AuthMiddleware(this.authService);
@@ -263,8 +286,10 @@ export class FileManagerServer {
   }
 
   private setupSwagger(): void {
-    setupSwagger(this.app);
-    this.logger.info('Swagger documentation setup completed');
+    // Temporarily disabled due to swagger-jsdoc parsing issues
+    // setupSwagger(this.app);
+    // this.logger.info('Swagger documentation setup completed');
+    this.logger.info('Swagger documentation setup skipped (temporarily disabled)');
   }
 
   private setupRoutes(): void {
@@ -285,6 +310,84 @@ export class FileManagerServer {
      */
     this.app.get('/health', (req, res) => {
       res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    });
+
+    // Serve static files from uploads directory
+    const appConfig = this.config.getConfig();
+    const uploadPath = path.resolve(appConfig.uploadPath);
+    
+    // Handle OPTIONS preflight requests for static files
+    this.app.options('/uploads/:filename(*)', (req, res) => {
+      const serverConfig = this.config.getServerConfig();
+      res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+      res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
+      res.status(204).end();
+    });
+
+    this.app.get('/uploads/:filename(*)', async (req, res): Promise<void> => {
+      try {
+        const serverConfig = this.config.getServerConfig();
+        const filename = req.params.filename;
+        const filePath = path.join(uploadPath, filename);
+        
+        // Security: Ensure the file path is within the uploads directory
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(path.resolve(uploadPath))) {
+          this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
+          res.status(403).json({ error: 'Access denied' });
+          return;
+        }
+        
+        // Check if file exists
+        try {
+          await fs.promises.access(filePath);
+        } catch {
+          this.logger.debug('File not found', { filePath });
+          res.status(404).json({ error: 'File not found' });
+          return;
+        }
+        
+        // Get file stats
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) {
+          res.status(404).json({ error: 'File not found' });
+          return;
+        }
+        
+        // Set CORS headers explicitly
+        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+        if (serverConfig.cors.credentials) {
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+        
+        // Set appropriate headers
+        res.setHeader('Content-Type', this.getContentType(filename));
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+        
+        // Send file
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.on('error', (error) => {
+          this.logger.error('Error streaming file', error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error' });
+          }
+        });
+        fileStream.pipe(res);
+        
+        this.logger.debug('Served static file', { filename, filePath });
+      } catch (error) {
+        this.logger.error('Error serving static file', error as Error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      }
     });
 
     // File routes
@@ -1376,6 +1479,51 @@ export class FileManagerServer {
      *             schema:
      *               $ref: '#/components/schemas/ErrorResponse'
      */
+    /**
+     * @swagger
+     * /api/auth/profile:
+     *   put:
+     *     summary: Update user profile
+     *     description: Update the authenticated user's profile information
+     *     tags: [Authentication]
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               firstName:
+     *                 type: string
+     *               lastName:
+     *                 type: string
+     *               email:
+     *                 type: string
+     *               avatar:
+     *                 type: string
+     *               phone:
+     *                 type: string
+     *               jobTitle:
+     *                 type: string
+     *               organization:
+     *                 type: string
+     *               bio:
+     *                 type: string
+     *     responses:
+     *       200:
+     *         description: Profile updated successfully
+     *       401:
+     *         description: Unauthorized
+     */
+    this.app.put('/api/auth/profile',
+      this.authMiddleware.authenticate,
+      (req, res) => {
+        this.authController.updateProfile(req, res);
+      }
+    );
+
     this.app.put('/api/auth/language',
       this.authMiddleware.authenticate,
       async (req, res) => {
@@ -2148,6 +2296,526 @@ export class FileManagerServer {
       );
 
       // ========================================
+      // Cache Management Routes (Admin - Protected)
+      // ========================================
+      /**
+       * @swagger
+       * /api/admin/cache/stats:
+       *   get:
+       *     summary: Get cache statistics
+       *     description: Get cache connection status and statistics
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: Cache statistics
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.get('/api/admin/cache/stats',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.getStats(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/cache/keys:
+       *   get:
+       *     summary: Get cache keys
+       *     description: Get list of cache keys matching a pattern
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: query
+       *         name: pattern
+       *         schema:
+       *           type: string
+       *         description: Pattern to match keys (default: *)
+       *       - in: query
+       *         name: limit
+       *         schema:
+       *           type: integer
+       *         description: Maximum number of keys to return (default: 100)
+       *     responses:
+       *       200:
+       *         description: List of cache keys
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.get('/api/admin/cache/keys',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.getKeys(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/cache/keys/{key}:
+       *   get:
+       *     summary: Get cache value by key
+       *     description: Get the value stored for a specific cache key
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: key
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: Cache key
+       *     responses:
+       *       200:
+       *         description: Cache value
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       *   delete:
+       *     summary: Delete cache key
+       *     description: Delete a specific cache key
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: key
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: Cache key to delete
+       *     responses:
+       *       200:
+       *         description: Key deleted successfully
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.get('/api/admin/cache/keys/:key',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.getValue(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/cache/keys/:key',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.deleteKey(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/cache/pattern:
+       *   delete:
+       *     summary: Delete cache by pattern
+       *     description: Delete all cache keys matching a pattern
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             required:
+       *               - pattern
+       *             properties:
+       *               pattern:
+       *                 type: string
+       *                 example: mutindo:filemanager:files:*
+       *     responses:
+       *       200:
+       *         description: Keys deleted successfully
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.delete('/api/admin/cache/pattern',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.deletePattern(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/cache/flush:
+       *   delete:
+       *     summary: Flush all cache
+       *     description: Delete all cache entries
+       *     tags: [Cache Management]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: Cache flushed successfully
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.delete('/api/admin/cache/flush',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.cacheController.flushAll(req, res);
+        }
+      );
+
+      // ========================================
+      // Settings Routes
+      // ========================================
+      /**
+       * @swagger
+       * /api/public/settings:
+       *   get:
+       *     summary: Get public site settings
+       *     description: Get public site settings including SEO metadata, contact info, social links, logo, and favicon
+       *     tags: [Settings (Public)]
+       *     responses:
+       *       200:
+       *         description: Public site settings
+       */
+      this.app.get('/api/public/settings',
+        (req, res) => {
+          this.settingsController.getPublicSettings(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/settings:
+       *   get:
+       *     summary: Get all settings
+       *     description: Get all site settings (admin only)
+       *     tags: [Settings (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: All settings
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.get('/api/admin/settings',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.settingsController.getAllSettings(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/settings/{key}:
+       *   get:
+       *     summary: Get a specific setting
+       *     description: Get a specific setting by key (admin only)
+       *     tags: [Settings (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: key
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: Setting key
+       *     responses:
+       *       200:
+       *         description: Setting value
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       *       404:
+       *         description: Setting not found
+       */
+      this.app.get('/api/admin/settings/:key',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.settingsController.getSetting(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/settings:
+       *   put:
+       *     summary: Update settings (bulk)
+       *     description: Update multiple settings at once (admin only)
+       *     tags: [Settings (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               settings:
+       *                 type: object
+       *                 description: Object with setting keys and values
+       *     responses:
+       *       200:
+       *         description: Settings updated successfully
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.put('/api/admin/settings',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.settingsController.updateSettings(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/admin/settings/{key}:
+       *   put:
+       *     summary: Update a specific setting
+       *     description: Update a specific setting by key (admin only)
+       *     tags: [Settings (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: key
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: Setting key
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             required:
+       *               - value
+       *             properties:
+       *               value:
+       *                 description: Setting value (can be any JSON-serializable value)
+       *               description:
+       *                 type: string
+       *                 description: Optional description for the setting
+       *     responses:
+       *       200:
+       *         description: Setting updated successfully
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.put('/api/admin/settings/:key',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.settingsController.updateSetting(req, res);
+        }
+      );
+
+      // ========================================
+      // User Management Routes (Admin)
+      // ========================================
+      this.app.post('/api/admin/users',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.create(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/users',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.getAll(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/users/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.getById(req, res);
+        }
+      );
+
+      this.app.put('/api/admin/users/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.update(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/users/:id/block',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.block(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/users/:id/unblock',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.unblock(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/users/:id/reset-password',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.resetPassword(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/users/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.userController.delete(req, res);
+        }
+      );
+
+      // ========================================
+      // Email Test Route (Admin)
+      // ========================================
+      this.app.post('/api/admin/email/test',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          try {
+            const { to, type = 'custom' } = req.body;
+
+            if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+              res.status(400).json({
+                success: false,
+                error: {
+                  type: 'VALIDATION_ERROR',
+                  message: 'Valid email address is required',
+                  timestamp: new Date().toISOString()
+                }
+              });
+              return;
+            }
+
+            let emailSent = false;
+            const testUsername = 'Test User';
+
+            switch (type) {
+              case 'welcome':
+                emailSent = await this.emailService.sendWelcomeEmail(to, testUsername, 'TestPassword123');
+                break;
+              case 'password-reset':
+                emailSent = await this.emailService.sendPasswordResetEmail(to, testUsername, 'TempPassword123');
+                break;
+              case 'blocked':
+                emailSent = await this.emailService.sendAccountBlockedEmail(to, testUsername);
+                break;
+              case 'unblocked':
+                emailSent = await this.emailService.sendAccountUnblockedEmail(to, testUsername);
+                break;
+              case 'custom':
+              default:
+                emailSent = await this.emailService.sendEmail({
+                  to,
+                  subject: 'Test Email - Email Service',
+                  html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                      <meta charset="utf-8">
+                      <style>
+                        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                        .header { background-color: #0066cc; color: white; padding: 20px; text-align: center; }
+                        .content { padding: 20px; background-color: #f9f9f9; }
+                        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+                      </style>
+                    </head>
+                    <body>
+                      <div class="container">
+                        <div class="header">
+                          <h1>Email Service Test</h1>
+                        </div>
+                        <div class="content">
+                          <p>Hello,</p>
+                          <p>This is a test email to verify that the email service is working correctly.</p>
+                          <p>If you received this email, it means:</p>
+                          <ul>
+                            <li>✅ Email service is enabled</li>
+                            <li>✅ SMTP configuration is correct</li>
+                            <li>✅ Connection to email server is successful</li>
+                            <li>✅ Emails can be sent successfully</li>
+                          </ul>
+                          <p>You can now use the email service to send notifications to users.</p>
+                        </div>
+                        <div class="footer">
+                          <p>This is an automated test message from the File Manager system.</p>
+                        </div>
+                      </div>
+                    </body>
+                    </html>
+                  `,
+                });
+                break;
+            }
+
+            if (emailSent) {
+              res.json({
+                success: true,
+                message: `Test email sent successfully to ${to}`,
+                data: { emailType: type }
+              });
+            } else {
+              res.status(500).json({
+                success: false,
+                error: {
+                  type: 'EMAIL_ERROR',
+                  message: 'Failed to send test email. Check server logs for details.',
+                  timestamp: new Date().toISOString()
+                }
+              });
+            }
+          } catch (error) {
+            this.logger.error('Email test failed', error as Error);
+            res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      // ========================================
       // YouTube Routes (Public)
       // ========================================
       /**
@@ -2378,10 +3046,12 @@ export class FileManagerServer {
       const cacheId = `list:${folderId ? String(folderId) : 'root'}`;
       const cached = await this.cacheGet<any[]>('files', cacheId, userId);
       let files: any[];
-      if (cached) {
+      if (cached && Array.isArray(cached)) {
         files = cached;
       } else {
         files = await this.fileService.getFiles(folderId as string || null, userId);
+        // Cache only the files array (without URLs which depend on request protocol/host)
+        await this.cacheSet('files', cacheId, files, userId);
       }
       // Resolve creators in batch
       const ownerIds = Array.from(new Set(files.map(f => f.userId).filter(Boolean))) as string[];
@@ -2403,7 +3073,6 @@ export class FileManagerServer {
       });
 
       const responsePayload = { files: filesWithUrls };
-      await this.cacheSet('files', cacheId, responsePayload, userId);
 
       res.json({
         success: true,
@@ -2766,5 +3435,30 @@ export class FileManagerServer {
       this.logger.error('Failed to initialize YouTube fetching', error as Error);
       // Don't fail startup if initialization fails
     }
+  }
+
+  private getContentType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes: { [key: string]: string } = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.xml': 'application/xml',
+      '.zip': 'application/zip',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 }

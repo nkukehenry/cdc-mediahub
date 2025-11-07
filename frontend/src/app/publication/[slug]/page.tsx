@@ -5,12 +5,14 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, User, Eye, MessageCircle, Heart, Share2, Download, FileText, Image as ImageIcon, Video, Music, Eye as EyeIcon } from 'lucide-react';
 import PublicNav from '@/components/PublicNav';
+import PublicFooter from '@/components/PublicFooter';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState } from '@/store';
 import { fetchPublicationBySlug, fetchRelatedPublications } from '@/store/publicationsSlice';
 import FilePreviewModal from '@/components/FilePreviewModal';
 import { FileWithUrls } from '@/types/fileManager';
 import PublicationsCarousel from '@/components/PublicationsCarousel';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 function PublicationDetailsContent() {
   const params = useParams();
@@ -21,6 +23,8 @@ function PublicationDetailsContent() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
+  const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
+  const mediaBlobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (slug) {
@@ -39,6 +43,71 @@ function PublicationDetailsContent() {
     }
   }, [currentPublication, dispatch]);
 
+  // Load first attachment as blob for preview (similar to FilePreviewModal)
+  useEffect(() => {
+    if (!currentPublication?.attachments || currentPublication.attachments.length === 0) {
+      // Clean up if no attachments
+      if (mediaBlobUrlRef.current) {
+        URL.revokeObjectURL(mediaBlobUrlRef.current);
+        mediaBlobUrlRef.current = null;
+      }
+      setMediaBlobUrl(null);
+      return;
+    }
+
+    // Get first attachment for preview
+    const firstAttachment = currentPublication.attachments[0];
+    if (!firstAttachment) {
+      return;
+    }
+
+    const fetchMediaFile = async () => {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+        
+        // Build headers with auth token if available
+        const headers: HeadersInit = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${baseUrl}/api/files/${firstAttachment.id}/download`, {
+          headers
+        });
+
+        if (!response.ok) {
+          console.error('Failed to load attachment file:', response.statusText);
+          return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Clean up previous blob URL
+        if (mediaBlobUrlRef.current) {
+          URL.revokeObjectURL(mediaBlobUrlRef.current);
+        }
+        
+        mediaBlobUrlRef.current = url;
+        setMediaBlobUrl(url);
+      } catch (err) {
+        console.error('Failed to fetch attachment file for preview:', err);
+      }
+    };
+
+    fetchMediaFile();
+
+    // Cleanup blob URL on unmount or when publication changes
+    return () => {
+      if (mediaBlobUrlRef.current) {
+        URL.revokeObjectURL(mediaBlobUrlRef.current);
+        mediaBlobUrlRef.current = null;
+      }
+      setMediaBlobUrl(null);
+    };
+  }, [currentPublication?.id, currentPublication?.attachments]);
+
   // Close share menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -53,11 +122,6 @@ function PublicationDetailsContent() {
     }
   }, [showShareMenu]);
 
-  const getCoverImageUrl = (coverImage?: string) => {
-    if (!coverImage) return '/placeholder-image.jpg';
-    if (coverImage.startsWith('http')) return coverImage;
-    return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${coverImage}`;
-  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -173,6 +237,7 @@ function PublicationDetailsContent() {
             </div>
           </div>
         </div>
+        <PublicFooter />
       </div>
     );
   }
@@ -194,6 +259,7 @@ function PublicationDetailsContent() {
             </Link>
           </div>
         </div>
+        <PublicFooter />
       </div>
     );
   }
@@ -220,12 +286,12 @@ function PublicationDetailsContent() {
           {publication.coverImage && (
             <div className="relative w-full h-64 md:h-96 overflow-hidden">
               <img
-                src={getCoverImageUrl(publication.coverImage)}
+                src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                 alt={publication.title}
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  target.src = '/placeholder-image.jpg';
+                  target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent"></div>
@@ -234,6 +300,86 @@ function PublicationDetailsContent() {
 
           {/* Content */}
           <div className="p-6 md:p-8 lg:p-12">
+            {/* First Attachment Preview - Show before title for all categories */}
+            {(() => {
+              if (!publication.attachments || publication.attachments.length === 0) {
+                return null;
+              }
+
+              const firstAttachment = publication.attachments[0];
+              if (!firstAttachment) {
+                return null;
+              }
+
+              const mimeType = firstAttachment.mimeType || '';
+              const isVideo = mimeType.startsWith('video/');
+              const isAudio = mimeType.startsWith('audio/');
+              const isImage = mimeType.startsWith('image/');
+              const isPdf = mimeType === 'application/pdf';
+              
+              // Show preview for video, audio, images, and PDFs
+              if (mediaBlobUrl && (isVideo || isAudio || isImage || isPdf)) {
+                return (
+                  <div className="mb-8">
+                    {isVideo ? (
+                      <video
+                        controls
+                        className="w-full rounded-lg shadow-md"
+                        preload="auto"
+                        style={{ maxHeight: '600px' }}
+                      >
+                        <source src={mediaBlobUrl} type={mimeType} />
+                        Your browser does not support the video tag.
+                      </video>
+                    ) : isAudio ? (
+                      <div className="bg-gray-100 rounded-lg p-6 shadow-md">
+                        <audio
+                          controls
+                          className="w-full"
+                          preload="auto"
+                        >
+                          <source src={mediaBlobUrl} type={mimeType} />
+                          Your browser does not support the audio element.
+                        </audio>
+                      </div>
+                    ) : isImage ? (
+                      <div className="w-full rounded-lg shadow-md overflow-hidden">
+                        <img
+                          src={mediaBlobUrl}
+                          alt={firstAttachment.originalName}
+                          className="w-full h-auto max-h-[600px] object-contain"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : isPdf ? (
+                      <div className="w-full rounded-lg shadow-md overflow-hidden" style={{ height: '600px' }}>
+                        <iframe
+                          src={mediaBlobUrl}
+                          className="w-full h-full"
+                          title={firstAttachment.originalName}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              } else if (firstAttachment && (isVideo || isAudio || isImage || isPdf)) {
+                // Show loading state while fetching blob
+                return (
+                  <div className="mb-8 bg-gray-100 rounded-lg p-6 shadow-md flex items-center justify-center" style={{ minHeight: '200px' }}>
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-corporate-green mx-auto mb-2"></div>
+                      <p className="text-sm text-gray-600">Loading preview...</p>
+                    </div>
+                  </div>
+                );
+              }
+              
+              return null;
+            })()}
+
             {/* Header */}
             <div className="mb-6">
               {/* Category Badge */}
@@ -450,6 +596,7 @@ function PublicationDetailsContent() {
         }}
         file={previewFile}
       />
+      <PublicFooter />
     </div>
   );
 }

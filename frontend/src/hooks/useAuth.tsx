@@ -52,11 +52,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (response.success && response.data?.user) {
         const userData = response.data.user as User;
-        console.log('[AuthProvider] User data received:', { id: userData.id, language: userData.language });
+        const roles = response.data?.roles || [];
+        const permissions = response.data?.permissions || [];
+        console.log('[AuthProvider] User data received:', { id: userData.id, language: userData.language, roles, permissions });
         setState({
           user: {
             ...userData,
             language: userData.language || 'en', // Ensure language is always set
+            roles: roles as string[],
+            permissions: permissions as string[],
           },
           loading: false,
           error: null,
@@ -85,10 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (response.success && response.data?.user) {
         const userData = response.data.user as User;
+        const roles = response.data?.roles || [];
+        const permissions = response.data?.permissions || [];
         setState({
           user: {
             ...userData,
             language: userData.language || 'en',
+            roles: roles as string[],
+            permissions: permissions as string[],
           },
           loading: false,
           error: null,

@@ -134,6 +134,45 @@ export class ConfigurationService {
       }
     };
   }
+
+  // Email configuration
+  getEmailConfig() {
+    // Check for Microsoft Graph credentials with multiple naming conventions
+    const graphClientId = process.env.EXCHANGE_EMAIL_CLIENT_ID || 
+                          process.env.MICROSOFT_GRAPH_CLIENT_ID || 
+                          process.env.MS_GRAPH_CLIENT_ID ||
+                          process.env.GRAPH_CLIENT_ID ||
+                          process.env.AZURE_CLIENT_ID;
+    const graphClientSecret = process.env.EXCHANGE_EMAIL_CLIENT_SECRET || 
+                              process.env.MICROSOFT_GRAPH_CLIENT_SECRET || 
+                              process.env.MS_GRAPH_CLIENT_SECRET ||
+                              process.env.GRAPH_CLIENT_SECRET ||
+                              process.env.AZURE_CLIENT_SECRET;
+    const graphTenantId = process.env.EXCHANGE_EMAIL_TENANT_ID || 
+                          process.env.MICROSOFT_GRAPH_TENANT_ID || 
+                          process.env.MS_GRAPH_TENANT_ID ||
+                          process.env.GRAPH_TENANT_ID ||
+                          process.env.AZURE_TENANT_ID;
+
+    return {
+      enabled: process.env.EMAIL_ENABLED === 'true',
+      provider: (process.env.EMAIL_PROVIDER || 'smtp') as 'microsoft-graph' | 'smtp',
+      // Microsoft Graph API config (support multiple naming conventions)
+      graphClientId,
+      graphClientSecret,
+      graphTenantId,
+      // SMTP config (for fallback or smtp provider)
+      smtpHost: process.env.SMTP_HOST || process.env.EMAIL_HOST,
+      smtpPort: parseInt(process.env.SMTP_PORT || process.env.EMAIL_PORT || '587'),
+      smtpSecure: process.env.SMTP_SECURE === 'true' || process.env.EMAIL_SECURE === 'true',
+      smtpUser: process.env.SMTP_USER || process.env.EMAIL_USER,
+      smtpPassword: process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD,
+      // Email settings
+      fromEmail: process.env.EMAIL_FROM || process.env.FROM_EMAIL || process.env.EMAIL_FROM_ADDRESS || 'noreply@example.com',
+      fromName: process.env.EMAIL_FROM_NAME || process.env.FROM_NAME,
+      replyTo: process.env.EMAIL_REPLY_TO || process.env.REPLY_TO,
+    };
+  }
 }
 
 // Singleton instance

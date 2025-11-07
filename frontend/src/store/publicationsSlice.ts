@@ -129,17 +129,25 @@ export const fetchPublications = createAsyncThunk(
       throw new Error(response.error?.message || 'Failed to fetch publications');
     }
     const publications = response.data.posts || [];
-    const total = publications.length; // Note: API might not return total, so we'll use length for now
-    const totalPages = Math.ceil(total / (limit || 12));
     
-    return {
-      publications: publications as Publication[],
-      pagination: {
+    // Use pagination from backend if available, otherwise calculate from current results
+    let pagination;
+    if (response.data.pagination) {
+      pagination = response.data.pagination;
+    } else {
+      const total = publications.length;
+      const totalPages = Math.ceil(total / (limit || 12));
+      pagination = {
         total,
         page: page || 1,
         limit: limit || 12,
         totalPages,
-      },
+      };
+    }
+    
+    return {
+      publications: publications as Publication[],
+      pagination,
     };
   }
 );

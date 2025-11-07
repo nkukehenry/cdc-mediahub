@@ -43,13 +43,20 @@ function FilePickerModalContent({
     silentRefresh: true,
   });
 
-  // Update temp selected files when selectedFiles prop changes
+  // Update temp selected files when modal opens (only on open, not on every selectedFiles change)
   useEffect(() => {
     if (isOpen) {
+      console.log('FilePickerModal - Modal opened, setting tempSelectedFiles to:', selectedFiles);
       setTempSelectedFiles(selectedFiles);
       setUploadedFileNames([]);
     }
-  }, [selectedFiles, isOpen]);
+  }, [isOpen]); // Only depend on isOpen, not selectedFiles to prevent resetting during selection
+
+  // Track changes to tempSelectedFiles
+  useEffect(() => {
+    console.log('FilePickerModal - tempSelectedFiles changed:', tempSelectedFiles);
+    console.log('FilePickerModal - tempSelectedFiles length:', tempSelectedFiles.length);
+  }, [tempSelectedFiles]);
 
   if (!isOpen) return null;
 
@@ -89,21 +96,42 @@ function FilePickerModalContent({
   };
 
   const handleFileSelect = (file: FileWithUrls) => {
+    console.log('FilePickerModal - handleFileSelect called with file:', file);
+    console.log('FilePickerModal - File ID:', file?.id);
+    console.log('FilePickerModal - File structure:', {
+      id: file?.id,
+      filename: file?.filename,
+      originalName: file?.originalName,
+      mimeType: file?.mimeType,
+      filePath: file?.filePath,
+      downloadUrl: file?.downloadUrl,
+    });
+    console.log('FilePickerModal - filterMimeTypes:', filterMimeTypes);
+    
+    // Validate file object
+    if (!file || !file.id) {
+      console.error('FilePickerModal - Invalid file object received:', file);
+      return;
+    }
+    
     // Filter by mimeType if filterMimeTypes is specified
     if (filterMimeTypes && filterMimeTypes.length > 0) {
       const matchesFilter = filterMimeTypes.some(filter => {
         if (filter.endsWith('/*')) {
           // Wildcard match (e.g., 'image/*' matches 'image/jpeg')
           const baseType = filter.replace('/*', '');
-          return file.mimeType.startsWith(baseType + '/');
+          return file.mimeType?.startsWith(baseType + '/');
         } else {
           // Exact match
           return file.mimeType === filter;
         }
       });
       
+      console.log('FilePickerModal - matchesFilter:', matchesFilter);
+      
       if (!matchesFilter) {
         // File doesn't match filter, don't allow selection
+        console.log('FilePickerModal - File filtered out, not matching filter');
         return;
       }
     }
@@ -111,15 +139,25 @@ function FilePickerModalContent({
     if (multiple) {
       // Toggle file selection
       setTempSelectedFiles(prev => {
+        console.log('FilePickerModal - Previous tempSelectedFiles:', prev);
+        console.log('FilePickerModal - Previous tempSelectedFiles length:', prev.length);
         const exists = prev.find(f => f.id === file.id);
         if (exists) {
-          return prev.filter(f => f.id !== file.id);
+          const newSelection = prev.filter(f => f.id !== file.id);
+          console.log('FilePickerModal - Removing file, new selection:', newSelection);
+          console.log('FilePickerModal - New selection length:', newSelection.length);
+          return newSelection;
         } else {
-          return [...prev, file];
+          const newSelection = [...prev, file];
+          console.log('FilePickerModal - Adding file, new selection:', newSelection);
+          console.log('FilePickerModal - New selection length:', newSelection.length);
+          console.log('FilePickerModal - New selection IDs:', newSelection.map(f => f.id));
+          return newSelection;
         }
       });
     } else {
       // Single selection
+      console.log('FilePickerModal - Single selection, setting to:', [file]);
       setTempSelectedFiles([file]);
     }
   };
@@ -129,7 +167,16 @@ function FilePickerModalContent({
   };
 
   const handleDone = () => {
-    onSelectFiles(tempSelectedFiles);
+    console.log('FilePickerModal - handleDone called, tempSelectedFiles:', tempSelectedFiles);
+    console.log('FilePickerModal - tempSelectedFiles length:', tempSelectedFiles.length);
+    console.log('FilePickerModal - tempSelectedFiles IDs:', tempSelectedFiles.map(f => f.id));
+    console.log('FilePickerModal - Calling onSelectFiles with:', tempSelectedFiles);
+    
+    // Ensure we pass a valid array (never undefined or null)
+    const filesToPass = Array.isArray(tempSelectedFiles) ? tempSelectedFiles : [];
+    console.log('FilePickerModal - Files to pass:', filesToPass);
+    
+    onSelectFiles(filesToPass);
     onClose();
   };
 

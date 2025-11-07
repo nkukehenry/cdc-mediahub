@@ -40,6 +40,45 @@ export class PostService implements IPublicationService {
         }
       }
 
+      // Validate audio/video categories have matching attachments
+      const categoryNameLower = category.name.toLowerCase();
+      const categorySlugLower = category.slug.toLowerCase();
+      const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+      const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+      
+      if ((isAudioCategory || isVideoCategory) && postData.attachmentFileIds && postData.attachmentFileIds.length > 0) {
+        // Check if at least one attachment matches the category type
+        let hasMatchingAttachment = false;
+        for (const fileId of postData.attachmentFileIds) {
+          const file = await this.fileRepository.findById(fileId);
+          if (file) {
+            if (isAudioCategory && file.mimeType.startsWith('audio/')) {
+              hasMatchingAttachment = true;
+              break;
+            }
+            if (isVideoCategory && file.mimeType.startsWith('video/')) {
+              hasMatchingAttachment = true;
+              break;
+            }
+          }
+        }
+        
+        if (!hasMatchingAttachment) {
+          const categoryType = isAudioCategory ? 'audio' : 'video';
+          throw this.errorHandler.createValidationError(
+            `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+            'attachmentFileIds'
+          );
+        }
+      } else if (isAudioCategory || isVideoCategory) {
+        // Category requires attachments but none provided
+        const categoryType = isAudioCategory ? 'audio' : 'video';
+        throw this.errorHandler.createValidationError(
+          `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+          'attachmentFileIds'
+        );
+      }
+
       // Validate authors exist
       if (postData.authorIds && postData.authorIds.length > 0) {
         for (const authorId of postData.authorIds) {
@@ -108,13 +147,31 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async getPublishedPublications(limit?: number, offset?: number): Promise<PublicationWithRelations[]> {
+  async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
     try {
-      const posts = await this.postRepository.findPublished(limit, offset);
+      const finalLimit = limit || 20;
+      const finalOffset = offset || 0;
+      
+      // Get total count for pagination
+      const total = await this.postRepository.countPublished(categoryId, subcategoryId);
+      
+      // Get publications with pagination
+      const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset);
       const postsWithRelations = await Promise.all(
         posts.map((post: PublicationEntity) => this.postRepository.getWithRelations(post.id))
       );
-      return postsWithRelations.filter((p): p is PublicationWithRelations => p !== null);
+      const publications = postsWithRelations.filter((p): p is PublicationWithRelations => p !== null);
+      
+      const page = Math.floor(finalOffset / finalLimit) + 1;
+      const totalPages = Math.ceil(total / finalLimit);
+
+      return {
+        publications,
+        total,
+        page,
+        limit: finalLimit,
+        totalPages
+      };
     } catch (error) {
       this.logger.error('Failed to get published posts', error as Error);
       throw error;
@@ -179,11 +236,79 @@ export class PostService implements IPublicationService {
       }
 
       // Validate category if being updated
+      let category = null;
       if (data.categoryId) {
-        const category = await this.categoryRepository.findById(data.categoryId);
+        category = await this.categoryRepository.findById(data.categoryId);
         if (!category) {
           throw this.errorHandler.createValidationError('Category not found', 'categoryId');
         }
+      } else {
+        // Use existing category if not being updated
+        category = await this.categoryRepository.findById(existingPost.categoryId);
+      }
+
+      // Validate audio/video categories have matching attachments
+      if (category) {
+        const categoryNameLower = category.name.toLowerCase();
+        const categorySlugLower = category.slug.toLowerCase();
+        const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+        const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+        
+        if (isAudioCategory || isVideoCategory) {
+          // Get attachment file IDs - use updated ones if provided, otherwise get existing
+          let attachmentFileIds: string[] = [];
+          if (data.attachmentFileIds !== undefined) {
+            attachmentFileIds = data.attachmentFileIds;
+          } else {
+            const existingPostWithRelations = await this.postRepository.getWithRelations(id);
+            attachmentFileIds = existingPostWithRelations?.attachments?.map(a => a.id) || [];
+          }
+          
+          if (attachmentFileIds.length > 0) {
+            // Check if at least one attachment matches the category type
+            let hasMatchingAttachment = false;
+            for (const fileId of attachmentFileIds) {
+              const file = await this.fileRepository.findById(fileId);
+              if (file) {
+                if (isAudioCategory && file.mimeType.startsWith('audio/')) {
+                  hasMatchingAttachment = true;
+                  break;
+                }
+                if (isVideoCategory && file.mimeType.startsWith('video/')) {
+                  hasMatchingAttachment = true;
+                  break;
+                }
+              }
+            }
+            
+            if (!hasMatchingAttachment) {
+              const categoryType = isAudioCategory ? 'audio' : 'video';
+              throw this.errorHandler.createValidationError(
+                `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+                'attachmentFileIds'
+              );
+            }
+          } else {
+            // Category requires attachments but none provided
+            const categoryType = isAudioCategory ? 'audio' : 'video';
+            throw this.errorHandler.createValidationError(
+              `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+              'attachmentFileIds'
+            );
+          }
+        }
+      }
+
+      // Validate attachment files if being updated
+      if (data.attachmentFileIds !== undefined && data.attachmentFileIds.length > 0) {
+        for (const fileId of data.attachmentFileIds) {
+          const file = await this.fileRepository.findById(fileId);
+          if (!file) {
+            throw this.errorHandler.createFileNotFoundError(fileId);
+          }
+          // Optionally check ownership - for now, allow any file
+        }
+        this.logger.debug('Validated attachment files', { fileIds: data.attachmentFileIds });
       }
 
       // Validate authors if being updated
@@ -196,6 +321,7 @@ export class PostService implements IPublicationService {
         }
       }
 
+      this.logger.debug('Updating publication', { postId: id, updateData: { ...data, attachmentFileIds: data.attachmentFileIds?.length || 0 } });
       const updatedPost = await this.postRepository.update(id, data);
       this.logger.info('Post updated successfully', { postId: id });
       return updatedPost;

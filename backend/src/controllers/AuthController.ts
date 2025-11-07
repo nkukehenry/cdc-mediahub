@@ -131,6 +131,48 @@ export class AuthController {
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
     }
   }
+
+  async updateProfile(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const { firstName, lastName, email, avatar, phone, jobTitle, organization, bio } = req.body;
+
+      // Update user profile
+      const updatedUser = await this.authService.updateUserProfile(req.user.userId, {
+        firstName,
+        lastName,
+        email,
+        avatar,
+        phone,
+        jobTitle,
+        organization,
+        bio
+      });
+
+      const { password, ...userWithoutPassword } = updatedUser;
+
+      res.json({
+        success: true,
+        data: {
+          user: userWithoutPassword
+        }
+      });
+    } catch (error) {
+      this.logger.error('Update profile failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
 }
 
 

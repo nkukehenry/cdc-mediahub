@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Univers Font Face Declarations */
+@font-face {
+  font-family: 'Univers';
+  src: url('/fonts/UniversRegular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Univers';
+  src: url('/fonts/UniversBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Univers';
+  src: url('/fonts/UniversLight.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Univers Condensed variants */
+@font-face {
+  font-family: 'Univers Condensed';
+  src: url('/fonts/UniversCnRg.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Univers Condensed';
+  src: url('/fonts/UniversCnBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -46,12 +88,38 @@
   }
 }
 
+@keyframes loadingSlide {
+  0% {
+    left: -33.33%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes loadingShimmer {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.5s ease-out;
 }
 
 .animate-slide-in-up {
   animation: slideInUp 0.6s ease-out;
+}
+
+.animate-loading-slide {
+  animation: loadingSlide 1.5s ease-in-out infinite;
+}
+
+.animate-loading-shimmer {
+  animation: loadingShimmer 1.5s ease-in-out infinite;
 }
 
 /* Custom scrollbar styles */
@@ -84,8 +152,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Univers', 'Univers LT Std', 'Univers Light', 'Univers Condensed', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -98,5 +165,5 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Univers', 'Univers LT Std', 'Univers Light', 'Univers Condensed', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

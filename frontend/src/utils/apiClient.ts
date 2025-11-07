@@ -140,6 +140,22 @@ class ApiClient {
     });
   }
 
+  async updateProfile(data: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    avatar?: string;
+    phone?: string;
+    jobTitle?: string;
+    organization?: string;
+    bio?: string;
+  }): Promise<ApiResponse<{ user: any }>> {
+    return this.request<{ user: any }>('/api/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   logout(): void {
     this.removeToken();
     if (typeof window !== 'undefined') {
@@ -414,15 +430,17 @@ class ApiClient {
     subcategoryId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<ApiResponse<{ posts: Array<any> }>> {
+    search?: string;
+  }): Promise<ApiResponse<{ posts: Array<any>; pagination?: { total: number; page: number; limit: number; totalPages: number } }>> {
     const params = new URLSearchParams();
     if (filters?.categoryId) params.append('categoryId', filters.categoryId);
     if (filters?.subcategoryId) params.append('subcategoryId', filters.subcategoryId);
+    if (filters?.search) params.append('search', filters.search);
     if (filters?.limit) params.append('limit', filters.limit.toString());
     if (filters?.offset) params.append('offset', filters.offset.toString());
     
     const queryString = params.toString();
-    return this.request<{ posts: Array<any> }>(`/api/public/posts${queryString ? `?${queryString}` : ''}`);
+    return this.request<{ posts: Array<any>; pagination?: { total: number; page: number; limit: number; totalPages: number } }>(`/api/public/posts${queryString ? `?${queryString}` : ''}`);
   }
 
   async getPublicationBySlug(slug: string): Promise<ApiResponse<{ post: any }>> {
@@ -502,6 +520,8 @@ class ApiClient {
     metaDescription?: string;
     coverImage?: string;
     categoryId?: string;
+    subcategoryIds?: string[];
+    attachmentFileIds?: string[];
     status?: 'pending' | 'draft' | 'approved' | 'rejected';
     publicationDate?: string;
     hasComments?: boolean;
@@ -540,7 +560,9 @@ class ApiClient {
     viewCount?: number;
     concurrentViewers?: number;
     videoUrl: string;
-    status: 'upcoming' | 'live' | 'completed';
+    status: 'live' | 'upcoming' | 'recent_video';
+    isLive: boolean;
+    type: 'live' | 'upcoming' | 'recent_video' | '';
   }> }>> {
     return this.request<{ events: Array<{
       id: string;
@@ -555,11 +577,221 @@ class ApiClient {
       viewCount?: number;
       concurrentViewers?: number;
       videoUrl: string;
-      status: 'upcoming' | 'live' | 'completed';
+      status: 'live' | 'upcoming' | 'recent_video';
+      isLive: boolean;
+      type: 'live' | 'upcoming' | 'recent_video' | '';
     }> }>('/api/public/youtube/live-events');
+  }
+
+  // Cache Management methods
+  async getCacheStats(): Promise<ApiResponse<{ stats: {
+    connected: boolean;
+    type: 'redis' | 'memory';
+    totalKeys: number;
+    memoryUsage: string | null;
+    uptime: number | null;
+  } }>> {
+    return this.request<{ stats: {
+      connected: boolean;
+      type: 'redis' | 'memory';
+      totalKeys: number;
+      memoryUsage: string | null;
+      uptime: number | null;
+    } }>('/api/admin/cache/stats');
+  }
+
+  async getCacheKeys(pattern?: string, limit?: number): Promise<ApiResponse<{
+    keys: Array<{ key: string; ttl: number | null; type: string }>;
+    total: number;
+    shown: number;
+  }>> {
+    const params = new URLSearchParams();
+    if (pattern) params.append('pattern', pattern);
+    if (limit) params.append('limit', limit.toString());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{
+      keys: Array<{ key: string; ttl: number | null; type: string }>;
+      total: number;
+      shown: number;
+    }>(`/api/admin/cache/keys${query}`);
+  }
+
+  async getCacheValue(key: string): Promise<ApiResponse<{
+    key: string;
+    value: any;
+    exists: boolean;
+  }>> {
+    return this.request<{
+      key: string;
+      value: any;
+      exists: boolean;
+    }>(`/api/admin/cache/keys/${encodeURIComponent(key)}`);
+  }
+
+  async deleteCacheKey(key: string): Promise<ApiResponse<{
+    key: string;
+    deleted: boolean;
+  }>> {
+    return this.request<{
+      key: string;
+      deleted: boolean;
+    }>(`/api/admin/cache/keys/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteCachePattern(pattern: string): Promise<ApiResponse<{
+    pattern: string;
+    deleted: number;
+  }>> {
+    return this.request<{
+      pattern: string;
+      deleted: number;
+    }>('/api/admin/cache/pattern', {
+      method: 'DELETE',
+      body: JSON.stringify({ pattern }),
+    });
+  }
+
+  async flushCache(): Promise<ApiResponse<{
+    flushed: boolean;
+  }>> {
+    return this.request<{
+      flushed: boolean;
+    }>('/api/admin/cache/flush', {
+      method: 'DELETE',
+    });
+  }
+
+  // Settings methods
+  async getPublicSettings(): Promise<ApiResponse<{
+    settings: Record<string, any>;
+  }>> {
+    return this.request<{
+      settings: Record<string, any>;
+    }>('/api/public/settings');
+  }
+
+  async getAllSettings(): Promise<ApiResponse<{
+    settings: Record<string, any>;
+  }>> {
+    return this.request<{
+      settings: Record<string, any>;
+    }>('/api/admin/settings');
+  }
+
+  async getSetting(key: string): Promise<ApiResponse<{
+    key: string;
+    value: any;
+  }>> {
+    return this.request<{
+      key: string;
+      value: any;
+    }>(`/api/admin/settings/${encodeURIComponent(key)}`);
+  }
+
+  async updateSettings(settings: Record<string, any>): Promise<ApiResponse<{
+    message: string;
+  }>> {
+    return this.request<{
+      message: string;
+    }>('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    });
+  }
+
+  async updateSetting(key: string, value: any, description?: string): Promise<ApiResponse<{
+    message: string;
+    key: string;
+    value: any;
+  }>> {
+    return this.request<{
+      message: string;
+      key: string;
+      value: any;
+    }>(`/api/admin/settings/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value, description }),
+    });
+  }
+
+  // User Management methods (Admin only)
+  async getUsers(includeInactive?: boolean): Promise<ApiResponse<{ users: Array<any> }>> {
+    const params = includeInactive ? '?includeInactive=true' : '';
+    return this.request<{ users: Array<any> }>(`/api/admin/users${params}`);
+  }
+
+  async getUserById(id: string): Promise<ApiResponse<{ user: any }>> {
+    return this.request<{ user: any }>(`/api/admin/users/${id}`);
+  }
+
+  async createUser(userData: {
+    username: string;
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    jobTitle?: string;
+    organization?: string;
+    bio?: string;
+    language?: string;
+    isActive?: boolean;
+    emailVerified?: boolean;
+    roleIds?: string[];
+  }): Promise<ApiResponse<{ user: any }>> {
+    return this.request<{ user: any }>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updateUser(id: string, userData: Partial<{
+    username: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    jobTitle?: string;
+    organization?: string;
+    bio?: string;
+    language?: string;
+    isActive?: boolean;
+    emailVerified?: boolean;
+    avatar?: string;
+  }>): Promise<ApiResponse<{ user: any }>> {
+    return this.request<{ user: any }>(`/api/admin/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async blockUser(id: string): Promise<ApiResponse<{ user: any; message: string }>> {
+    return this.request<{ user: any; message: string }>(`/api/admin/users/${id}/block`, {
+      method: 'POST',
+    });
+  }
+
+  async unblockUser(id: string): Promise<ApiResponse<{ user: any; message: string }>> {
+    return this.request<{ user: any; message: string }>(`/api/admin/users/${id}/unblock`, {
+      method: 'POST',
+    });
+  }
+
+  async resetUserPassword(id: string, newPassword?: string): Promise<ApiResponse<{ user: any; tempPassword?: string; message: string }>> {
+    return this.request<{ user: any; tempPassword?: string; message: string }>(`/api/admin/users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
+  }
+
+  async deleteUser(id: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request<{ message: string }>(`/api/admin/users/${id}`, {
+      method: 'DELETE',
+    });
   }
 }
 
 export const apiClient = new ApiClient();
 export type { ApiResponse };
-

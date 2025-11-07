@@ -9,7 +9,7 @@ import { apiClient } from '@/utils/apiClient';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { showSuccess } from '@/utils/errorHandler';
 import { useAuth } from '@/hooks/useAuth';
-import { cn } from '@/utils/fileUtils';
+import { cn, getImageUrl } from '@/utils/fileUtils';
 import PublicationPreviewModal from '@/components/PublicationPreviewModal';
 
 interface Publication {
@@ -152,6 +152,11 @@ function PublicationsPageContent() {
     return new Date(dateString).toLocaleDateString();
   };
 
+
+  const getEditUrl = (publicationId: string) => {
+    return ['', 'admin', 'publications', publicationId, 'edit'].join('/');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -228,7 +233,7 @@ function PublicationsPageContent() {
                           <div className="flex items-center space-x-2 md:space-x-3">
                             {publication.coverImage && (
                               <img
-                                src={publication.coverImage.startsWith('http') ? publication.coverImage : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${publication.coverImage}`}
+                                src={getImageUrl(publication.coverImage)}
                                 alt={publication.title}
                                 className="w-10 h-10 md:w-12 md:h-12 object-cover rounded flex-shrink-0"
                                 onError={(e) => {
@@ -249,7 +254,11 @@ function PublicationsPageContent() {
                         </td>
                         <td className="px-3 md:px-4 py-3">
                           <span className={cn('px-2 py-1 text-xs font-medium rounded-full', getStatusBadgeColor(publication.status))}>
-                            {publication.status}
+                            {publication.status === 'approved' ? t('publications.statusApproved') :
+                             publication.status === 'pending' ? t('nav.pendingPublications') :
+                             publication.status === 'rejected' ? t('publications.statusRejected') :
+                             publication.status === 'draft' ? t('nav.draftPublications') :
+                             publication.status}
                           </span>
                         </td>
                         <td className="px-3 md:px-4 py-3 text-sm text-au-grey-text hidden lg:table-cell">
@@ -286,7 +295,7 @@ function PublicationsPageContent() {
                                   <span>{t('common.view')}</span>
                                 </button>
                                 <Link
-                                  href={`/admin/publications/${publication.id}/edit`}
+                                  href={getEditUrl(publication.id)}
                                   className="block px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100 flex items-center space-x-2"
                                   onClick={() => setActionMenuOpen(null)}
                                 >
@@ -308,7 +317,7 @@ function PublicationsPageContent() {
             {totalPages > 1 && (
               <div className="px-3 md:px-4 py-3 border-t border-gray-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="text-xs md:text-sm text-gray-700 text-center sm:text-left">
-                  {t('common.showing')} {((currentPage - 1) * pageLimit) + 1} - {Math.min(currentPage * pageLimit, total)} {t('common.of')} {total} {t('publications.publications')}
+                  {t('common.showing')} {((currentPage - 1) * pageLimit) + 1} {' - '} {Math.min(currentPage * pageLimit, total)} {t('common.of')} {total} {t('publications.publications')}
                 </div>
                 <div className="flex items-center justify-center sm:justify-end gap-2">
                   <button
@@ -344,7 +353,7 @@ function PublicationsPageContent() {
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Publication Preview Modal */}

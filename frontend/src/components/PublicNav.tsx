@@ -4,14 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronDown, Menu, X, User, LogOut, Settings } from 'lucide-react';
+import { ChevronDown, Menu, X, User, LogOut, Settings, LayoutDashboard } from 'lucide-react';
 import { cn } from '@/utils/fileUtils';
 import { apiClient } from '@/utils/apiClient';
 import { useAuth } from '@/hooks/useAuth';
 import LanguageSelector from './LanguageSelector';
 import { RootState } from '@/store';
 import { fetchNavLinks } from '@/store/navLinksSlice';
+import { fetchPublicSettings } from '@/store/settingsSlice';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 interface Category {
   id: string;
@@ -45,22 +47,26 @@ export default function PublicNav() {
   const dispatch = useDispatch();
   const { user, logout } = useAuth();
   const { navLinks } = useSelector((state: RootState) => state.navLinks);
+  const { settings } = useSelector((state: RootState) => state.settings);
   const [categories, setCategories] = useState<CategoryWithData[]>([]);
   const [loading, setLoading] = useState(true);
   const [openMegaMenu, setOpenMegaMenu] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showTopUserMenu, setShowTopUserMenu] = useState(false);
   const [hoveredSubcategory, setHoveredSubcategory] = useState<{ categoryId: string; subcategoryId: string } | null>(null);
   const [filteredPublications, setFilteredPublications] = useState<Map<string, Publication[]>>(new Map());
   const [tooltipPosition, setTooltipPosition] = useState<number>(0.5); // Position as a percentage (0 to 1)
   const megaMenuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const navLinkRefs = useRef<Map<string, HTMLElement>>(new Map());
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const topUserMenuRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadCategories();
     dispatch(fetchNavLinks() as any);
+    dispatch(fetchPublicSettings() as any);
   }, [dispatch]);
 
   // Close mega menu when clicking outside
@@ -95,20 +101,24 @@ export default function PublicNav() {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
       }
+      if (topUserMenuRef.current && !topUserMenuRef.current.contains(event.target as Node)) {
+        setShowTopUserMenu(false);
+      }
     };
 
-    if (showUserMenu) {
+    if (showUserMenu || showTopUserMenu) {
       document.addEventListener('click', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
-  }, [showUserMenu]);
+  }, [showUserMenu, showTopUserMenu]);
 
   const handleLogout = async () => {
     logout();
-    router.push('/');
+    // Ensure we redirect to home page
+    window.location.href = '/';
   };
 
   const loadCategories = async () => {
@@ -258,11 +268,6 @@ export default function PublicNav() {
     }
   };
 
-  const getCoverImageUrl = (coverImage?: string) => {
-    if (!coverImage) return '/placeholder-image.jpg';
-    if (coverImage.startsWith('http')) return coverImage;
-    return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${coverImage}`;
-  };
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -307,8 +312,52 @@ export default function PublicNav() {
               <div className="flex items-center gap-3 md:gap-4">
                 <LanguageSelector />
                 {user ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/90 text-xs md:text-sm">{user?.firstName || user?.username}</span>
+                  <div className="relative" ref={topUserMenuRef}>
+                    <button
+                      onClick={() => setShowTopUserMenu(!showTopUserMenu)}
+                      className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white font-medium text-xs md:text-sm border border-white/30 shadow-sm">
+                        {user?.firstName?.[0] || user?.username?.[0] || 'U'}
+                      </div>
+                      <ChevronDown className={cn('h-4 w-4 text-white/90 transition-transform', showTopUserMenu && 'rotate-180')} />
+                    </button>
+                    {showTopUserMenu && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        <div className="px-4 py-2 border-b border-gray-200">
+                          <p className="text-sm font-medium text-au-grey-text">{user?.firstName || user?.username}</p>
+                          <p className="text-xs text-au-grey-text/70">{user?.email}</p>
+                        </div>
+                        <Link
+                          href="/admin/profile"
+                          onClick={() => setShowTopUserMenu(false)}
+                          className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                        >
+                          <User className="h-4 w-4 mr-2" />
+                          Profile
+                        </Link>
+                        {user?.roles?.includes('admin') && (
+                          <Link
+                            href="/admin"
+                            onClick={() => setShowTopUserMenu(false)}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                          >
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
+                            Admin Panel
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            handleLogout();
+                            setShowTopUserMenu(false);
+                          }}
+                          className="flex items-center w-full text-left px-4 py-2 text-sm text-au-red hover:bg-au-red/10 transition-colors"
+                        >
+                          <LogOut className="h-4 w-4 mr-2" />
+                          Logout
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
@@ -334,11 +383,25 @@ export default function PublicNav() {
               <div className="flex-shrink-0 flex items-center">
                 <Link href="/" className="flex items-center">
                   <div className="flex items-center justify-center">
-                    <img 
-                      src="/logo.png" 
-                      alt="Africa CDC Logo" 
-                      className="h-12 md:h-14 lg:h-16 w-auto"
-                    />
+                    {settings?.logo ? (
+                      <img 
+                        src={getImageUrl(settings.logo)} 
+                        alt={settings?.site?.name || 'Site Logo'} 
+                        className="h-12 md:h-14 lg:h-16 w-40 object-contain"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
+                            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <img 
+                        src="/logo.png" 
+                        alt="Site Logo" 
+                        className="h-12 md:h-14 lg:h-16 w-auto"
+                      />
+                    )}
                   </div>
                 </Link>
               </div>
@@ -351,7 +414,7 @@ export default function PublicNav() {
                     'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
                     isActive('/')
                       ? 'bg-au-corporate-green text-white'
-                      : 'text-au-grey-text hover:text-au-corporate-green hover:bg-gray-100'
+                      : 'text-au-grey-text hover:text-au-gold hover:bg-au-gold/10'
                   )}
                 >
                   HOME
@@ -374,7 +437,7 @@ export default function PublicNav() {
                             'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
                             isActive(`/category/${category.slug}`)
                               ? 'bg-au-corporate-green text-white'
-                              : 'text-au-grey-text hover:text-au-corporate-green hover:bg-gray-100'
+                              : 'text-au-grey-text hover:text-au-gold hover:bg-au-gold/10'
                           )}
                         >
                           {category.name.toUpperCase()}
@@ -396,7 +459,7 @@ export default function PublicNav() {
                             'inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors relative',
                             isActive(`/category/${category.slug}`)
                               ? 'bg-au-corporate-green text-white'
-                              : 'text-au-grey-text hover:text-au-corporate-green hover:bg-gray-100'
+                              : 'text-au-grey-text hover:text-au-gold hover:bg-au-gold/10'
                           )}
                           ref={(el) => {
                             if (el) {
@@ -440,7 +503,7 @@ export default function PublicNav() {
                                               "block px-3 py-2 text-sm rounded-lg transition-colors",
                                               isHovered
                                                 ? "bg-au-corporate-green text-white"
-                                                : "text-au-grey-text hover:bg-au-gold/5 hover:text-au-corporate-green"
+                                                : "text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold"
                                             )}
                                           >
                                             {subcategory.name}
@@ -508,12 +571,12 @@ export default function PublicNav() {
                                         {/* Cover Image */}
                                         <div className="relative w-full h-full overflow-hidden">
                                           <img
-                                            src={getCoverImageUrl(publication.coverImage)}
+                                            src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                                             alt={publication.title}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                             onError={(e) => {
                                               const target = e.target as HTMLImageElement;
-                                              target.src = '/placeholder-image.jpg';
+                                              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                                             }}
                                           />
                                           
@@ -547,6 +610,19 @@ export default function PublicNav() {
                     );
                   })
                 )}
+                
+                <Link
+                  href="/live-events"
+                  className={cn(
+                    'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
+                    isActive('/live-events')
+                      ? 'bg-au-corporate-green text-white'
+                      : 'text-au-grey-text hover:text-au-gold hover:bg-au-gold/10'
+                  )}
+                >
+                  LIVE EVENTS
+                </Link>
+
               </div>
 
               {/* Right - Account/Login */}
@@ -571,14 +647,16 @@ export default function PublicNav() {
                           <p className="text-sm font-medium text-au-grey-text">{user?.firstName || user?.username}</p>
                           <p className="text-xs text-au-grey-text/70">{user?.email}</p>
                         </div>
-                        <Link
-                          href="/admin"
-                          onClick={() => setShowUserMenu(false)}
-                          className="block w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/5 transition-colors"
-                        >
-                          <Settings className="h-4 w-4 mr-2 inline" />
-                          Dashboard
-                        </Link>
+                        {user?.roles?.includes('admin') && (
+                          <Link
+                            href="/admin"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                          >
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
+                            Admin Panel
+                          </Link>
+                        )}
                         <button
                           onClick={handleLogout}
                           className="w-full text-left px-4 py-2 text-sm text-au-red hover:bg-au-red/10 transition-colors"
@@ -603,7 +681,7 @@ export default function PublicNav() {
               <div className="lg:hidden flex items-center ml-2">
                 <button
                   onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                  className="p-2 text-au-grey-text hover:text-au-corporate-green hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-au-grey-text hover:text-au-gold hover:bg-au-gold/10 rounded-lg"
                   aria-label="Toggle menu"
                 >
                   {isMobileMenuOpen ? (
@@ -640,10 +718,23 @@ export default function PublicNav() {
                   'flex items-center px-4 py-3 text-sm font-medium rounded-lg mb-2 transition-colors',
                   isActive('/')
                     ? 'bg-au-corporate-green text-white'
-                    : 'text-au-grey-text hover:bg-gray-100'
+                    : 'text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold'
                 )}
               >
                 HOME
+              </Link>
+
+              <Link
+                href="/live-events"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={cn(
+                  'flex items-center px-4 py-3 text-sm font-medium rounded-lg mb-2 transition-colors',
+                  isActive('/live-events')
+                    ? 'bg-au-corporate-green text-white'
+                    : 'text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold'
+                )}
+              >
+                LIVE EVENTS
               </Link>
 
               {loading ? (
@@ -665,7 +756,7 @@ export default function PublicNav() {
                             'flex-1 flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors',
                             isActive(`/category/${category.slug}`)
                               ? 'bg-au-corporate-green text-white'
-                              : 'text-au-grey-text hover:bg-gray-100'
+                              : 'text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold'
                           )}
                         >
                           {category.name.toUpperCase()}
@@ -673,7 +764,7 @@ export default function PublicNav() {
                         {hasSubcategories && (
                           <button
                             onClick={() => setOpenMegaMenu(isCategoryOpen ? null : category.id)}
-                            className="p-2 text-au-grey-text hover:bg-gray-100 rounded"
+                            className="p-2 text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded"
                           >
                             <ChevronDown className={cn('h-4 w-4 transition-transform', isCategoryOpen && 'rotate-180')} />
                           </button>
@@ -724,7 +815,7 @@ export default function PublicNav() {
                   <Link
                     href="/admin"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-gray-100 rounded-lg mb-2"
+                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded-lg mb-2"
                   >
                     <Settings className="h-4 w-4 mr-3" />
                     Dashboard

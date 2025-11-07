@@ -20,14 +20,26 @@ interface FileGridCardProps {
   onShare: (item: ItemData) => void;
   onMove: (item: ItemData) => void;
   icon: React.ReactNode;
+  mode?: 'manager' | 'picker';
 }
 
-export default function FileGridCard({ item, selected, onToggleSelect, onOpen, onShare, onMove, icon }: FileGridCardProps) {
+export default function FileGridCard({ item, selected, onToggleSelect, onOpen, onShare, onMove, icon, mode = 'manager' }: FileGridCardProps) {
+  const handleCardClick = () => {
+    if (mode === 'picker' && !item.isFolder) {
+      // In picker mode, clicking a file selects it (same as clicking the checkbox)
+      // Just call onToggleSelect, which will handle the selection
+      onToggleSelect(item.id);
+    } else {
+      // In manager mode, open the file/folder
+      onOpen(item);
+    }
+  };
+
   return (
     <div
       key={item.id}
       className="group border border-gray-200 rounded-lg p-3 hover:shadow-sm transition cursor-pointer"
-      onClick={() => onOpen(item)}
+      onClick={handleCardClick}
       title={item.name}
     >
       <div className="flex items-center justify-between mb-2">

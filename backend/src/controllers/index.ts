@@ -5,5 +5,8 @@ export * from './SubcategoryController';
 export * from './NavLinkController';
 export * from './AnalyticsController';
 export * from './YouTubeController';
+export * from './CacheController';
+export * from './SettingsController';
+export * from './UserController';
 
 

@@ -3,17 +3,13 @@
 import Link from 'next/link';
 import { Music, Eye, MessageCircle, Camera, Video, FileText, Image } from 'lucide-react';
 import { Publication } from '@/store/publicationsSlice';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 interface PublicationCardProps {
   publication: Publication;
 }
 
 export default function PublicationCard({ publication }: PublicationCardProps) {
-  const getCoverImageUrl = (coverImage?: string) => {
-    if (!coverImage) return '/uploads/placeholder-image.jpg';
-    if (coverImage.startsWith('http')) return coverImage;
-    return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${coverImage}`;
-  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -57,21 +53,21 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
       {/* Cover Image */}
       <div className="relative w-full h-full overflow-hidden">
         <img
-          src={getCoverImageUrl(publication.coverImage)}
+          src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
           alt={publication.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
-            target.src = '/placeholder-image.jpg';
+            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
           }}
         />
         
         {/* Dark Overlay for better text readability */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/50" />
 
-        {/* Category Tag */}
+        {/* Category Tag - Alternate between greens and gold */}
         <div className="absolute top-2 left-2 z-10 transform transition-transform duration-300 group-hover:scale-105">
-          <span className="bg-au-corporate-green text-white px-2 py-1 rounded text-xs font-medium">
+          <span className="bg-au-green text-white px-2 py-1 rounded text-xs font-medium group-hover:bg-au-gold transition-colors duration-300">
             {getCategoryName(publication)}
           </span>
         </div>

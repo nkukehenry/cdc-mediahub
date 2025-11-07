@@ -535,17 +535,52 @@ const options: swaggerJsdoc.Options = {
       {
         name: 'Categories (Admin)',
         description: 'Admin endpoints for managing categories'
+      },
+      {
+        name: 'Cache Management',
+        description: 'Admin endpoints for managing cache (view stats, keys, delete, flush)'
+      },
+      {
+        name: 'YouTube (Public)',
+        description: 'Public endpoints for YouTube live events'
       }
     ]
   },
   apis: ['./src/server.ts'] // Path to the API files
 };
 
-const specs = swaggerJsdoc(options);
+// Lazy initialization - only generate specs when setupSwagger is called
+let specs: any = null;
+
+function getSpecs() {
+  if (!specs) {
+    try {
+      specs = swaggerJsdoc(options);
+    } catch (error) {
+      console.error('Failed to generate Swagger specs:', error);
+      // Return a minimal valid OpenAPI spec on error
+      specs = {
+        openapi: '3.0.0',
+        info: {
+          title: 'Mutindo Media Hub API',
+          version: '2.0.0',
+          description: 'API documentation temporarily unavailable due to parsing errors'
+        },
+        paths: {}
+      };
+    }
+  }
+  return specs;
+}
 
 export function setupSwagger(app: express.Application): void {
+  // Temporarily disabled due to swagger-jsdoc parsing issues
+  // Uncomment the lines below once the YAML parsing issue is resolved
+  /*
+  const swaggerSpecs = getSpecs();
+  
   // Swagger UI
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
     explorer: true,
     customCss: '.swagger-ui .topbar { display: none }',
     customSiteTitle: 'Mutindo File Manager API'
@@ -554,6 +589,9 @@ export function setupSwagger(app: express.Application): void {
   // JSON endpoint
   app.get('/api-docs.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    res.send(specs);
+    res.send(swaggerSpecs);
   });
+  */
+  
+  console.log('Swagger documentation is temporarily disabled');
 }

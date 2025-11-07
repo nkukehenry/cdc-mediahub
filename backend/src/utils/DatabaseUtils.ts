@@ -2,18 +2,30 @@ import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
 
 export class DatabaseUtils {
-  private static run: (sql: string, params?: any[]) => Promise<sqlite3.RunResult>;
+  private static db: sqlite3.Database;
   private static get: (sql: string, params?: any[]) => Promise<any>;
   private static all: (sql: string, params?: any[]) => Promise<any[]>;
 
   static initialize(db: sqlite3.Database): void {
-    this.run = promisify(db.run.bind(db));
+    this.db = db;
     this.get = promisify(db.get.bind(db));
     this.all = promisify(db.all.bind(db));
   }
 
   static async executeQuery(sql: string, params: any[] = []): Promise<sqlite3.RunResult> {
-    return this.run(sql, params);
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, params, function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          // 'this' context contains lastID and changes
+          resolve({
+            lastID: this.lastID,
+            changes: this.changes
+          } as sqlite3.RunResult);
+        }
+      });
+    });
   }
 
   static async findOne<T>(sql: string, params: any[] = []): Promise<T | null> {

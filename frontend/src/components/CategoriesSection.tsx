@@ -1,9 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import Link from 'next/link';
 import { apiClient } from '@/utils/apiClient';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import { fetchYouTubeLiveEvents } from '@/store/youtubeSlice';
+import { RootState } from '@/store';
+import { Play, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { YouTubeLiveEvent } from '@/store/youtubeSlice';
 
 interface Category {
   id: string;
@@ -85,21 +91,16 @@ export default function CategoriesSection() {
     }
   };
 
-  const getCoverImageUrl = (coverImage?: string) => {
-    if (!coverImage) return '/uploads/placeholder-image.jpg';
-    if (coverImage.startsWith('http')) return coverImage;
-    return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/${coverImage}`;
-  };
 
-  // Button colors for different categories (can be customized)
+  // Button colors for different categories - balanced AU colors
   const getButtonColor = (index: number) => {
     const colors = [
-      'bg-gray-700', // Photos - dark grey
-      'bg-green-600', // Audios - green
-      'bg-red-600', // Videos - red
-      'bg-green-600', // Documents - green
-      'bg-yellow-500', // Infographics - golden/yellowish
-      'bg-green-600', // Live Events - green
+      'bg-au-corporate-green', // Photos - dark green
+      'bg-au-green', // Audios - lighter green
+      'bg-au-red', // Videos - red
+      'bg-au-gold', // Documents - gold
+      'bg-au-corporate-green', // Infographics - dark green
+      'bg-au-green', // Live Events - lighter green
     ];
     return colors[index % colors.length];
   };
@@ -156,12 +157,12 @@ export default function CategoriesSection() {
                 >
                   {/* Background Image */}
                   <img
-                    src={getCoverImageUrl(category.coverImage)}
+                    src={getImageUrl(category.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                     alt={category.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      target.src = '/placeholder-image.jpg';
+                      target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
                     }}
                   />
                   
@@ -191,32 +192,247 @@ export default function CategoriesSection() {
             </div>
           </div>
 
-          {/* Follow us on YouTube Section */}
+          {/* Live Events Section */}
           <div className="lg:col-span-1">
-            <h2 className="text-lg md:text-xl font-bold text-au-grey-text mb-3">
-              Follow us on YouTube
+            <h2 className="text-sm md:text-base font-semibold text-au-grey-text mb-3">
+              Live Events
             </h2>
-            <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-              <p className="text-xs text-au-grey-text/70 mb-3">
-                No live events loaded yet
-              </p>
-              <a
-                href="https://www.youtube.com/@AfricaCDC"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                </svg>
-                <span>Subscribe to Channel</span>
-              </a>
-            </div>
+            <YouTubeLiveEventsCarousel />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function YouTubeLiveEventsCarousel() {
+  const dispatch = useDispatch();
+  const { liveEvents, loading: youtubeLoading } = useSelector((state: RootState) => state.youtube);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  useEffect(() => {
+    if (liveEvents.length === 0) {
+      dispatch(fetchYouTubeLiveEvents() as any);
+    }
+  }, [dispatch, liveEvents.length]);
+
+  const checkScrollability = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+    setCanScrollLeft(scrollLeft > 0);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  useEffect(() => {
+    checkScrollability();
+    const timer = setTimeout(checkScrollability, 100);
+    const resizeObserver = new ResizeObserver(() => {
+      checkScrollability();
+    });
+    
+    if (scrollContainerRef.current) {
+      resizeObserver.observe(scrollContainerRef.current);
+    }
+    
+    return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
+    };
+  }, [liveEvents]);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const scrollAmount = container.clientWidth * 0.8;
+    const scrollTo = direction === 'left' 
+      ? container.scrollLeft - scrollAmount 
+      : container.scrollLeft + scrollAmount;
+    
+    container.scrollTo({
+      left: scrollTo,
+      behavior: 'smooth'
+    });
+  };
+
+  const getStatusBadge = (status: string, type: string) => {
+    switch (status) {
+      case 'live':
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800 animate-pulse">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-1"></span>
+            LIVE
+          </span>
+        );
+      case 'upcoming':
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+            <Calendar className="w-2.5 h-2.5 mr-0.5" />
+            Upcoming
+          </span>
+        );
+      case 'recent_video':
+        if (type === '') {
+          return null;
+        }
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+            Recent
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Filter and sort events: upcoming first, then live, then recent
+  const filteredEvents = liveEvents.filter(event => event.type !== '');
+  const sortedEvents = [...filteredEvents].sort((a, b) => {
+    if (a.status === 'upcoming' && b.status !== 'upcoming') return -1;
+    if (a.status !== 'upcoming' && b.status === 'upcoming') return 1;
+    if (a.status === 'live' && b.status === 'recent_video') return -1;
+    if (a.status === 'recent_video' && b.status === 'live') return 1;
+    return 0;
+  });
+
+  const displayEvents = sortedEvents.slice(0, 5); // Show max 5 events
+
+  if (youtubeLoading && displayEvents.length === 0) {
+    return (
+      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
+        <div className="space-y-2">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="bg-gray-200 rounded-lg animate-pulse aspect-video" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (displayEvents.length === 0) {
+    return (
+      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
+        <p className="text-xs text-au-grey-text/70 mb-3">
+          No live events available
+        </p>
+        <a
+          href="https://www.youtube.com/@AfricaCDC"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors"
+        >
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+          </svg>
+          <span>Subscribe to Channel</span>
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gray-50 rounded-lg p-3 md:p-4">
+      {/* Scroll Controls */}
+      {displayEvents.length > 1 && (
+        <div className="flex items-center justify-end gap-1 mb-2">
+          <button
+            onClick={() => scroll('left')}
+            disabled={!canScrollLeft}
+            className={`p-1 rounded transition-colors ${
+              canScrollLeft
+                ? 'bg-gray-200 hover:bg-gray-300 text-au-grey-text'
+                : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+            }`}
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => scroll('right')}
+            disabled={!canScrollRight}
+            className={`p-1 rounded transition-colors ${
+              canScrollRight
+                ? 'bg-gray-200 hover:bg-gray-300 text-au-grey-text'
+                : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+            }`}
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Carousel */}
+      <div className="relative w-full overflow-hidden">
+        <div
+          ref={scrollContainerRef}
+          onScroll={checkScrollability}
+          className="flex gap-3 overflow-x-auto scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {displayEvents.map((event) => (
+            <div
+              key={event.id}
+              className="flex-shrink-0 w-full"
+            >
+              <Link
+                href={`/live-events/${event.id}`}
+                className="block group"
+              >
+                <div className="relative aspect-video overflow-hidden bg-gray-200 rounded-lg">
+                  <img
+                    src={event.thumbnailUrl}
+                    alt={event.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                    }}
+                  />
+                  
+                  {/* Status Badge */}
+                  <div className="absolute top-1.5 left-1.5">
+                    {getStatusBadge(event.status, event.type)}
+                  </div>
+
+                  {/* Subscribe Button Overlay - Top Right */}
+                  <div className="absolute top-1.5 right-1.5">
+                    <a
+                      href="https://www.youtube.com/@AfricaCDC"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-[10px] font-medium transition-colors shadow-lg"
+                      aria-label="Subscribe to YouTube"
+                    >
+                      <svg
+                        className="w-2.5 h-2.5"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                      </svg>
+                      <span className="hidden sm:inline">Subscribe</span>
+                    </a>
+                  </div>
+
+                  {/* Play Button Overlay */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                    <Play className="w-8 h-8 text-white" fill="white" />
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h3 className="text-xs font-semibold text-au-grey-text mt-2 line-clamp-2 group-hover:text-au-corporate-green transition-colors">
+                  {event.title}
+                </h3>
+              </Link>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -405,11 +405,30 @@ export default function FileManager({
 
   const handleFileClick = (file: any) => {
     console.log('FileManager - File clicked:', file);
-    console.log('File downloadUrl:', file.downloadUrl);
-    console.log('File mimeType:', file.mimeType);
+    console.log('FileManager - File ID:', file?.id);
+    console.log('FileManager - File originalName:', file?.originalName);
+    console.log('FileManager - File downloadUrl:', file?.downloadUrl);
+    console.log('FileManager - File mimeType:', file?.mimeType);
+    console.log('FileManager - File structure:', {
+      id: file?.id,
+      filename: file?.filename,
+      originalName: file?.originalName,
+      mimeType: file?.mimeType,
+      filePath: file?.filePath,
+      downloadUrl: file?.downloadUrl,
+    });
+    console.log('FileManager - Mode:', mode);
+    console.log('FileManager - onFileSelect exists:', !!onFileSelect);
+    
+    // Validate file object
+    if (!file || !file.id) {
+      console.error('FileManager - Invalid file object in handleFileClick:', file);
+      return;
+    }
     
     // In picker mode, clicking a file selects it and calls onFileSelect
     if (mode === 'picker') {
+      console.log('FileManager - Picker mode, calling onFileSelect with file:', file);
       onFileSelect?.(file);
       return;
     }
@@ -976,7 +995,24 @@ export default function FileManager({
                           key={item.id}
                           item={item as any}
                           selected={selectedFileIds.has(item.id)}
-                          onToggleSelect={(id) => toggleFileSelection(id)}
+                        onToggleSelect={(id) => {
+                          console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
+                          if (mode === 'picker' && !item.isFolder) {
+                            // In picker mode, always call onFileSelect so FilePickerModal can handle add/remove
+                            toggleFileSelection(id);
+                            const fileItem = item.data as FileWithUrls;
+                            console.log('FileManager - File item from data:', fileItem);
+                            console.log('FileManager - onFileSelect exists:', !!onFileSelect);
+                            if (fileItem) {
+                              console.log('FileManager - Calling onFileSelect with file:', fileItem);
+                              onFileSelect?.(fileItem);
+                            } else {
+                              console.error('FileManager - fileItem is null or undefined!');
+                            }
+                          } else {
+                            toggleFileSelection(id);
+                          }
+                        }}
                           onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
                           onShare={(it) => {
                             if (it.isFolder) {
@@ -997,6 +1033,7 @@ export default function FileManager({
                             setIsMoveModalOpen(true);
                           }}
                           icon={getFileIcon(item)}
+                          mode={mode}
                         />
                       ))}
                         </div>
@@ -1010,7 +1047,24 @@ export default function FileManager({
                         key={item.id}
                         item={item as any}
                         selected={selectedFileIds.has(item.id)}
-                        onToggleSelect={(id) => toggleFileSelection(id)}
+                        onToggleSelect={(id) => {
+                          console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
+                          if (mode === 'picker' && !item.isFolder) {
+                            // In picker mode, always call onFileSelect so FilePickerModal can handle add/remove
+                            toggleFileSelection(id);
+                            const fileItem = item.data as FileWithUrls;
+                            console.log('FileManager - File item from data:', fileItem);
+                            console.log('FileManager - onFileSelect exists:', !!onFileSelect);
+                            if (fileItem) {
+                              console.log('FileManager - Calling onFileSelect with file:', fileItem);
+                              onFileSelect?.(fileItem);
+                            } else {
+                              console.error('FileManager - fileItem is null or undefined!');
+                            }
+                          } else {
+                            toggleFileSelection(id);
+                          }
+                        }}
                         onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
                         onShare={(it) => {
                           if (it.isFolder) {
@@ -1031,6 +1085,7 @@ export default function FileManager({
                           setIsMoveModalOpen(true);
                         }}
                         icon={getFileIcon(item)}
+                        mode={mode}
                       />
                   ))}
                 </div>

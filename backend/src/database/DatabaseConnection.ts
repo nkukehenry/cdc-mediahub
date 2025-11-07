@@ -92,11 +92,35 @@ export class DatabaseConnection {
         this.logger.info('Added access_type column to files table');
       }
 
-      // Migrate users table - add language preference
+      // Migrate users table - add language preference and profile fields
       const usersHasLanguage = await this.columnExists('users', 'language');
       if (!usersHasLanguage) {
         await run(`ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'en' CHECK(language IN ('ar', 'en', 'fr', 'pt', 'es', 'sw'))`);
         this.logger.info('Added language column to users table');
+      }
+
+      const usersHasPhone = await this.columnExists('users', 'phone');
+      if (!usersHasPhone) {
+        await run(`ALTER TABLE users ADD COLUMN phone TEXT`);
+        this.logger.info('Added phone column to users table');
+      }
+
+      const usersHasJobTitle = await this.columnExists('users', 'job_title');
+      if (!usersHasJobTitle) {
+        await run(`ALTER TABLE users ADD COLUMN job_title TEXT`);
+        this.logger.info('Added job_title column to users table');
+      }
+
+      const usersHasOrganization = await this.columnExists('users', 'organization');
+      if (!usersHasOrganization) {
+        await run(`ALTER TABLE users ADD COLUMN organization TEXT`);
+        this.logger.info('Added organization column to users table');
+      }
+
+      const usersHasBio = await this.columnExists('users', 'bio');
+      if (!usersHasBio) {
+        await run(`ALTER TABLE users ADD COLUMN bio TEXT`);
+        this.logger.info('Added bio column to users table');
       }
     } catch (error) {
       this.logger.error('Error during table migration', error as Error);
@@ -154,12 +178,54 @@ export class DatabaseConnection {
           first_name TEXT,
           last_name TEXT,
           avatar TEXT,
+          phone TEXT,
+          job_title TEXT,
+          organization TEXT,
+          bio TEXT,
           is_active BOOLEAN DEFAULT 1,
+          email_verified BOOLEAN DEFAULT 0,
           language TEXT DEFAULT 'en' CHECK(language IN ('ar', 'en', 'fr', 'pt', 'es', 'sw')),
+          last_login DATETIME,
+          password_reset_token TEXT,
+          password_reset_expires DATETIME,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Add new columns if they don't exist (migration)
+      try {
+        await run(`ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0`);
+      } catch (e: any) {
+        // Column already exists, ignore
+        if (!e.message?.includes('duplicate column name')) {
+          this.logger.warn('Failed to add email_verified column', { error: e.message });
+        }
+      }
+
+      try {
+        await run(`ALTER TABLE users ADD COLUMN last_login DATETIME`);
+      } catch (e: any) {
+        if (!e.message?.includes('duplicate column name')) {
+          this.logger.warn('Failed to add last_login column', { error: e.message });
+        }
+      }
+
+      try {
+        await run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`);
+      } catch (e: any) {
+        if (!e.message?.includes('duplicate column name')) {
+          this.logger.warn('Failed to add password_reset_token column', { error: e.message });
+        }
+      }
+
+      try {
+        await run(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
+      } catch (e: any) {
+        if (!e.message?.includes('duplicate column name')) {
+          this.logger.warn('Failed to add password_reset_expires column', { error: e.message });
+        }
+      }
 
       // Roles table
       await run(`
@@ -407,6 +473,18 @@ export class DatabaseConnection {
           external INTEGER DEFAULT 0,
           display_order INTEGER DEFAULT 0,
           is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Settings table (stores site configuration as JSON)
+      await run(`
+        CREATE TABLE IF NOT EXISTS settings (
+          id TEXT PRIMARY KEY,
+          key TEXT UNIQUE NOT NULL,
+          value TEXT NOT NULL,
+          description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )

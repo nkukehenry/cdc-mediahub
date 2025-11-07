@@ -76,5 +76,6 @@ export const CACHE_KEYS = {
   NAV_LINKS: 'cache_nav_links',
   PUBLICATIONS_MENU: 'cache_publications_menu',
   YOUTUBE_LIVE_EVENTS: 'cache_youtube_live_events',
+  PUBLIC_SETTINGS: 'cache_public_settings',
 } as const;
 

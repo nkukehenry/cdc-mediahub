@@ -1,13 +1,26 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Save, Check, XCircle, Edit2, Eye, Image as ImageIcon } from 'lucide-react';
+import { X, Save, Check, XCircle, Edit2, Eye, Image as ImageIcon, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, FileText } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiClient } from '@/utils/apiClient';
 import { showSuccess, showError } from '@/utils/errorHandler';
-import { cn } from '@/utils/fileUtils';
+import { cn, getImageUrl, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
+import FilePreviewModal from './FilePreviewModal';
+import { FileWithUrls } from '@/types/fileManager';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+interface FileEntity {
+  id: string;
+  filename: string;
+  originalName: string;
+  filePath: string;
+  mimeType: string;
+  fileSize: number;
+  thumbnailPath?: string;
+  downloadUrl?: string;
+}
 
 interface Publication {
   id: string;
@@ -30,6 +43,7 @@ interface Publication {
   isLeaderboard: boolean;
   createdAt: string;
   updatedAt: string;
+  attachments?: FileEntity[];
 }
 
 interface PublicationPreviewModalProps {
@@ -68,6 +82,44 @@ export default function PublicationPreviewModal({
   const [isLeaderboard, setIsLeaderboard] = useState(false);
   const [hasComments, setHasComments] = useState(true);
   const [publicationDate, setPublicationDate] = useState('');
+  const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
+  // Helper function to get file icon based on mime type
+  const getAttachmentIcon = (mimeType: string) => {
+    if (isImageFile(mimeType)) return <ImageIcon size={16} className="text-au-green" />;
+    if (isVideoFile(mimeType)) return <Video size={16} className="text-au-green" />;
+    if (isAudioFile(mimeType)) return <Music size={16} className="text-au-green" />;
+    if (isPdfFile(mimeType)) return <FileText size={16} className="text-red-500" />;
+    if (mimeType.includes('word') || mimeType.includes('document') || 
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mimeType === 'application/msword') return <FileText size={16} className="text-blue-500" />;
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet') ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        mimeType === 'application/vnd.ms-excel') return <FileSpreadsheet size={16} className="text-green-600" />;
+    if (mimeType.includes('text/')) return <FileCode size={16} className="text-gray-600" />;
+    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return <Archive size={16} className="text-orange-500" />;
+    return <FileIcon size={16} className="text-gray-400" />;
+  };
+
+  const handleAttachmentPreview = (file: FileEntity) => {
+    // Convert FileEntity to FileWithUrls format
+    const baseUrl = API_BASE_URL || 'http://localhost:3001';
+    const fileWithUrls: FileWithUrls = {
+      id: file.id,
+      filename: file.filename,
+      originalName: file.originalName,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      filePath: file.filePath,
+      downloadUrl: file.downloadUrl || `${baseUrl}/api/files/${file.id}/download`,
+      thumbnailUrl: file.thumbnailPath ? getImageUrl(file.thumbnailPath) : undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setPreviewFile(fileWithUrls);
+    setIsPreviewModalOpen(true);
+  };
 
   useEffect(() => {
     if (isOpen && publicationId) {
@@ -179,11 +231,6 @@ export default function PublicationPreviewModal({
     }
   };
 
-  const getCoverImageUrl = () => {
-    if (!publication?.coverImage) return null;
-    if (publication.coverImage.startsWith('http')) return publication.coverImage;
-    return `${API_BASE_URL}/${publication.coverImage}`;
-  };
 
   if (!isOpen) return null;
 
@@ -284,10 +331,10 @@ export default function PublicationPreviewModal({
           ) : (
             <>
               {/* Cover Image */}
-              {getCoverImageUrl() && (
+              {publication?.coverImage && (
                 <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
                   <img
-                    src={getCoverImageUrl() || ''}
+                    src={getImageUrl(publication.coverImage)}
                     alt={title || 'Cover'}
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -338,6 +385,38 @@ export default function PublicationPreviewModal({
                   />
                 )}
               </div>
+
+              {/* Attachments */}
+              {publication?.attachments && publication.attachments.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-au-grey-text mb-2">
+                    {t('publications.attachments')} ({publication.attachments.length})
+                  </label>
+                  <div className="space-y-2">
+                    {publication.attachments.map((attachment) => (
+                      <button
+                        key={attachment.id}
+                        type="button"
+                        onClick={() => handleAttachmentPreview(attachment)}
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg text-left hover:bg-gray-100 transition-colors group"
+                      >
+                        <span className="flex-shrink-0">
+                          {getAttachmentIcon(attachment.mimeType || 'application/octet-stream')}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-au-grey-text truncate">
+                            {attachment.originalName}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {(attachment.fileSize / 1024).toFixed(2)} KB
+                          </div>
+                        </div>
+                        <Eye size={16} className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Metadata */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -431,6 +510,13 @@ export default function PublicationPreviewModal({
           )}
         </div>
       </div>
+
+      {/* File Preview Modal */}
+      <FilePreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        file={previewFile}
+      />
     </div>
   );
 }

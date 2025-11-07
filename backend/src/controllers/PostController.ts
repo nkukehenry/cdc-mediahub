@@ -40,12 +40,23 @@ export class PostController {
 
   async getPublished(req: Request, res: Response): Promise<void> {
     try {
+      const categoryId = req.query.categoryId as string | undefined;
+      const subcategoryId = req.query.subcategoryId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
-      const posts = await this.postService.getPublishedPublications(limit, offset);
+      const result = await this.postService.getPublishedPublications(categoryId, subcategoryId, limit, offset);
+      
       res.json({
         success: true,
-        data: { posts }
+        data: {
+          posts: result.publications,
+          pagination: {
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages: result.totalPages
+          }
+        }
       });
     } catch (error) {
       this.logger.error('Get published posts failed', error as Error);

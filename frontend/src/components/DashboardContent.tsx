@@ -189,6 +189,23 @@ function DashboardContent() {
                 <span className="text-3xl font-bold text-purple-600">{analytics.userActivity.newUsersThisYear}</span>
               </div>
             </div>
+
+            {/* User Activity Pie Chart */}
+            <div className="pt-6 border-t-2 border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase tracking-wide">{t('admin.userActivityBreakdown')}</h3>
+              <PieChartCard
+                title=""
+                data={[
+                  { name: t('admin.activeUsers'), count: analytics.userActivity.totalActiveUsers },
+                  { name: t('admin.newUsersThisMonth'), count: analytics.userActivity.newUsersThisMonth },
+                  { name: t('admin.newUsersThisYear'), count: analytics.userActivity.newUsersThisYear }
+                ]}
+                dataKey="count"
+                nameKey="name"
+                colors={['#3B82F6', '#10B981', '#8B5CF6']}
+                height={220}
+              />
+            </div>
           </div>
         </ChartCard>
       </div>

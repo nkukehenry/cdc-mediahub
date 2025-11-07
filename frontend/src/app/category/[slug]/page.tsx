@@ -7,6 +7,7 @@ import { Provider } from 'react-redux';
 import { store, RootState } from '@/store';
 import { fetchPublications } from '@/store/publicationsSlice';
 import PublicNav from '@/components/PublicNav';
+import PublicFooter from '@/components/PublicFooter';
 import PublicationCard from '@/components/PublicationCard';
 import { Search, X, ChevronLeft, ChevronRight, Calendar, Filter } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
@@ -202,6 +203,7 @@ function CategoryPageInner() {
             <p className="text-au-grey-text/70 text-lg">Category not found</p>
           </div>
         </div>
+        <PublicFooter />
       </div>
     );
   }
@@ -531,6 +533,7 @@ function CategoryPageInner() {
           </main>
         </div>
       </div>
+      <PublicFooter />
     </div>
   );
 }

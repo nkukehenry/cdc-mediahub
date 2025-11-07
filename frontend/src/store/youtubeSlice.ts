@@ -15,7 +15,9 @@ export interface YouTubeLiveEvent {
   viewCount?: number;
   concurrentViewers?: number;
   videoUrl: string;
-  status: 'upcoming' | 'live' | 'completed';
+  status: 'live' | 'upcoming' | 'recent_video';
+  isLive: boolean;
+  type: 'live' | 'upcoming' | 'recent_video' | '';
 }
 
 interface YouTubeState {

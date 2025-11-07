@@ -23,8 +23,13 @@ export class UserRepository implements IUserRepository {
         password: hashedPassword,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        isActive: true,
-        language: 'en', // Default language is English
+        phone: userData.phone,
+        jobTitle: userData.jobTitle,
+        organization: userData.organization,
+        bio: userData.bio,
+        isActive: userData.isActive !== undefined ? userData.isActive : true,
+        emailVerified: userData.emailVerified !== undefined ? userData.emailVerified : false,
+        language: userData.language || 'en',
         createdAt: new Date(now),
         updatedAt: new Date(now)
       };
@@ -36,7 +41,12 @@ export class UserRepository implements IUserRepository {
         password: user.password,
         first_name: user.firstName,
         last_name: user.lastName,
+        phone: user.phone,
+        job_title: user.jobTitle,
+        organization: user.organization,
+        bio: user.bio,
         is_active: user.isActive ? 1 : 0,
+        email_verified: user.emailVerified ? 1 : 0,
         language: user.language,
         created_at: now,
         updated_at: now
@@ -112,12 +122,13 @@ export class UserRepository implements IUserRepository {
     }
   }
 
-  // Get all users
-  async findAll(): Promise<UserEntity[]> {
+  // Get all users (including inactive for admin)
+  async findAll(includeInactive: boolean = false): Promise<UserEntity[]> {
     try {
-      const users = await DatabaseUtils.findMany<any>(
-        'SELECT * FROM users WHERE is_active = 1 ORDER BY username'
-      );
+      const query = includeInactive 
+        ? 'SELECT * FROM users ORDER BY created_at DESC'
+        : 'SELECT * FROM users WHERE is_active = 1 ORDER BY created_at DESC';
+      const users = await DatabaseUtils.findMany<any>(query);
       return users.map(user => this.mapToUserEntity(user));
     } catch (error) {
       this.logger.error('Failed to find all users', error as Error);
@@ -144,8 +155,22 @@ export class UserRepository implements IUserRepository {
       if (updateData.email !== undefined) dbData.email = updateData.email;
       if (updateData.password !== undefined) dbData.password = updateData.password;
       if (updateData.avatar !== undefined) dbData.avatar = updateData.avatar;
+      if (updateData.phone !== undefined) dbData.phone = updateData.phone;
+      if (updateData.jobTitle !== undefined) dbData.job_title = updateData.jobTitle;
+      if (updateData.organization !== undefined) dbData.organization = updateData.organization;
+      if (updateData.bio !== undefined) dbData.bio = updateData.bio;
       if (updateData.isActive !== undefined) dbData.is_active = updateData.isActive ? 1 : 0;
+      if (updateData.emailVerified !== undefined) dbData.email_verified = updateData.emailVerified ? 1 : 0;
       if (updateData.language !== undefined) dbData.language = updateData.language;
+      if (updateData.lastLogin !== undefined) {
+        dbData.last_login = updateData.lastLogin instanceof Date ? updateData.lastLogin.toISOString() : (updateData.lastLogin === null ? null : updateData.lastLogin);
+      }
+      if (updateData.passwordResetToken !== undefined) {
+        dbData.password_reset_token = updateData.passwordResetToken === null ? null : updateData.passwordResetToken;
+      }
+      if (updateData.passwordResetExpires !== undefined) {
+        dbData.password_reset_expires = updateData.passwordResetExpires instanceof Date ? updateData.passwordResetExpires.toISOString() : (updateData.passwordResetExpires === null ? null : updateData.passwordResetExpires);
+      }
       dbData.updated_at = updateData.updated_at;
 
       const { set, values } = DatabaseUtils.buildUpdateSet(dbData);
@@ -194,8 +219,16 @@ export class UserRepository implements IUserRepository {
       firstName: dbUser.first_name,
       lastName: dbUser.last_name,
       avatar: dbUser.avatar,
+      phone: dbUser.phone,
+      jobTitle: dbUser.job_title,
+      organization: dbUser.organization,
+      bio: dbUser.bio,
       isActive: Boolean(dbUser.is_active),
+      emailVerified: Boolean(dbUser.email_verified),
       language: (dbUser.language || 'en') as 'ar' | 'en' | 'fr' | 'pt' | 'es' | 'sw',
+      lastLogin: dbUser.last_login ? new Date(dbUser.last_login) : undefined,
+      passwordResetToken: dbUser.password_reset_token || undefined,
+      passwordResetExpires: dbUser.password_reset_expires ? new Date(dbUser.password_reset_expires) : undefined,
       createdAt: new Date(dbUser.created_at),
       updatedAt: new Date(dbUser.updated_at)
     };

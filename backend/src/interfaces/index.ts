@@ -225,8 +225,16 @@ export interface UserEntity {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  phone?: string;
+  jobTitle?: string;
+  organization?: string;
+  bio?: string;
   isActive: boolean;
+  emailVerified?: boolean;
   language: LanguageCode;
+  lastLogin?: Date | null;
+  passwordResetToken?: string | null;
+  passwordResetExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -364,6 +372,14 @@ export interface CreateUserData {
   password: string;
   firstName?: string;
   lastName?: string;
+  phone?: string;
+  jobTitle?: string;
+  organization?: string;
+  bio?: string;
+  language?: LanguageCode;
+  isActive?: boolean;
+  emailVerified?: boolean;
+  roleIds?: string[];
 }
 
 export interface CreateRoleData {
@@ -461,7 +477,7 @@ export interface IUserRepository {
   findById(id: string): Promise<UserEntity | null>;
   findByEmail(email: string): Promise<UserEntity | null>;
   findByUsername(username: string): Promise<UserEntity | null>;
-  findAll(): Promise<UserEntity[]>;
+  findAll(includeInactive?: boolean): Promise<UserEntity[]>;
   update(id: string, data: Partial<UserEntity>): Promise<UserEntity>;
   delete(id: string): Promise<boolean>;
 }
@@ -541,7 +557,8 @@ export interface IPublicationRepository {
   countAll(filters?: PublicationFilters): Promise<number>;
   findFeatured(limit?: number): Promise<PublicationEntity[]>;
   findLeaderboard(limit?: number): Promise<PublicationEntity[]>;
-  findPublished(limit?: number, offset?: number): Promise<PublicationEntity[]>;
+  findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
+  countPublished(categoryId?: string, subcategoryId?: string): Promise<number>;
   search(query: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   update(id: string, data: UpdatePublicationData): Promise<PublicationEntity>;
   delete(id: string): Promise<boolean>;
@@ -575,7 +592,7 @@ export interface IPublicationService {
   getPublicationBySlug(slug: string): Promise<PublicationWithRelations | null>;
   getFeaturedPublications(limit?: number): Promise<PublicationWithRelations[]>;
   getLeaderboardPublications(limit?: number): Promise<PublicationWithRelations[]>;
-  getPublishedPublications(limit?: number, offset?: number): Promise<PublicationWithRelations[]>;
+  getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
   getPublications(filters?: PublicationFilters, userId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
   updatePublication(id: string, data: UpdatePublicationData, userId?: string): Promise<PublicationEntity>;
   deletePublication(id: string, userId?: string): Promise<boolean>;
@@ -611,4 +628,30 @@ export interface INavLinkService {
   getActiveNavLinks(): Promise<NavLinkEntity[]>;
   updateNavLink(id: string, data: UpdateNavLinkData): Promise<NavLinkEntity>;
   deleteNavLink(id: string): Promise<boolean>;
+}
+
+// Settings Entities
+export interface SettingsEntity {
+  id: string;
+  key: string;
+  value: string; // JSON string
+  description?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISettingsRepository {
+  findByKey(key: string): Promise<SettingsEntity | null>;
+  findAll(): Promise<SettingsEntity[]>;
+  create(key: string, value: string, description?: string): Promise<SettingsEntity>;
+  update(key: string, value: string, description?: string): Promise<SettingsEntity>;
+  upsert(key: string, value: string, description?: string): Promise<SettingsEntity>;
+  delete(key: string): Promise<boolean>;
+}
+
+export interface ISettingsService {
+  getSettings(): Promise<Record<string, any>>;
+  getSetting(key: string): Promise<any>;
+  updateSettings(settings: Record<string, any>): Promise<void>;
+  updateSetting(key: string, value: any, description?: string): Promise<void>;
 }

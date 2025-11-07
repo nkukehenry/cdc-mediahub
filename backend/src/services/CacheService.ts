@@ -183,6 +183,10 @@ export class RedisCacheService implements ICacheService {
     return this.connected;
   }
 
+  getRedisInstance(): Redis | null {
+    return this.redis;
+  }
+
   async disconnect(): Promise<void> {
     if (this.redis) {
       await this.redis.disconnect();
@@ -257,6 +261,23 @@ export class MemoryCacheService implements ICacheService {
 
   isConnected(): boolean {
     return true; // Memory cache is always "connected"
+  }
+
+  getKeys(): string[] {
+    return Array.from(this.cache.keys());
+  }
+
+  getKeyInfo(key: string): { ttl: number | null; exists: boolean } | null {
+    const item = this.cache.get(key);
+    if (!item) {
+      return null;
+    }
+    const ttl = item.expires ? Math.max(0, Math.floor((item.expires - Date.now()) / 1000)) : null;
+    return { ttl, exists: true };
+  }
+
+  getRedisInstance(): null {
+    return null; // Memory cache doesn't use Redis
   }
 }
 

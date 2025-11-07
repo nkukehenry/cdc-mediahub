@@ -11,6 +11,7 @@ import {
   FolderOpen, 
   Settings, 
   User,
+  Users,
   LogOut,
   Menu,
   X,
@@ -18,11 +19,13 @@ import {
   ChevronDown,
   Search,
   Bell,
-  Link as LinkIcon
+  Link as LinkIcon,
+  LayoutDashboard
 } from 'lucide-react';
 import { cn } from '@/utils/fileUtils';
 import { useTranslation } from '@/hooks/useTranslation';
 import LanguageSelector from './LanguageSelector';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 
 interface NavSubItem {
@@ -82,6 +85,7 @@ export default function AdminNav() {
       path: '/admin/settings', 
       icon: Settings,
       subItems: [
+        { label: t('nav.users'), path: '/admin/users' },
         { label: t('nav.navLinks'), path: '/admin/nav-links' },
         { label: t('nav.cache'), path: '/admin/cache' },
         { label: t('nav.settings'), path: '/admin/settings' },
@@ -97,9 +101,9 @@ export default function AdminNav() {
     if (path === '/admin/categories') {
       return pathname === '/admin/categories' || pathname === '/admin/subcategories';
     }
-    // For configurations dropdown, check if we're on nav-links, cache or settings page
+    // For configurations dropdown, check if we're on users, nav-links, cache or settings page
     if (path === '/admin/settings') {
-      return pathname === '/admin/nav-links' || pathname === '/admin/cache' || pathname === '/admin/settings';
+      return pathname === '/admin/users' || pathname === '/admin/nav-links' || pathname === '/admin/cache' || pathname === '/admin/settings';
     }
     return pathname?.startsWith(path);
   };
@@ -276,9 +280,23 @@ export default function AdminNav() {
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   className="flex items-center"
                 >
-                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-au-gold flex items-center justify-center text-au-white font-medium text-xs md:text-sm border-2 border-au-white shadow-sm">
-                    {user?.firstName?.[0] || user?.username?.[0] || 'U'}
-                  </div>
+                  {user?.avatar ? (
+                    <div className="w-7 h-7 md:w-8 md:h-8 rounded-full overflow-hidden border-2 border-au-white shadow-sm">
+                      <img
+                        src={getImageUrl(user.avatar)}
+                        alt={user?.firstName || user?.username || 'User'}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-au-gold flex items-center justify-center text-au-white font-medium text-xs md:text-sm border-2 border-au-white shadow-sm">
+                      {user?.firstName?.[0] || user?.username?.[0] || 'U'}
+                    </div>
+                  )}
                 </button>
                 {showUserMenu && (
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
@@ -286,6 +304,22 @@ export default function AdminNav() {
                       <p className="text-sm font-medium text-au-grey-text">{user?.firstName || user?.username}</p>
                       <p className="text-xs text-au-grey-text/70">{user?.email}</p>
                     </div>
+                    <Link
+                      href="/admin/profile"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                    >
+                      <User className="h-4 w-4 mr-2" />
+                      {t('nav.profile')}
+                    </Link>
+                    <Link
+                      href="/admin"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                    >
+                      <LayoutDashboard className="h-4 w-4 mr-2" />
+                      {t('nav.dashboard')}
+                    </Link>
                     <button
                       onClick={() => setShowUserMenu(false)}
                       className="w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/5 transition-colors"
@@ -403,10 +437,45 @@ export default function AdminNav() {
               {/* User section */}
               {user && (
                 <div className="border-t border-gray-200 mt-4 pt-4">
-                  <div className="px-4 py-3 mb-2">
-                    <p className="text-sm font-medium text-au-grey-text">{user.firstName || user.username}</p>
-                    <p className="text-xs text-au-grey-text/70">{user.email}</p>
+                  <div className="px-4 py-3 mb-2 flex items-center gap-3">
+                    {user?.avatar ? (
+                      <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 shadow-sm flex-shrink-0">
+                        <img
+                          src={getImageUrl(user.avatar)}
+                          alt={user?.firstName || user?.username || 'User'}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-au-gold flex items-center justify-center text-au-white font-medium text-sm border-2 border-gray-200 shadow-sm flex-shrink-0">
+                        {user?.firstName?.[0] || user?.username?.[0] || 'U'}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-medium text-au-grey-text">{user.firstName || user.username}</p>
+                      <p className="text-xs text-au-grey-text/70">{user.email}</p>
+                    </div>
                   </div>
+                  <Link
+                    href="/admin/profile"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-gray-100 rounded-lg mb-2"
+                  >
+                    <User className="h-4 w-4 mr-3" />
+                    {t('nav.profile')}
+                  </Link>
+                  <Link
+                    href="/admin"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-gray-100 rounded-lg mb-2"
+                  >
+                    <LayoutDashboard className="h-4 w-4 mr-3" />
+                    {t('nav.dashboard')}
+                  </Link>
                   <button 
                     onClick={() => {
                       setShowUserMenu(false);

@@ -60,3 +60,57 @@ export const validateFileType = (file: File, allowedTypes: string[]): boolean =>
 export const validateFileSize = (file: File, maxSize: number): boolean => {
   return file.size <= maxSize;
 };
+
+/**
+ * Default placeholder image path in the uploads folder
+ */
+export const PLACEHOLDER_IMAGE_PATH = 'uploads/placeholder-image.jpg';
+
+/**
+ * Get the full URL for an uploaded file/image
+ * Handles absolute URLs, relative paths, and file paths from the uploads directory
+ * Also normalizes Windows-style backslashes to forward slashes
+ * 
+ * @param filePath - The file path (can be absolute URL, relative path, or filename)
+ * @returns The full URL to access the file
+ * 
+ * @example
+ * getFileUrl('/uploads/image.jpg') // Returns: http://localhost:3001/uploads/image.jpg
+ * getFileUrl('uploads\\image.jpg') // Returns: http://localhost:3001/uploads/image.jpg (normalizes backslashes)
+ * getFileUrl('image.jpg') // Returns: http://localhost:3001/uploads/image.jpg
+ * getFileUrl('http://example.com/image.jpg') // Returns: http://example.com/image.jpg (unchanged)
+ */
+export const getFileUrl = (filePath?: string | null): string => {
+  if (!filePath) return '';
+  
+  // If it's already a full URL (http:// or https://), return as-is
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    return filePath;
+  }
+  
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  
+  // Normalize path: replace backslashes with forward slashes (Windows paths)
+  const normalizedPath = filePath.replace(/\\/g, '/');
+  
+  // Remove leading slash if present to avoid double slashes
+  const cleanPath = normalizedPath.startsWith('/') ? normalizedPath.slice(1) : normalizedPath;
+  
+  // If path already includes 'uploads/', use it directly
+  if (cleanPath.startsWith('uploads/')) {
+    return `${baseUrl}/${cleanPath}`;
+  }
+  
+  // Otherwise, assume it's a file in the uploads directory
+  return `${baseUrl}/uploads/${cleanPath}`;
+};
+
+/**
+ * Get the full URL for an image file (alias for getFileUrl for semantic clarity)
+ * 
+ * @param imagePath - The image path (can be absolute URL, relative path, or filename)
+ * @returns The full URL to access the image
+ */
+export const getImageUrl = (imagePath?: string | null): string => {
+  return getFileUrl(imagePath);
+};

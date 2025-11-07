@@ -38,13 +38,13 @@ export default function LatestPublications() {
     <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
       <div className="container mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6 border-b-2 border-au-corporate-green pb-2">
-          <h2 className="text-xl md:text-2xl font-bold text-au-corporate-green">
+        <div className="flex items-center justify-between mb-6 border-b-2 border-au-red pb-2">
+          <h2 className="text-xl md:text-2xl font-bold text-au-red">
             LATEST PUBLICATIONS
           </h2>
           <Link
             href="/publications"
-            className="text-au-grey-text/70 hover:text-au-corporate-green transition-all duration-300 text-sm font-medium flex items-center gap-1 group"
+            className="text-au-grey-text/70 hover:text-au-gold transition-all duration-300 text-sm font-medium flex items-center gap-1 group"
           >
             View All Publications <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform duration-300" />
           </Link>

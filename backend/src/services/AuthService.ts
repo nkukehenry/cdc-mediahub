@@ -159,6 +159,34 @@ export class AuthService {
     }
   }
 
+  async updateUserProfile(userId: string, data: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    avatar?: string;
+    phone?: string;
+    jobTitle?: string;
+    organization?: string;
+    bio?: string;
+  }): Promise<UserEntity> {
+    try {
+      // Check if email is being updated and if it's already taken
+      if (data.email) {
+        const existingUser = await this.userRepository.findByEmail(data.email);
+        if (existingUser && existingUser.id !== userId) {
+          throw this.errorHandler.createValidationError('Email is already in use', 'email');
+        }
+      }
+
+      const updatedUser = await this.userRepository.update(userId, data);
+      this.logger.info('User profile updated', { userId });
+      return updatedUser;
+    } catch (error) {
+      this.logger.error('Failed to update user profile', error as Error, { userId });
+      throw error;
+    }
+  }
+
   private generateToken(user: UserEntity, roles: any[], permissions: any[]): string {
     const payload: JWTPayload = {
       userId: user.id,

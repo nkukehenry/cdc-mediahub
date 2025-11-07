@@ -150,7 +150,25 @@ export const showWarning = (message: string) => {
   errorHandler.showWarning(message);
 };
 
-export const showError = (message: string) => {
-  errorHandler.handleError(message, message);
+export const showError = (message: string | Error | any) => {
+  // If it's already a string, just show it directly
+  if (typeof message === 'string') {
+    toast.error(message, {
+      duration: 5000,
+      position: 'top-right',
+      style: {
+        background: '#9F2241', // AU Red from brand colors
+        color: '#fff',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        maxWidth: '400px',
+        fontSize: '14px',
+        fontWeight: '500',
+      },
+    });
+  } else {
+    // Otherwise, use the handler to extract the message
+    errorHandler.handleError(message, 'An error occurred');
+  }
 };
 

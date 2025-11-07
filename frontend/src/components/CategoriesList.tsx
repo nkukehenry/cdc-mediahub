@@ -6,18 +6,11 @@ import Link from 'next/link';
 import { RootState } from '@/store';
 import { fetchLatestPublications } from '@/store/publicationsSlice';
 import type { Publication } from '@/store/publicationsSlice';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
 interface CategoriesListProps {
   limit?: number;
 }
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-const getCoverImageUrl = (coverImage?: string) => {
-  if (!coverImage) return 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=300&fit=crop';
-  if (coverImage.startsWith('http')) return coverImage;
-  return `${API_BASE_URL}/${coverImage}`;
-};
 
 const getTimeAgo = (dateString?: string) => {
   if (!dateString) return '';
@@ -88,12 +81,12 @@ export default function CategoriesList({ limit = 5 }: CategoriesListProps) {
           {/* Thumbnail - Square on Left */}
           <div className="w-20 h-20 flex-shrink-0 overflow-hidden bg-gray-100">
             <img
-              src={getCoverImageUrl(publication.coverImage)}
+              src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
               alt={publication.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                target.src = 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=300&fit=crop';
+                target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
               }}
             />
           </div>
