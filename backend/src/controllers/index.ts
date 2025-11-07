@@ -8,5 +8,7 @@ export * from './YouTubeController';
 export * from './CacheController';
 export * from './SettingsController';
 export * from './UserController';
+export * from './RoleController';
+export * from './PermissionController';
 
 

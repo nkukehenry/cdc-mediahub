@@ -667,7 +667,7 @@ export class PostRepository implements IPublicationRepository {
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO post_subcategories (id, post_id, subcategory_id, created_at) VALUES (?, ?, ?, ?)`,
+        `INSERT IGNORE INTO post_subcategories (id, post_id, subcategory_id, created_at) VALUES (?, ?, ?, ?)`,
         [id, postId, subcategoryId, now]
       );
 
@@ -724,7 +724,7 @@ export class PostRepository implements IPublicationRepository {
       }
 
       const result = await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO post_attachments (id, post_id, file_id, display_order, created_at) VALUES (?, ?, ?, ?, ?)`,
+        `INSERT IGNORE INTO post_attachments (id, post_id, file_id, display_order, created_at) VALUES (?, ?, ?, ?, ?)`,
         [id, postId, fileId, displayOrder, now]
       );
 
@@ -788,7 +788,7 @@ export class PostRepository implements IPublicationRepository {
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO post_authors (id, post_id, author_id, created_at) VALUES (?, ?, ?, ?)`,
+        `INSERT IGNORE INTO post_authors (id, post_id, author_id, created_at) VALUES (?, ?, ?, ?)`,
         [id, postId, authorId, now]
       );
 

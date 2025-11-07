@@ -97,7 +97,7 @@ export class PermissionRepository implements IPermissionRepository {
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO role_permissions (id, role_id, permission_id, created_at) VALUES (?, ?, ?, ?)`,
+        `INSERT IGNORE INTO role_permissions (id, role_id, permission_id, created_at) VALUES (?, ?, ?, ?)`,
         [id, roleId, permissionId, now]
       );
 
@@ -153,6 +153,50 @@ export class PermissionRepository implements IPermissionRepository {
     } catch (error) {
       this.logger.error('Failed to get user permissions', error as Error, { userId });
       throw this.errorHandler.createDatabaseError('Failed to get user permissions', 'select', 'user_roles');
+    }
+  }
+
+  async update(id: string, data: Partial<PermissionEntity>): Promise<PermissionEntity> {
+    try {
+      const updateData = {
+        ...data,
+        updated_at: DatabaseUtils.getCurrentTimestamp()
+      };
+
+      const { set, values } = DatabaseUtils.buildUpdateSet(updateData);
+      const params = [...values, id];
+
+      await DatabaseUtils.executeQuery(
+        `UPDATE permissions SET ${set} WHERE id = ?`,
+        params
+      );
+
+      const updatedPermission = await this.findById(id);
+      if (!updatedPermission) {
+        throw new Error('Permission not found after update');
+      }
+
+      this.logger.debug('Permission updated', { permissionId: id });
+      return updatedPermission;
+    } catch (error) {
+      this.logger.error('Failed to update permission', error as Error, { permissionId: id });
+      throw this.errorHandler.createDatabaseError('Failed to update permission', 'update', 'permissions');
+    }
+  }
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      const result = await DatabaseUtils.executeQuery(
+        'DELETE FROM permissions WHERE id = ?',
+        [id]
+      );
+
+      const deleted = result.changes > 0;
+      this.logger.debug('Permission delete attempt', { permissionId: id, deleted });
+      return deleted;
+    } catch (error) {
+      this.logger.error('Failed to delete permission', error as Error, { permissionId: id });
+      throw this.errorHandler.createDatabaseError('Failed to delete permission', 'delete', 'permissions');
     }
   }
 

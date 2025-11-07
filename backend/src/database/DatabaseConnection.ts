@@ -1,5 +1,4 @@
-import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
+import mysql from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { 
@@ -16,17 +15,61 @@ import { DatabaseError } from '../interfaces';
 import { DatabaseUtils } from '../utils/DatabaseUtils';
 
 export class DatabaseConnection {
-  private db: sqlite3.Database;
+  private pool: mysql.Pool;
   private logger = getLogger('DatabaseConnection');
   private errorHandler = getErrorHandler();
 
-  constructor(private dbPath: string) {
-    this.db = new sqlite3.Database(dbPath);
-    // Enforce foreign key constraints for cascading deletes
-    try {
-      this.db.run('PRAGMA foreign_keys = ON');
-    } catch {}
-    this.initializeTables();
+  constructor(config: {
+    connectionString?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    database?: string;
+  }) {
+    // Create MySQL connection pool
+    if (config.connectionString) {
+      // Parse connection string (mysql://user:password@host:port/database)
+      try {
+        const url = new URL(config.connectionString);
+        this.pool = mysql.createPool({
+          host: url.hostname,
+          port: parseInt(url.port) || 3306,
+          user: url.username,
+          password: url.password,
+          database: url.pathname.slice(1), // Remove leading '/'
+          waitForConnections: true,
+          connectionLimit: 10,
+          queueLimit: 0,
+          enableKeepAlive: true,
+          keepAliveInitialDelay: 0
+        });
+      } catch (error) {
+        this.logger.error('Failed to parse connection string', error as Error);
+        throw new Error('Invalid database connection string format. Expected: mysql://user:password@host:port/database');
+      }
+    } else {
+      this.pool = mysql.createPool({
+        host: config.host || 'localhost',
+        port: config.port || 3306,
+        user: config.user || 'root',
+        password: config.password || '',
+        database: config.database || 'filemanager',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0
+      });
+    }
+    // Don't call initializeTables here - it will be called after DatabaseUtils.initialize()
+  }
+
+  async initialize(): Promise<void> {
+    // Initialize DatabaseUtils first
+    DatabaseUtils.initialize(this.pool);
+    // Then initialize tables
+    await this.initializeTables();
   }
 
   /**
@@ -34,18 +77,15 @@ export class DatabaseConnection {
    */
   private async columnExists(tableName: string, columnName: string): Promise<boolean> {
     try {
-      const info = await new Promise<any[]>((resolve, reject) => {
-        this.db.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
-          if (err) {
-            // Table might not exist yet, return false
-            resolve([]);
-          } else {
-            resolve(rows as any[]);
-          }
-        });
-      });
-      
-      return info.some(col => col.name === columnName);
+      const [rows]: any = await this.pool.execute(
+        `SELECT COLUMN_NAME 
+         FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = ? 
+         AND COLUMN_NAME = ?`,
+        [tableName, columnName]
+      );
+      return rows && rows.length > 0;
     } catch (error) {
       this.logger.warn(`Error checking column ${columnName} in ${tableName}`, error as Error);
       return false;
@@ -56,8 +96,6 @@ export class DatabaseConnection {
    * Migrate existing tables to add new columns
    */
   private async migrateTables(): Promise<void> {
-    const run = promisify(this.db.run.bind(this.db));
-    
     try {
       // Migrate folders table
       const foldersHasUserId = await this.columnExists('folders', 'user_id');
@@ -65,16 +103,16 @@ export class DatabaseConnection {
       const foldersHasIsPublic = await this.columnExists('folders', 'is_public');
       
       if (!foldersHasUserId) {
-        await run(`ALTER TABLE folders ADD COLUMN user_id TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE folders ADD COLUMN user_id VARCHAR(36)`);
         this.logger.info('Added user_id column to folders table');
       }
       
       if (!foldersHasAccessType) {
-        await run(`ALTER TABLE folders ADD COLUMN access_type TEXT DEFAULT 'private'`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE folders ADD COLUMN access_type VARCHAR(20) DEFAULT 'private'`);
         this.logger.info('Added access_type column to folders table');
       }
       if (!foldersHasIsPublic) {
-        await run(`ALTER TABLE folders ADD COLUMN is_public INTEGER DEFAULT 0`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE folders ADD COLUMN is_public TINYINT(1) DEFAULT 0`);
         this.logger.info('Added is_public column to folders table');
       }
 
@@ -83,43 +121,43 @@ export class DatabaseConnection {
       const filesHasAccessType = await this.columnExists('files', 'access_type');
       
       if (!filesHasUserId) {
-        await run(`ALTER TABLE files ADD COLUMN user_id TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE files ADD COLUMN user_id VARCHAR(36)`);
         this.logger.info('Added user_id column to files table');
       }
       
       if (!filesHasAccessType) {
-        await run(`ALTER TABLE files ADD COLUMN access_type TEXT DEFAULT 'private'`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE files ADD COLUMN access_type VARCHAR(20) DEFAULT 'private'`);
         this.logger.info('Added access_type column to files table');
       }
 
       // Migrate users table - add language preference and profile fields
       const usersHasLanguage = await this.columnExists('users', 'language');
       if (!usersHasLanguage) {
-        await run(`ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'en' CHECK(language IN ('ar', 'en', 'fr', 'pt', 'es', 'sw'))`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'en'`);
         this.logger.info('Added language column to users table');
       }
 
       const usersHasPhone = await this.columnExists('users', 'phone');
       if (!usersHasPhone) {
-        await run(`ALTER TABLE users ADD COLUMN phone TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN phone VARCHAR(50)`);
         this.logger.info('Added phone column to users table');
       }
 
       const usersHasJobTitle = await this.columnExists('users', 'job_title');
       if (!usersHasJobTitle) {
-        await run(`ALTER TABLE users ADD COLUMN job_title TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN job_title VARCHAR(255)`);
         this.logger.info('Added job_title column to users table');
       }
 
       const usersHasOrganization = await this.columnExists('users', 'organization');
       if (!usersHasOrganization) {
-        await run(`ALTER TABLE users ADD COLUMN organization TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN organization VARCHAR(255)`);
         this.logger.info('Added organization column to users table');
       }
 
       const usersHasBio = await this.columnExists('users', 'bio');
       if (!usersHasBio) {
-        await run(`ALTER TABLE users ADD COLUMN bio TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN bio TEXT`);
         this.logger.info('Added bio column to users table');
       }
     } catch (error) {
@@ -129,164 +167,176 @@ export class DatabaseConnection {
   }
 
   private async initializeTables(): Promise<void> {
-    const run = promisify(this.db.run.bind(this.db));
-    
     try {
       // Folders table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS folders (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          parent_id TEXT,
-          user_id TEXT,
-          access_type TEXT DEFAULT 'private' CHECK(access_type IN ('private', 'public', 'shared')),
-          is_public INTEGER DEFAULT 0,
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          parent_id VARCHAR(36),
+          user_id VARCHAR(36),
+          access_type VARCHAR(20) DEFAULT 'private',
+          is_public TINYINT(1) DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (parent_id) REFERENCES folders (id),
-          FOREIGN KEY (user_id) REFERENCES users (id)
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
+          INDEX idx_parent_id (parent_id),
+          INDEX idx_user_id (user_id)
         )
       `);
 
       // Files table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS files (
-          id TEXT PRIMARY KEY,
-          filename TEXT NOT NULL,
-          original_name TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          filename VARCHAR(255) NOT NULL,
+          original_name VARCHAR(255) NOT NULL,
           file_path TEXT NOT NULL,
           thumbnail_path TEXT,
-          file_size INTEGER NOT NULL,
-          mime_type TEXT NOT NULL,
-          folder_id TEXT,
-          user_id TEXT,
-          access_type TEXT DEFAULT 'private' CHECK(access_type IN ('private', 'public', 'shared')),
+          file_size BIGINT NOT NULL,
+          mime_type VARCHAR(255) NOT NULL,
+          folder_id VARCHAR(36),
+          user_id VARCHAR(36),
+          access_type VARCHAR(20) DEFAULT 'private',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (folder_id) REFERENCES folders (id),
-          FOREIGN KEY (user_id) REFERENCES users (id)
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
+          INDEX idx_folder_id (folder_id),
+          INDEX idx_user_id (user_id),
+          INDEX idx_access_type (access_type)
         )
       `);
 
       // Users table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS users (
-          id TEXT PRIMARY KEY,
-          username TEXT UNIQUE NOT NULL,
-          email TEXT UNIQUE NOT NULL,
-          password TEXT NOT NULL,
-          first_name TEXT,
-          last_name TEXT,
+          id VARCHAR(36) PRIMARY KEY,
+          username VARCHAR(255) UNIQUE NOT NULL,
+          email VARCHAR(255) UNIQUE NOT NULL,
+          password VARCHAR(255) NOT NULL,
+          first_name VARCHAR(255),
+          last_name VARCHAR(255),
           avatar TEXT,
-          phone TEXT,
-          job_title TEXT,
-          organization TEXT,
+          phone VARCHAR(50),
+          job_title VARCHAR(255),
+          organization VARCHAR(255),
           bio TEXT,
-          is_active BOOLEAN DEFAULT 1,
-          email_verified BOOLEAN DEFAULT 0,
-          language TEXT DEFAULT 'en' CHECK(language IN ('ar', 'en', 'fr', 'pt', 'es', 'sw')),
+          is_active TINYINT(1) DEFAULT 1,
+          email_verified TINYINT(1) DEFAULT 0,
+          language VARCHAR(10) DEFAULT 'en',
           last_login DATETIME,
-          password_reset_token TEXT,
+          password_reset_token VARCHAR(255),
           password_reset_expires DATETIME,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_email (email),
+          INDEX idx_username (username)
         )
       `);
 
       // Add new columns if they don't exist (migration)
       try {
-        await run(`ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN email_verified TINYINT(1) DEFAULT 0`);
       } catch (e: any) {
-        // Column already exists, ignore
-        if (!e.message?.includes('duplicate column name')) {
+        if (!e.message?.includes('Duplicate column name') && !e.message?.includes('ER_DUP_FIELDNAME')) {
           this.logger.warn('Failed to add email_verified column', { error: e.message });
         }
       }
 
       try {
-        await run(`ALTER TABLE users ADD COLUMN last_login DATETIME`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN last_login DATETIME`);
       } catch (e: any) {
-        if (!e.message?.includes('duplicate column name')) {
+        if (!e.message?.includes('Duplicate column name') && !e.message?.includes('ER_DUP_FIELDNAME')) {
           this.logger.warn('Failed to add last_login column', { error: e.message });
         }
       }
 
       try {
-        await run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN password_reset_token VARCHAR(255)`);
       } catch (e: any) {
-        if (!e.message?.includes('duplicate column name')) {
+        if (!e.message?.includes('Duplicate column name') && !e.message?.includes('ER_DUP_FIELDNAME')) {
           this.logger.warn('Failed to add password_reset_token column', { error: e.message });
         }
       }
 
       try {
-        await run(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
       } catch (e: any) {
-        if (!e.message?.includes('duplicate column name')) {
+        if (!e.message?.includes('Duplicate column name') && !e.message?.includes('ER_DUP_FIELDNAME')) {
           this.logger.warn('Failed to add password_reset_expires column', { error: e.message });
         }
       }
 
       // Roles table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS roles (
-          id TEXT PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          slug TEXT UNIQUE NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) UNIQUE NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_slug (slug)
         )
       `);
 
       // Permissions table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS permissions (
-          id TEXT PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          slug TEXT UNIQUE NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) UNIQUE NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_slug (slug)
         )
       `);
 
       // User roles junction table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS user_roles (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          role_id TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          role_id VARCHAR(36) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
           FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE CASCADE,
-          UNIQUE(user_id, role_id)
+          UNIQUE KEY unique_user_role (user_id, role_id),
+          INDEX idx_user_id (user_id),
+          INDEX idx_role_id (role_id)
         )
       `);
 
       // Role permissions junction table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS role_permissions (
-          id TEXT PRIMARY KEY,
-          role_id TEXT NOT NULL,
-          permission_id TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          role_id VARCHAR(36) NOT NULL,
+          permission_id VARCHAR(36) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE CASCADE,
           FOREIGN KEY (permission_id) REFERENCES permissions (id) ON DELETE CASCADE,
-          UNIQUE(role_id, permission_id)
+          UNIQUE KEY unique_role_permission (role_id, permission_id),
+          INDEX idx_role_id (role_id),
+          INDEX idx_permission_id (permission_id)
         )
       `);
 
       // File sharing table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS file_shares (
-          id TEXT PRIMARY KEY,
-          file_id TEXT NOT NULL,
-          shared_with_user_id TEXT,
-          access_level TEXT DEFAULT 'read' CHECK(access_level IN ('read', 'write')),
+          id VARCHAR(36) PRIMARY KEY,
+          file_id VARCHAR(36) NOT NULL,
+          shared_with_user_id VARCHAR(36),
+          access_level VARCHAR(20) DEFAULT 'read',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE,
-          FOREIGN KEY (shared_with_user_id) REFERENCES users (id) ON DELETE CASCADE
+          FOREIGN KEY (shared_with_user_id) REFERENCES users (id) ON DELETE CASCADE,
+          INDEX idx_file_id (file_id),
+          INDEX idx_shared_with_user_id (shared_with_user_id)
         )
       `);
 
@@ -296,7 +346,10 @@ export class DatabaseConnection {
         let pubId = existingPublic?.id;
         if (!pubId) {
           pubId = uuidv4();
-          await run(`INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES ('${pubId}', 'Public', NULL, NULL, 'public', 1, datetime('now'), datetime('now'))`);
+          await DatabaseUtils.executeQuery(
+            `INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES (?, ?, NULL, NULL, 'public', 1, NOW(), NOW())`,
+            [pubId, 'Public']
+          );
           this.logger.info('Created Public folder');
         }
         // Create initial subfolders if none exist
@@ -304,220 +357,233 @@ export class DatabaseConnection {
         if (!hasChildren) {
           const names = ['Images', 'Videos', 'Audios', 'Documents'];
           for (const n of names) {
-            await run(`INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES ('${uuidv4()}', '${n}', '${pubId}', NULL, 'public', 1, datetime('now'), datetime('now'))`);
+            await DatabaseUtils.executeQuery(
+              `INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES (?, ?, ?, NULL, 'public', 1, NOW(), NOW())`,
+              [uuidv4(), n, pubId]
+            );
           }
           this.logger.info('Seeded initial public subfolders');
         }
-      } catch {}
+      } catch (error) {
+        this.logger.warn('Error creating public folder', error as Error);
+      }
 
       // Folder sharing table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS folder_shares (
-          id TEXT PRIMARY KEY,
-          folder_id TEXT NOT NULL,
-          shared_with_user_id TEXT,
-          access_level TEXT DEFAULT 'write' CHECK(access_level IN ('read', 'write')),
+          id VARCHAR(36) PRIMARY KEY,
+          folder_id VARCHAR(36) NOT NULL,
+          shared_with_user_id VARCHAR(36),
+          access_level VARCHAR(20) DEFAULT 'write',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE CASCADE,
-          FOREIGN KEY (shared_with_user_id) REFERENCES users (id) ON DELETE CASCADE
+          FOREIGN KEY (shared_with_user_id) REFERENCES users (id) ON DELETE CASCADE,
+          INDEX idx_folder_id (folder_id),
+          INDEX idx_shared_with_user_id (shared_with_user_id)
         )
       `);
 
       // Categories table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS categories (
-          id TEXT PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          slug TEXT UNIQUE NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) UNIQUE NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
           description TEXT,
           cover_image TEXT,
-          show_on_menu INTEGER DEFAULT 1,
-          menu_order INTEGER DEFAULT 0,
+          show_on_menu TINYINT(1) DEFAULT 1,
+          menu_order INT DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_slug (slug)
         )
       `);
 
       // Add cover_image column if it doesn't exist (migration)
       const categoriesColumns = await DatabaseUtils.findMany<any>(
-        `PRAGMA table_info(categories)`
+        `SELECT COLUMN_NAME 
+         FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = 'categories'`
       );
-      const hasCoverImage = categoriesColumns.some((col: any) => col.name === 'cover_image');
+      const hasCoverImage = categoriesColumns.some((col: any) => col.COLUMN_NAME === 'cover_image');
       if (!hasCoverImage) {
-        await run(`ALTER TABLE categories ADD COLUMN cover_image TEXT`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE categories ADD COLUMN cover_image TEXT`);
       }
-      const hasShowOnMenu = categoriesColumns.some((col: any) => col.name === 'show_on_menu');
+      const hasShowOnMenu = categoriesColumns.some((col: any) => col.COLUMN_NAME === 'show_on_menu');
       if (!hasShowOnMenu) {
-        await run(`ALTER TABLE categories ADD COLUMN show_on_menu INTEGER DEFAULT 1`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE categories ADD COLUMN show_on_menu TINYINT(1) DEFAULT 1`);
       }
-      const hasMenuOrder = categoriesColumns.some((col: any) => col.name === 'menu_order');
+      const hasMenuOrder = categoriesColumns.some((col: any) => col.COLUMN_NAME === 'menu_order');
       if (!hasMenuOrder) {
-        await run(`ALTER TABLE categories ADD COLUMN menu_order INTEGER DEFAULT 0`);
+        await DatabaseUtils.executeQuery(`ALTER TABLE categories ADD COLUMN menu_order INT DEFAULT 0`);
       }
 
       // Subcategories table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS subcategories (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          slug TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(name, slug)
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_name_slug (name, slug)
         )
       `);
 
       // Category subcategories junction table (many-to-many)
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS category_subcategories (
-          id TEXT PRIMARY KEY,
-          category_id TEXT NOT NULL,
-          subcategory_id TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          category_id VARCHAR(36) NOT NULL,
+          subcategory_id VARCHAR(36) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE,
           FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE,
-          UNIQUE(category_id, subcategory_id)
+          UNIQUE KEY unique_category_subcategory (category_id, subcategory_id),
+          INDEX idx_category_id (category_id),
+          INDEX idx_subcategory_id (subcategory_id)
         )
       `);
 
       // Posts table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS posts (
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          slug TEXT UNIQUE NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
           description TEXT,
-          meta_title TEXT,
+          meta_title VARCHAR(255),
           meta_description TEXT,
           cover_image TEXT,
-          category_id TEXT NOT NULL,
-          creator_id TEXT NOT NULL,
-          approved_by TEXT,
-          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'rejected', 'approved', 'draft')),
+          category_id VARCHAR(36) NOT NULL,
+          creator_id VARCHAR(36) NOT NULL,
+          approved_by VARCHAR(36),
+          status VARCHAR(20) DEFAULT 'pending',
           publication_date DATETIME,
-          has_comments BOOLEAN DEFAULT 1,
-          views INTEGER DEFAULT 0,
-          unique_hits INTEGER DEFAULT 0,
-          is_featured BOOLEAN DEFAULT 0,
-          is_leaderboard BOOLEAN DEFAULT 0,
+          has_comments TINYINT(1) DEFAULT 1,
+          views INT DEFAULT 0,
+          unique_hits INT DEFAULT 0,
+          is_featured TINYINT(1) DEFAULT 0,
+          is_leaderboard TINYINT(1) DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           FOREIGN KEY (category_id) REFERENCES categories (id),
           FOREIGN KEY (creator_id) REFERENCES users (id),
-          FOREIGN KEY (approved_by) REFERENCES users (id)
+          FOREIGN KEY (approved_by) REFERENCES users (id) ON DELETE SET NULL,
+          INDEX idx_category_id (category_id),
+          INDEX idx_creator_id (creator_id),
+          INDEX idx_status (status),
+          INDEX idx_is_featured (is_featured),
+          INDEX idx_is_leaderboard (is_leaderboard),
+          INDEX idx_publication_date (publication_date),
+          INDEX idx_slug (slug)
         )
       `);
 
       // Post subcategories junction table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_subcategories (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL,
-          subcategory_id TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          post_id VARCHAR(36) NOT NULL,
+          subcategory_id VARCHAR(36) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE,
-          UNIQUE(post_id, subcategory_id)
+          UNIQUE KEY unique_post_subcategory (post_id, subcategory_id),
+          INDEX idx_post_id (post_id),
+          INDEX idx_subcategory_id (subcategory_id)
         )
       `);
 
       // Post attachments junction table (files attached to posts)
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_attachments (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL,
-          file_id TEXT NOT NULL,
-          display_order INTEGER DEFAULT 0,
+          id VARCHAR(36) PRIMARY KEY,
+          post_id VARCHAR(36) NOT NULL,
+          file_id VARCHAR(36) NOT NULL,
+          display_order INT DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE,
-          UNIQUE(post_id, file_id)
+          UNIQUE KEY unique_post_file (post_id, file_id),
+          INDEX idx_post_id (post_id),
+          INDEX idx_file_id (file_id)
         )
       `);
 
       // Post authors junction table (associated authors)
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_authors (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL,
-          author_id TEXT NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          post_id VARCHAR(36) NOT NULL,
+          author_id VARCHAR(36) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (author_id) REFERENCES users (id) ON DELETE CASCADE,
-          UNIQUE(post_id, author_id)
+          UNIQUE KEY unique_post_author (post_id, author_id),
+          INDEX idx_post_id (post_id),
+          INDEX idx_author_id (author_id)
         )
       `);
 
       // Post views tracking table (for unique hits)
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_views (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL,
-          user_id TEXT,
-          ip_address TEXT,
+          id VARCHAR(36) PRIMARY KEY,
+          post_id VARCHAR(36) NOT NULL,
+          user_id VARCHAR(36),
+          ip_address VARCHAR(45),
           user_agent TEXT,
           viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
-          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
+          INDEX idx_post_id (post_id),
+          INDEX idx_user_id (user_id)
         )
       `);
 
       // Navigation links table
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS nav_links (
-          id TEXT PRIMARY KEY,
-          label TEXT NOT NULL,
-          url TEXT,
-          route TEXT,
-          external INTEGER DEFAULT 0,
-          display_order INTEGER DEFAULT 0,
-          is_active INTEGER DEFAULT 1,
+          id VARCHAR(36) PRIMARY KEY,
+          label VARCHAR(255) NOT NULL,
+          url VARCHAR(255),
+          route VARCHAR(255),
+          external TINYINT(1) DEFAULT 0,
+          display_order INT DEFAULT 0,
+          is_active TINYINT(1) DEFAULT 1,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
       `);
 
       // Settings table (stores site configuration as JSON)
-      await run(`
+      await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS settings (
-          id TEXT PRIMARY KEY,
-          key TEXT UNIQUE NOT NULL,
+          id VARCHAR(36) PRIMARY KEY,
+          \`key\` VARCHAR(255) UNIQUE NOT NULL,
           value TEXT NOT NULL,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_key (\`key\`)
         )
       `);
 
       // Run migrations for existing tables (must happen before index creation)
       await this.migrateTables();
 
-      // Create indexes for performance
-      await run(`CREATE INDEX IF NOT EXISTS idx_files_user_id ON files(user_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_files_access_type ON files(access_type)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_file_shares_file_id ON file_shares(file_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_file_shares_user_id ON file_shares(shared_with_user_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_folder_shares_folder_id ON folder_shares(folder_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_folder_shares_user_id ON folder_shares(shared_with_user_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_category_id ON posts(category_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_creator_id ON posts(creator_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_featured ON posts(is_featured)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_leaderboard ON posts(is_leaderboard)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_posts_publication_date ON posts(publication_date)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_post_views_post_id ON post_views(post_id)`);
-      await run(`CREATE INDEX IF NOT EXISTS idx_post_views_user_id ON post_views(user_id)`);
-
       // Insert default categories (using fixed UUIDs for consistency)
-      await run(`
-        INSERT OR IGNORE INTO categories (id, name, slug) VALUES
-        ('550e8400-e29b-41d4-a716-446655440001', 'Videos', 'videos'),
-        ('550e8400-e29b-41d4-a716-446655440002', 'Audios', 'audios'),
-        ('550e8400-e29b-41d4-a716-446655440003', 'Photos', 'photos'),
-        ('550e8400-e29b-41d4-a716-446655440004', 'Infographics', 'infographics'),
-        ('550e8400-e29b-41d4-a716-446655440005', 'Documents', 'documents'),
-        ('550e8400-e29b-41d4-a716-446655440006', 'Other', 'other')
+      await DatabaseUtils.executeQuery(`
+        INSERT IGNORE INTO categories (id, name, slug, created_at, updated_at) VALUES
+        ('550e8400-e29b-41d4-a716-446655440001', 'Videos', 'videos', NOW(), NOW()),
+        ('550e8400-e29b-41d4-a716-446655440002', 'Audios', 'audios', NOW(), NOW()),
+        ('550e8400-e29b-41d4-a716-446655440003', 'Photos', 'photos', NOW(), NOW()),
+        ('550e8400-e29b-41d4-a716-446655440004', 'Infographics', 'infographics', NOW(), NOW()),
+        ('550e8400-e29b-41d4-a716-446655440005', 'Documents', 'documents', NOW(), NOW()),
+        ('550e8400-e29b-41d4-a716-446655440006', 'Other', 'other', NOW(), NOW())
       `);
 
       // Seed default roles, permissions, and admin user
@@ -534,18 +600,16 @@ export class DatabaseConnection {
    * Seed default roles, permissions, and admin user
    */
   private async seedDefaultData(): Promise<void> {
-    const run = promisify(this.db.run.bind(this.db));
-    
     try {
       // Default roles (using fixed UUIDs)
       const adminRoleId = '00000000-0000-0000-0000-000000000001';
       const authorRoleId = '00000000-0000-0000-0000-000000000002';
       
-      await run(`
-        INSERT OR IGNORE INTO roles (id, name, slug, description) VALUES
-        ('${adminRoleId}', 'Admin', 'admin', 'Administrator with full access'),
-        ('${authorRoleId}', 'Author', 'author', 'Content author with create/edit permissions')
-      `);
+      await DatabaseUtils.executeQuery(`
+        INSERT IGNORE INTO roles (id, name, slug, description, created_at, updated_at) VALUES
+        (?, 'Admin', 'admin', 'Administrator with full access', NOW(), NOW()),
+        (?, 'Author', 'author', 'Content author with create/edit permissions', NOW(), NOW())
+      `, [adminRoleId, authorRoleId]);
 
       // Default permissions
       const permissions = [
@@ -560,18 +624,18 @@ export class DatabaseConnection {
       ];
 
       for (const perm of permissions) {
-        await run(`
-          INSERT OR IGNORE INTO permissions (id, name, slug, description) VALUES
-          ('${perm.id}', '${perm.name}', '${perm.slug}', '${perm.name} permission')
-        `);
+        await DatabaseUtils.executeQuery(`
+          INSERT IGNORE INTO permissions (id, name, slug, description, created_at, updated_at) VALUES
+          (?, ?, ?, ?, NOW(), NOW())
+        `, [perm.id, perm.name, perm.slug, `${perm.name} permission`]);
       }
 
       // Assign all permissions to admin role
       for (const perm of permissions) {
-        await run(`
-          INSERT OR IGNORE INTO role_permissions (id, role_id, permission_id) VALUES
-          ('${DatabaseUtils.generateId()}', '${adminRoleId}', '${perm.id}')
-        `);
+        await DatabaseUtils.executeQuery(`
+          INSERT IGNORE INTO role_permissions (id, role_id, permission_id, created_at) VALUES
+          (?, ?, ?, NOW())
+        `, [DatabaseUtils.generateId(), adminRoleId, perm.id]);
       }
 
       // Assign basic permissions to author role
@@ -581,10 +645,10 @@ export class DatabaseConnection {
         p.slug.startsWith('files:manage')
       );
       for (const perm of authorPerms) {
-        await run(`
-          INSERT OR IGNORE INTO role_permissions (id, role_id, permission_id) VALUES
-          ('${DatabaseUtils.generateId()}', '${authorRoleId}', '${perm.id}')
-        `);
+        await DatabaseUtils.executeQuery(`
+          INSERT IGNORE INTO role_permissions (id, role_id, permission_id, created_at) VALUES
+          (?, ?, ?, NOW())
+        `, [DatabaseUtils.generateId(), authorRoleId, perm.id]);
       }
 
       // Create default admin user (password: admin123)
@@ -600,16 +664,16 @@ export class DatabaseConnection {
       if (!existingAdmin) {
         // Use DatabaseUtils for parameterized queries
         await DatabaseUtils.executeQuery(
-          `INSERT INTO users (id, username, email, password, first_name, last_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          `INSERT INTO users (id, username, email, password, first_name, last_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [adminUserId, 'admin', 'admin@example.com', adminPasswordHash, 'Admin', 'User', 1]
         );
 
         // Assign admin role to admin user (admin role already has all permissions)
         const userRoleId = DatabaseUtils.generateId();
-        await run(`
-          INSERT OR IGNORE INTO user_roles (id, user_id, role_id) VALUES
-          ('${userRoleId}', '${adminUserId}', '${adminRoleId}')
-        `);
+        await DatabaseUtils.executeQuery(`
+          INSERT IGNORE INTO user_roles (id, user_id, role_id, created_at) VALUES
+          (?, ?, ?, NOW())
+        `, [userRoleId, adminUserId, adminRoleId]);
 
         this.logger.info('Default admin user created with admin role (all permissions)', { 
           email: 'admin@example.com',
@@ -625,10 +689,10 @@ export class DatabaseConnection {
         
         if (!existingRole) {
           const userRoleId = DatabaseUtils.generateId();
-          await run(`
-            INSERT OR IGNORE INTO user_roles (id, user_id, role_id) VALUES
-            ('${userRoleId}', '${adminUserId}', '${adminRoleId}')
-          `);
+          await DatabaseUtils.executeQuery(`
+            INSERT IGNORE INTO user_roles (id, user_id, role_id, created_at) VALUES
+            (?, ?, ?, NOW())
+          `, [userRoleId, adminUserId, adminRoleId]);
           this.logger.info('Admin role assigned to existing admin user');
         }
         this.logger.debug('Admin user already exists');
@@ -663,16 +727,16 @@ export class DatabaseConnection {
         if (!existing) {
           const passwordHash = await bcrypt.hash(testUser.password, 10);
           await DatabaseUtils.executeQuery(
-            `INSERT INTO users (id, username, email, password, first_name, last_name, is_active, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            `INSERT INTO users (id, username, email, password, first_name, last_name, is_active, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [testUser.id, testUser.username, testUser.email, passwordHash, testUser.firstName, testUser.lastName, 1, 'en']
           );
 
           // Assign author role to test users
           const userRoleId = DatabaseUtils.generateId();
-          await run(`
-            INSERT OR IGNORE INTO user_roles (id, user_id, role_id) VALUES
-            ('${userRoleId}', '${testUser.id}', '${authorRoleId}')
-          `);
+          await DatabaseUtils.executeQuery(`
+            INSERT IGNORE INTO user_roles (id, user_id, role_id, created_at) VALUES
+            (?, ?, ?, NOW())
+          `, [userRoleId, testUser.id, authorRoleId]);
 
           this.logger.info('Test user created', {
             email: testUser.email,
@@ -690,21 +754,17 @@ export class DatabaseConnection {
     }
   }
 
-  getDatabase(): sqlite3.Database {
-    return this.db;
+  getDatabase(): mysql.Pool {
+    return this.pool;
   }
 
   async close(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.close((err: Error | null) => {
-        if (err) {
-          this.logger.error('Error closing database', err);
-          reject(err);
-        } else {
-          this.logger.info('Database connection closed');
-          resolve();
-        }
-      });
-    });
+    try {
+      await this.pool.end();
+      this.logger.info('Database connection pool closed');
+    } catch (error) {
+      this.logger.error('Error closing database pool', error as Error);
+      throw error;
+    }
   }
 }

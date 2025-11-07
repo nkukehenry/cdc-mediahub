@@ -223,7 +223,7 @@ export class CategoryRepository implements ICategoryRepository {
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO category_subcategories (id, category_id, subcategory_id, created_at) VALUES (?, ?, ?, ?)`,
+        `INSERT IGNORE INTO category_subcategories (id, category_id, subcategory_id, created_at) VALUES (?, ?, ?, ?)`,
         [id, categoryId, subcategoryId, now]
       );
 

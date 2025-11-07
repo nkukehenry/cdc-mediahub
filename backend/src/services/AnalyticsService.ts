@@ -124,12 +124,12 @@ export class AnalyticsService {
   private async getMonthlyVisitorStats(): Promise<DashboardAnalytics['monthlyVisitorStats']> {
     const stats = await DatabaseUtils.findMany<any>(
       `SELECT 
-        strftime('%Y-%m', created_at) as month,
+        DATE_FORMAT(created_at, '%Y-%m') as month,
         SUM(views) as views,
         SUM(unique_hits) as uniqueHits
        FROM posts
-       WHERE created_at >= datetime('now', '-12 months')
-       GROUP BY strftime('%Y-%m', created_at)
+       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+       GROUP BY DATE_FORMAT(created_at, '%Y-%m')
        ORDER BY month DESC
        LIMIT 12`
     );

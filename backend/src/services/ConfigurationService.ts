@@ -113,9 +113,23 @@ export class ConfigurationService {
 
   // Database configuration
   getDatabaseConfig() {
+    // Support both DATABASE_URL (for connection string) and individual MySQL config
+    const databaseUrl = process.env.DATABASE_URL;
+    
+    if (databaseUrl) {
+      return {
+        connectionString: databaseUrl,
+        type: 'mysql' as const
+      };
+    }
+
     return {
-      filename: process.env.DATABASE_PATH || './database.sqlite',
-      verbose: this.isDevelopment()
+      host: process.env.DB_HOST || process.env.MYSQL_HOST || process.env.DATABASE_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || process.env.DATABASE_PORT || '3306'),
+      user: process.env.DB_USER || process.env.MYSQL_USER || process.env.DATABASE_USER || 'root',
+      password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || process.env.DATABASE_PASSWORD || '',
+      database: process.env.DB_NAME || process.env.MYSQL_DATABASE || process.env.DATABASE_NAME || 'filemanager',
+      type: 'mysql' as const
     };
   }
 

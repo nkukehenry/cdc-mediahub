@@ -1,39 +1,33 @@
-import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
+import mysql from 'mysql2/promise';
+
+export interface RunResult {
+  lastID: number;
+  changes: number;
+}
 
 export class DatabaseUtils {
-  private static db: sqlite3.Database;
-  private static get: (sql: string, params?: any[]) => Promise<any>;
-  private static all: (sql: string, params?: any[]) => Promise<any[]>;
+  private static pool: mysql.Pool;
 
-  static initialize(db: sqlite3.Database): void {
-    this.db = db;
-    this.get = promisify(db.get.bind(db));
-    this.all = promisify(db.all.bind(db));
+  static initialize(pool: mysql.Pool): void {
+    this.pool = pool;
   }
 
-  static async executeQuery(sql: string, params: any[] = []): Promise<sqlite3.RunResult> {
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, params, function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          // 'this' context contains lastID and changes
-          resolve({
-            lastID: this.lastID,
-            changes: this.changes
-          } as sqlite3.RunResult);
-        }
-      });
-    });
+  static async executeQuery(sql: string, params: any[] = []): Promise<RunResult> {
+    const [result]: any = await this.pool.execute(sql, params);
+    return {
+      lastID: result.insertId || 0,
+      changes: result.affectedRows || 0
+    };
   }
 
   static async findOne<T>(sql: string, params: any[] = []): Promise<T | null> {
-    return this.get(sql, params);
+    const [rows]: any = await this.pool.execute(sql, params);
+    return (rows && rows.length > 0) ? rows[0] as T : null;
   }
 
   static async findMany<T>(sql: string, params: any[] = []): Promise<T[]> {
-    return this.all(sql, params);
+    const [rows]: any = await this.pool.execute(sql, params);
+    return (rows || []) as T[];
   }
 
   static generateId(): string {

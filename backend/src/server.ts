@@ -34,7 +34,7 @@ import { UserService } from './services/UserService';
 import { EmailService } from './services/EmailService';
 import { CacheFactory, FileManagerCacheStrategy } from './services/CacheService';
 import { ConfigurationService } from './services/ConfigurationService';
-import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController, CacheController, SettingsController, UserController } from './controllers';
+import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController, CacheController, SettingsController, UserController, RoleController, PermissionController } from './controllers';
 import { AuthMiddleware, RBACMiddleware } from './middleware';
 import { getLogger } from './utils/Logger';
 import { getErrorHandler } from './utils/ErrorHandler';
@@ -47,7 +47,7 @@ export class FileManagerServer {
   private server: any;
   private logger = getLogger('FileManagerServer');
   private errorHandler = getErrorHandler();
-  private config = ConfigurationService.prototype;
+  private config!: ConfigurationService;
 
   // Services
   private dbConnection!: DatabaseConnection;
@@ -93,6 +93,8 @@ export class FileManagerServer {
   private cacheController!: CacheController;
   private settingsController!: SettingsController;
   private userController!: UserController;
+  private roleController!: RoleController;
+  private permissionController!: PermissionController;
 
   // Middleware
   private authMiddleware!: AuthMiddleware;
@@ -105,11 +107,10 @@ export class FileManagerServer {
     this.app = express();
     this.config = new ConfigurationService();
     this.cacheStrategy = new FileManagerCacheStrategy();
-    this.setupServices();
+    // setupServices, setupRoutes will be called in start() method since they're async or depend on services
     this.setupMiddleware();
     this.setupSwagger();
-    this.setupRoutes();
-    this.setupErrorHandling();
+    // setupErrorHandling will be called after routes are set up
   }
 
   // Cache helpers
@@ -145,11 +146,11 @@ export class FileManagerServer {
     }
   }
 
-  private setupServices(): void {
+  private async setupServices(): Promise<void> {
     // Database
     const dbConfig = this.config.getDatabaseConfig();
-    this.dbConnection = new DatabaseConnection(dbConfig.filename);
-    DatabaseUtils.initialize(this.dbConnection.getDatabase());
+    this.dbConnection = new DatabaseConnection(dbConfig);
+    await this.dbConnection.initialize();
 
     // Cache
     const cacheConfig = this.config.getCacheConfig();
@@ -218,6 +219,8 @@ export class FileManagerServer {
     this.cacheController = new CacheController(this.cacheService);
     this.settingsController = new SettingsController(this.settingsService);
     this.userController = new UserController(this.userService);
+    this.roleController = new RoleController(this.roleRepository, this.permissionRepository);
+    this.permissionController = new PermissionController(this.permissionRepository);
 
     // Middleware
     this.authMiddleware = new AuthMiddleware(this.authService);
@@ -293,6 +296,17 @@ export class FileManagerServer {
   }
 
   private setupRoutes(): void {
+    try {
+      this.logger.info('Setting up routes...');
+      
+      // Verify controllers are initialized
+      if (!this.authController) {
+        throw new Error('AuthController is not initialized');
+      }
+      if (!this.authMiddleware) {
+        throw new Error('AuthMiddleware is not initialized');
+      }
+      
     /**
      * @swagger
      * /health:
@@ -2709,6 +2723,100 @@ export class FileManagerServer {
       );
 
       // ========================================
+      // Roles Management Routes (Admin)
+      // ========================================
+      this.app.post('/api/admin/roles',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.create(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/roles',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.getAll(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/roles/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.getById(req, res);
+        }
+      );
+
+      this.app.put('/api/admin/roles/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.update(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/roles/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.delete(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/roles/:id/permissions',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.roleController.assignPermissions(req, res);
+        }
+      );
+
+      // ========================================
+      // Permissions Management Routes (Admin)
+      // ========================================
+      this.app.post('/api/admin/permissions',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.permissionController.create(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/permissions',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.permissionController.getAll(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/permissions/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.permissionController.getById(req, res);
+        }
+      );
+
+      this.app.put('/api/admin/permissions/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.permissionController.update(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/permissions/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.permissionController.delete(req, res);
+        }
+      );
+
+      // ========================================
       // Email Test Route (Admin)
       // ========================================
       this.app.post('/api/admin/email/test',
@@ -2905,7 +3013,11 @@ export class FileManagerServer {
       );
   
       this.logger.info('Routes setup completed');
+    } catch (error) {
+      this.logger.error('Error setting up routes', error as Error);
+      throw error;
     }
+  }
 
   private setupErrorHandling(): void {
     // Global error handler
@@ -3328,6 +3440,15 @@ export class FileManagerServer {
 
   async start(): Promise<void> {
     try {
+      // Initialize services first (database, cache, etc.)
+      await this.setupServices();
+      
+      // Setup routes after services are initialized (routes depend on services)
+      this.setupRoutes();
+      
+      // Setup error handling AFTER routes (404 handler must be last)
+      this.setupErrorHandling();
+      
       // Seed navigation links (always run on startup)
       this.logger.info('Seeding navigation links...');
       try {

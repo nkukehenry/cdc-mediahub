@@ -141,7 +141,7 @@ export class RoleRepository implements IRoleRepository {
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT OR IGNORE INTO user_roles (id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)`,
+        `INSERT IGNORE INTO user_roles (id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)`,
         [id, userId, roleId, now]
       );
 

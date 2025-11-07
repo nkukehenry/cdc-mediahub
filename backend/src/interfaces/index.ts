@@ -499,6 +499,8 @@ export interface IPermissionRepository {
   findById(id: string): Promise<PermissionEntity | null>;
   findBySlug(slug: string): Promise<PermissionEntity | null>;
   findAll(): Promise<PermissionEntity[]>;
+  update(id: string, data: Partial<PermissionEntity>): Promise<PermissionEntity>;
+  delete(id: string): Promise<boolean>;
   assignToRole(roleId: string, permissionId: string): Promise<boolean>;
   removeFromRole(roleId: string, permissionId: string): Promise<boolean>;
   getRolePermissions(roleId: string): Promise<PermissionEntity[]>;
