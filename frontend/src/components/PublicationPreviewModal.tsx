@@ -113,7 +113,7 @@ export default function PublicationPreviewModal({
       fileSize: file.fileSize,
       filePath: file.filePath,
       downloadUrl: file.downloadUrl || `${baseUrl}/api/files/${file.id}/download`,
-      thumbnailUrl: file.thumbnailPath ? getImageUrl(file.thumbnailPath) : undefined,
+      thumbnailUrl: file.thumbnailPath ? getImageUrl(file.thumbnailPath) : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

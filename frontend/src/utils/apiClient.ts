@@ -288,7 +288,7 @@ class ApiClient {
   }
 
   // Get all users for selection
-  async getUsers(): Promise<ApiResponse<{ users: Array<{ id: string; username: string; email: string; firstName?: string; lastName?: string; avatar?: string }> }>> {
+  async getUsersForSelection(): Promise<ApiResponse<{ users: Array<{ id: string; username: string; email: string; firstName?: string; lastName?: string; avatar?: string }> }>> {
     return this.request<{ users: Array<{ id: string; username: string; email: string; firstName?: string; lastName?: string; avatar?: string }> }>('/api/users');
   }
 

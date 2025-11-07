@@ -45,14 +45,9 @@ export default function ProfilePage() {
       setLastName(user.lastName || '');
       setEmail(user.email || '');
       setAvatar(user.avatar || null);
-      // Load additional fields if they exist (will be added to backend)
-      // @ts-ignore - temporary for new fields
       setPhone(user.phone || '');
-      // @ts-ignore
       setJobTitle(user.jobTitle || '');
-      // @ts-ignore
       setOrganization(user.organization || '');
-      // @ts-ignore
       setBio(user.bio || '');
     }
   }, [user]);
@@ -167,7 +162,7 @@ export default function ProfilePage() {
         firstName,
         lastName,
         email,
-        avatar: avatarUrl,
+        avatar: avatarUrl || undefined,
         phone,
         jobTitle,
         organization,

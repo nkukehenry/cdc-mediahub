@@ -70,7 +70,7 @@ export default function ShareModal({ isOpen, onClose, onShare, fileId, folderId 
   const loadUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await apiClient.getUsers();
+      const res = await apiClient.getUsersForSelection();
       if (res.success && res.data?.users) {
         setUsers(res.data.users);
       }

@@ -218,7 +218,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
               }
               return null;
             })
-            .filter((file): file is FileWithUrls => file !== null);
+            .filter((file: FileWithUrls | null): file is FileWithUrls => file !== null);
           
           if (attachmentFiles.length > 0) {
             setAttachmentFiles(attachmentFiles);

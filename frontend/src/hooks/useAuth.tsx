@@ -9,6 +9,11 @@ interface User {
   email: string;
   firstName?: string;
   lastName?: string;
+  avatar?: string;
+  phone?: string;
+  jobTitle?: string;
+  organization?: string;
+  bio?: string;
   language?: 'ar' | 'en' | 'fr' | 'pt' | 'es' | 'sw';
   roles: string[];
   permissions: string[];

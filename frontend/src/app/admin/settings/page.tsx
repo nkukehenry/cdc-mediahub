@@ -136,11 +136,12 @@ export default function SettingsPage() {
 
   const updateSetting = (section: keyof SettingsData, key: string, value: any) => {
     setSettings(prev => {
-      const currentSection = prev[section] || {};
+      const currentSection = prev[section];
+      const sectionValue = currentSection && typeof currentSection === 'object' ? currentSection : {};
       return {
         ...prev,
         [section]: {
-          ...currentSection,
+          ...sectionValue,
           [key]: value,
         },
       };
