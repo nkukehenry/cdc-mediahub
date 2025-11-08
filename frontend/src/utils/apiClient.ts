@@ -777,6 +777,7 @@ class ApiClient {
     isActive?: boolean;
     emailVerified?: boolean;
     avatar?: string;
+    roleIds?: string[];
   }>): Promise<ApiResponse<{ user: any }>> {
     return this.request<{ user: any }>(`/api/admin/users/${id}`, {
       method: 'PUT',

@@ -28,6 +28,8 @@ interface User {
   lastLogin?: string;
   createdAt: string;
   updatedAt: string;
+  roles?: Array<{ id: string; name: string; slug: string }>;
+  roleIds?: string[];
 }
 
 function UsersPageContent() {
@@ -50,6 +52,8 @@ function UsersPageContent() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<Array<{ id: string; name: string; slug?: string }>>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
 
   // Create/Edit form fields
   const [formData, setFormData] = useState({
@@ -66,6 +70,7 @@ function UsersPageContent() {
     language: 'en' as LanguageCode,
     isActive: true,
     emailVerified: false,
+    roleIds: [] as string[],
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -94,6 +99,25 @@ function UsersPageContent() {
   useEffect(() => {
     loadUsers();
   }, [includeInactive]);
+
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        setRolesLoading(true);
+        const response = await apiClient.getRoles();
+        if (response.success && response.data?.roles) {
+          setAvailableRoles(response.data.roles);
+        } else {
+          handleError(new Error(response.error?.message || 'Failed to load roles'));
+        }
+      } catch (error) {
+        handleError(error);
+      } finally {
+        setRolesLoading(false);
+      }
+    };
+    loadRoles();
+  }, [handleError]);
 
   const loadUsers = async () => {
     try {
@@ -203,6 +227,7 @@ function UsersPageContent() {
       language: 'en' as LanguageCode,
       isActive: true,
       emailVerified: false,
+      roleIds: [],
     });
     setFormErrors({});
     setCreateModalOpen(true);
@@ -224,6 +249,9 @@ function UsersPageContent() {
       language: (user.language || 'en') as LanguageCode,
       isActive: user.isActive,
       emailVerified: user.emailVerified || false,
+      roleIds: (user.roleIds && user.roleIds.length > 0)
+        ? user.roleIds
+        : (user.roles ? user.roles.map(role => role.id) : []),
     });
     setFormErrors({});
     setEditModalOpen(true);
@@ -281,6 +309,7 @@ function UsersPageContent() {
         language: formData.language,
         isActive: formData.isActive,
         emailVerified: formData.emailVerified,
+        roleIds: formData.roleIds,
       });
 
       if (response.success) {
@@ -314,6 +343,7 @@ function UsersPageContent() {
         language: formData.language,
         isActive: formData.isActive,
         emailVerified: formData.emailVerified,
+        roleIds: formData.roleIds,
       };
 
       const response = await apiClient.updateUser(selectedUser.id, updateData);
@@ -355,6 +385,16 @@ function UsersPageContent() {
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString();
+  };
+
+  const toggleRoleSelection = (roleId: string) => {
+    setFormData((prev) => {
+      const isSelected = prev.roleIds.includes(roleId);
+      const nextRoleIds = isSelected
+        ? prev.roleIds.filter((id) => id !== roleId)
+        : [...prev.roleIds, roleId];
+      return { ...prev, roleIds: nextRoleIds };
+    });
   };
 
   const setMenuRef = (userId: string, element: HTMLDivElement | null) => {
@@ -767,6 +807,31 @@ function UsersPageContent() {
                   </div>
                 </div>
 
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-au-grey-text mb-1">
+                    Roles
+                  </label>
+                  {rolesLoading ? (
+                    <p className="text-sm text-au-grey-text/70">Loading roles...</p>
+                  ) : availableRoles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {availableRoles.map((role) => (
+                        <label key={role.id} className="flex items-center gap-2 text-sm text-au-grey-text">
+                          <input
+                            type="checkbox"
+                            checked={formData.roleIds.includes(role.id)}
+                            onChange={() => toggleRoleSelection(role.id)}
+                            className="rounded"
+                          />
+                          <span>{role.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-au-grey-text/70">No roles available.</p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-au-grey-text mb-1">
                     Bio
@@ -951,6 +1016,31 @@ function UsersPageContent() {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-au-grey-text mb-1">
+                    Roles
+                  </label>
+                  {rolesLoading ? (
+                    <p className="text-sm text-au-grey-text/70">Loading roles...</p>
+                  ) : availableRoles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {availableRoles.map((role) => (
+                        <label key={role.id} className="flex items-center gap-2 text-sm text-au-grey-text">
+                          <input
+                            type="checkbox"
+                            checked={formData.roleIds.includes(role.id)}
+                            onChange={() => toggleRoleSelection(role.id)}
+                            className="rounded"
+                          />
+                          <span>{role.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-au-grey-text/70">No roles available.</p>
+                  )}
                 </div>
 
                 <div>

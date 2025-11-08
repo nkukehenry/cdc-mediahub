@@ -266,6 +266,8 @@ function PublicationDetailsContent() {
 
   const publication = currentPublication;
   const firstAttachment = publication.attachments?.[0];
+  const firstAttachmentMime = firstAttachment?.mimeType || '';
+  const isFirstAttachmentVideo = firstAttachmentMime.startsWith('video/');
   const hideCoverImage = Boolean(firstAttachment?.mimeType?.startsWith('video/'));
 
   return (
@@ -285,7 +287,7 @@ function PublicationDetailsContent() {
         {/* Main Content */}
         <div className="bg-white rounded-lg shadow-md">
           {/* Cover Image */}
-          {publication.coverImage && !hideCoverImage && (
+          {publication.coverImage && !isFirstAttachmentVideo && (
             <div className="relative w-full h-64 md:h-96 overflow-hidden">
               <img
                 src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
@@ -312,24 +314,21 @@ function PublicationDetailsContent() {
                 return null;
               }
 
-              const mimeType = firstAttachment.mimeType || '';
-              const isVideo = mimeType.startsWith('video/');
-              const isAudio = mimeType.startsWith('audio/');
-              const isImage = mimeType.startsWith('image/');
-              const isPdf = mimeType === 'application/pdf';
-              
-              // Show preview for video, audio, images, and PDFs
-              if (mediaBlobUrl && (isVideo || isAudio || isImage || isPdf)) {
+              const isAudio = firstAttachmentMime.startsWith('audio/');
+              const isImage = firstAttachmentMime.startsWith('image/');
+              const isPdf = firstAttachmentMime === 'application/pdf';
+
+              if (mediaBlobUrl && (isFirstAttachmentVideo || isAudio || isImage || isPdf)) {
                 return (
                   <div className="mb-8">
-                    {isVideo ? (
+                    {isFirstAttachmentVideo ? (
                       <video
                         controls
                         className="w-full rounded-lg shadow-md"
                         preload="auto"
                         style={{ maxHeight: '600px' }}
                       >
-                        <source src={mediaBlobUrl} type={mimeType} />
+                        <source src={mediaBlobUrl} type={firstAttachmentMime} />
                         Your browser does not support the video tag.
                       </video>
                     ) : isAudio ? (
@@ -339,7 +338,7 @@ function PublicationDetailsContent() {
                           className="w-full"
                           preload="auto"
                         >
-                          <source src={mediaBlobUrl} type={mimeType} />
+                          <source src={mediaBlobUrl} type={firstAttachmentMime} />
                           Your browser does not support the audio element.
                         </audio>
                       </div>
@@ -366,7 +365,7 @@ function PublicationDetailsContent() {
                     ) : null}
                   </div>
                 );
-              } else if (firstAttachment && (isVideo || isAudio || isImage || isPdf)) {
+              } else if (firstAttachment && (isFirstAttachmentVideo || isAudio || isImage || isPdf)) {
                 // Show loading state while fetching blob
                 return (
                   <div className="mb-8 bg-gray-100 rounded-lg p-6 shadow-md flex items-center justify-center" style={{ minHeight: '200px' }}>
