@@ -463,7 +463,7 @@ export class DatabaseConnection {
       // Posts table
       await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS posts (
-          id VARCHAR(36) PRIMARY KEY,
+          id VARCHAR(191) PRIMARY KEY,
           title VARCHAR(255) NOT NULL,
           slug VARCHAR(255) UNIQUE NOT NULL,
           description TEXT,
