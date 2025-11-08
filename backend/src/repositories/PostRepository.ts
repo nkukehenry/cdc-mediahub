@@ -311,13 +311,12 @@ export class PostRepository implements IPublicationRepository {
       }
 
       query += ' ORDER BY p.created_at DESC';
-      
       if (limit !== undefined) {
-        query += ' LIMIT ?';
-        params.push(limit);
+        const safeLimit = Math.max(0, Math.floor(limit));
+        query += ` LIMIT ${safeLimit}`;
         if (offset !== undefined) {
-          query += ' OFFSET ?';
-          params.push(offset);
+          const safeOffset = Math.max(0, Math.floor(offset));
+          query += ` OFFSET ${safeOffset}`;
         }
       }
 
