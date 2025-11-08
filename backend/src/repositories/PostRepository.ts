@@ -233,10 +233,12 @@ export class PostRepository implements IPublicationRepository {
   }
 
   async findAll(filters?: PublicationFilters, limit?: number, offset?: number): Promise<PublicationEntity[]> {
+    let query = 'SELECT DISTINCT p.* FROM posts p';
+    const params: any[] = [];
+    const conditions: string[] = [];
+    let tagSlugs: string[] = [];
+
     try {
-      let query = 'SELECT DISTINCT p.* FROM posts p';
-      const params: any[] = [];
-      const conditions: string[] = [];
 
       // Join with subcategories if filtering by subcategory
       if (filters?.subcategoryId) {
@@ -248,7 +250,6 @@ export class PostRepository implements IPublicationRepository {
         query += ' INNER JOIN post_authors pa ON p.id = pa.post_id';
       }
 
-      let tagSlugs: string[] = [];
       if (filters?.tags && filters.tags.length > 0) {
         tagSlugs = this.normalizeTagSlugs(filters.tags);
         if (tagSlugs.length > 0) {
