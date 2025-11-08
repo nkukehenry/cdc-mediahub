@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
-import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileUtils';
 import Skeleton from './Skeleton';
 
 interface Publication {
@@ -48,12 +48,21 @@ const formatDate = (dateString?: string) => {
 };
 
 const getAuthorName = (creator?: Publication['creator']) => {
-  if (!creator) return 'Anonymous';
-  if (creator.name) return creator.name;
-  if (creator.firstName || creator.lastName) {
-    return `${creator.firstName || ''} ${creator.lastName || ''}`.trim();
+  let name = '';
+
+  if (creator?.name) {
+    name = creator.name;
+  } else if (creator?.firstName || creator?.lastName) {
+    name = `${creator.firstName || ''} ${creator.lastName || ''}`.trim();
+  } else if (creator?.email) {
+    name = creator.email;
   }
-  return 'Anonymous';
+
+  if (!name) {
+    name = 'Anonymous';
+  }
+
+  return truncateText(name, 30);
 };
 
 export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) {
@@ -176,7 +185,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
             {/* Title */}
             <Link href={`/publication/${currentPublication.slug}`}>
               <h2 className="text-xl lg:text-2xl font-bold mb-3 hover:text-gray-200 transition-colors max-w-full leading-tight">
-                {currentPublication.title}
+                {truncateText(currentPublication.title, 50) || 'Untitled Publication'}
               </h2>
             </Link>
 

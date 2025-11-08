@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, TouchEvent, MouseEvent } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from "@/utils/fileUtils";
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from "@/utils/fileUtils";
 
 interface Publication {
   id: string;
@@ -261,8 +261,10 @@ export default function ContentSlider({ publications, title, badgeLabel, classNa
                       )}
 
                       {isCenter && (
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-6 pt-16">
-                          <h2 className="text-2xl font-bold text-white mb-2 text-balance">{publication.title}</h2>
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/30 via-black/50 to-transparent p-6 pt-16">
+                          <h2 className="text-2xl font-bold text-white mb-2 text-balance">
+                            {truncateText(publication.title, 50) || "Untitled Publication"}
+                          </h2>
                           {publication.description && (
                             <p className="text-sm text-white/90 leading-relaxed text-pretty">{publication.description}</p>
                           )}
