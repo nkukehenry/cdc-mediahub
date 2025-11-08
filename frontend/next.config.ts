@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+const nextConfig = {
+  basePath: '/mediahub',
+  // optional: if you have a trailing slash preference
+  trailingSlash: true,
+  reactStrictMode: true,
+}
 
-export default nextConfig;
+module.exports = nextConfig

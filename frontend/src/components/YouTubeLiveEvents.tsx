@@ -7,6 +7,7 @@ import { RootState } from '@/store';
 import { Play, Calendar, Users, Clock, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import Skeleton from './Skeleton';
 
 interface YouTubeLiveEventsProps {
   limit?: number;
@@ -111,11 +112,25 @@ export default function YouTubeLiveEvents({ limit, showViewAll = true }: YouTube
       <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-au-corporate-green">YouTube Live Events</h2>
+            <Skeleton className="h-7 w-64 rounded-md" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-24 rounded-md" />
+              <Skeleton className="h-10 w-10 rounded-lg" />
+              <Skeleton className="h-10 w-10 rounded-lg" />
+            </div>
           </div>
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[300px] md:w-[350px] bg-gray-200 rounded-lg animate-pulse aspect-video" />
+          <div className="flex gap-6 overflow-x-auto pb-4">
+            {Array.from({ length: limit ? Math.min(limit, 3) : 3 }).map((_, i) => (
+              <div key={i} className="flex-shrink-0 w-[300px] md:w-[350px] space-y-3">
+                <div className="relative overflow-hidden rounded-xl">
+                  <Skeleton className="w-full aspect-video rounded-xl" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-3/4 rounded-md" />
+                  <Skeleton className="h-3 w-1/2 rounded-md" />
+                  <Skeleton className="h-3 w-1/3 rounded-md" />
+                </div>
+              </div>
             ))}
           </div>
         </div>

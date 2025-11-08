@@ -12,6 +12,8 @@ import PublicationCard from '@/components/PublicationCard';
 import { Search, X, ChevronLeft, ChevronRight, Calendar, Filter } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { cn } from '@/utils/fileUtils';
+import PublicationCardSkeleton from '@/components/PublicationCardSkeleton';
+import Skeleton from '@/components/Skeleton';
 
 interface Category {
   id: string;
@@ -429,9 +431,11 @@ function CategoryPageInner() {
             {/* Header */}
             <div className="mb-6">
               <h1 className="text-2xl md:text-3xl font-bold text-au-corporate-green mb-2">
-                {currentCategory?.name || 'Loading...'}
+                {currentCategory?.name || 'Category'}
               </h1>
-              {pagination && (
+              {loading ? (
+                <Skeleton className="h-4 w-48 rounded-md" />
+              ) : pagination && (
                 <p className="text-sm text-au-grey-text/70">
                   Showing {((currentPage - 1) * limit) + 1} - {Math.min(currentPage * limit, pagination.total)} of {pagination.total} publications
                 </p>
@@ -441,8 +445,8 @@ function CategoryPageInner() {
             {/* Loading State */}
             {loading && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {[...Array(12)].map((_, i) => (
-                  <div key={i} className="bg-gray-200 rounded-lg overflow-hidden animate-pulse aspect-[2/1]" />
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <PublicationCardSkeleton key={i} />
                 ))}
               </div>
             )}

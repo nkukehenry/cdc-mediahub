@@ -10,6 +10,7 @@ import { fetchYouTubeLiveEvents } from '@/store/youtubeSlice';
 import { RootState } from '@/store';
 import { Play, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { YouTubeLiveEvent } from '@/store/youtubeSlice';
+import Skeleton from './Skeleton';
 
 interface Category {
   id: string;
@@ -110,20 +111,33 @@ export default function CategoriesSection() {
       <div className="bg-white py-4 px-12 md:px-16 lg:px-24 xl:px-32">
         <div className="container mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2">
-              <h2 className="text-lg md:text-xl font-bold text-au-grey-text mb-3">
-                Browse Categories
-              </h2>
+            <div className="lg:col-span-2 space-y-4">
+              <Skeleton className="h-6 w-48 rounded-md" />
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="bg-gray-200 overflow-hidden animate-pulse aspect-[2/1]">
-                    <div className="w-full h-full" />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="relative aspect-[2/1] overflow-hidden rounded-xl">
+                    <Skeleton className="absolute inset-0 rounded-xl" />
+                    <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none">
+                      <Skeleton className="h-4 w-3/4 rounded-md" />
+                      <Skeleton className="h-3 w-1/2 rounded-md" />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="lg:col-span-1">
-              <div className="bg-gray-200 rounded-lg p-4 h-40 animate-pulse" />
+            <div className="lg:col-span-1 space-y-3">
+              <Skeleton className="h-5 w-32 rounded-md" />
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="relative overflow-hidden rounded-lg">
+                    <Skeleton className="w-full aspect-video rounded-lg" />
+                    <div className="absolute inset-0 p-3 flex flex-col justify-end pointer-events-none space-y-2">
+                      <Skeleton className="h-4 w-2/3 rounded-md" />
+                      <Skeleton className="h-3 w-1/2 rounded-md" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -302,8 +316,10 @@ function YouTubeLiveEventsCarousel() {
     return (
       <div className="bg-gray-50 rounded-lg p-3 md:p-4">
         <div className="space-y-2">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="bg-gray-200 rounded-lg animate-pulse aspect-video" />
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="relative overflow-hidden rounded-lg">
+              <Skeleton className="w-full aspect-video rounded-lg" />
+            </div>
           ))}
         </div>
       </div>

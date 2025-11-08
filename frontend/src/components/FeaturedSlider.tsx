@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
 import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import Skeleton from './Skeleton';
 
 interface Publication {
   id: string;
@@ -110,7 +111,22 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
 
   if (loading) {
     return (
-      <div className="w-full h-[250px] md:h-[400px] bg-gray-200 animate-pulse relative" />
+      <div className="relative w-full h-[250px] md:h-[400px] overflow-hidden rounded-2xl">
+        <Skeleton className="w-full h-full rounded-2xl" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 md:p-7">
+          <div className="flex items-end justify-between gap-4">
+            <div className="space-y-3 flex-1 max-w-xl">
+              <Skeleton className="h-5 w-24 rounded-full" />
+              <Skeleton className="h-10 w-11/12 rounded-lg" />
+              <Skeleton className="h-4 w-2/3 rounded-md" />
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="w-20 h-16 rounded-lg" />
+              <Skeleton className="hidden sm:block w-20 h-16 rounded-lg" />
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 

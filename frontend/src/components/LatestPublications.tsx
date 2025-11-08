@@ -7,6 +7,8 @@ import { ChevronRight } from 'lucide-react';
 import { RootState } from '@/store';
 import { fetchLatestPublications } from '@/store/publicationsSlice';
 import PublicationCard from './PublicationCard';
+import PublicationCardSkeleton from './PublicationCardSkeleton';
+import Skeleton from './Skeleton';
 
 export default function LatestPublications() {
   const dispatch = useDispatch();
@@ -20,9 +22,13 @@ export default function LatestPublications() {
     return (
       <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
         <div className="container mx-auto">
+          <div className="flex items-center justify-between mb-6 border-b-2 border-au-red pb-2">
+            <Skeleton className="h-6 w-48 rounded-md" />
+            <Skeleton className="h-4 w-32 rounded-md" />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="bg-gray-200 overflow-hidden animate-pulse aspect-[2/1]" />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <PublicationCardSkeleton key={i} />
             ))}
           </div>
         </div>
