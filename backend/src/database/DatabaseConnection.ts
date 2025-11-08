@@ -181,7 +181,20 @@ export class DatabaseConnection {
         'post_subcategories',
         'post_authors',
         'post_attachments',
-        'post_views'
+        'post_views',
+        'users',
+        'user_roles',
+        'roles',
+        'permissions',
+        'role_permissions',
+        'categories',
+        'subcategories',
+        'category_subcategories',
+        'files',
+        'folders',
+        'folder_shares',
+        'nav_links',
+        'settings'
       ];
 
       for (const tableName of tablesToConvertCollation) {
