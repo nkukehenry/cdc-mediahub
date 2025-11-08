@@ -10,7 +10,6 @@ interface PublicationCardProps {
 }
 
 export default function PublicationCard({ publication }: PublicationCardProps) {
-
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -44,68 +43,94 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
 
   const CategoryIcon = getCategoryIcon(publication);
 
+  const formatAuthorName = () => {
+    const creator = publication.creator;
+
+    if (!creator) {
+      return 'Anonymous';
+    }
+
+    const first = creator.firstName?.trim() ?? '';
+    const last = creator.lastName?.trim() ?? '';
+
+    let name = '';
+
+    if (first || last) {
+      const truncatedLast =
+        last.length > 6 ? `${last.slice(0, 6).toUpperCase()}...` : last.toUpperCase();
+      name = `${first} ${truncatedLast}`.trim();
+    } else if (creator.username) {
+      name = creator.username.trim();
+    }
+
+    if (!name) {
+      name = 'Anonymous';
+    }
+
+    if (name.length > 15) {
+      name = `${name.slice(0, 12).trimEnd()}...`;
+    }
+
+    return name;
+  };
+
   return (
     <Link
       href={`/publication/${publication.slug}`}
-      className="group relative bg-white overflow-hidden shadow-md hover:shadow-lg transition-all duration-300 aspect-[2/1] block"
-      style={{ minHeight: '200px', height: '200px', width: '100%' }}
+      className="group block h-full overflow-hidden border border-gray-200 bg-white shadow-md transition-shadow duration-300 hover:shadow-lg"
     >
       {/* Cover Image */}
-      <div className="relative w-full h-full overflow-hidden">
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
         <img
           src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
           alt={publication.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
           }}
         />
         
-        {/* Dark Overlay for better text readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/50" />
+        {/* Translucent Overlay */}
+        <div className="absolute inset-0 bg-black/15" />
 
-        {/* Category Tag - Alternate between greens and gold */}
-        <div className="absolute top-2 left-2 z-10 transform transition-transform duration-300 group-hover:scale-105">
-          <span className="bg-au-green text-white px-2 py-1 rounded text-xs font-medium group-hover:bg-au-gold transition-colors duration-300">
+        {/* Category Tag */}
+        <div className="absolute left-3 top-3 z-20">
+          <span className="rounded-full bg-au-green px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-colors duration-300 group-hover:bg-au-gold">
             {getCategoryName(publication)}
           </span>
         </div>
 
-        {/* Category Icon Overlay - Centered */}
-        <div className="absolute inset-0 flex items-center justify-center z-10">
-          <CategoryIcon className="h-12 w-12 text-white/80 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
+        {/* Category Icon */}
+        <div className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-transform duration-300 group-hover:scale-105">
+          <CategoryIcon className="h-4 w-4 text-white" />
         </div>
+      </div>
 
-        {/* Content Overlay - Bottom */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
-          {/* Title */}
-          <h3 className="text-lg font-bold text-white mb-2 line-clamp-2">
-            {publication.title}
-          </h3>
-          
-          {/* Metadata */}
-          <div className="flex items-center justify-between text-white text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="font-medium">
-                {publication.creator?.username || publication.creator?.firstName || 'Unknown'}
-              </span>
-              {publication.publicationDate && (
-                <>
-                  <span>•</span>
-                  <span>{formatDate(publication.publicationDate)}</span>
-                </>
-              )}
+      {/* Content */}
+      <div className="flex flex-col gap-3 p-4">
+        <h3 className="line-clamp-2 text-lg font-semibold text-gray-500 transition-colors duration-300 group-hover:text-au-green">
+          {publication.title}
+        </h3>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-gray-700">{formatAuthorName()}</span>
+            {publication.publicationDate && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span>{formatDate(publication.publicationDate)}</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4 text-gray-600">
+            <div className="flex items-center gap-1">
+              <Eye className="h-3.5 w-3.5" />
+              <span>{publication.views || 0}</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                <span>{publication.views || 0}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <MessageCircle className="h-3 w-3" />
-                <span>{publication.comments || 0}</span>
-              </div>
+            <div className="flex items-center gap-1">
+              <MessageCircle className="h-3.5 w-3.5" />
+              <span>{publication.commentsCount ?? publication.comments ?? 0}</span>
             </div>
           </div>
         </div>
