@@ -174,7 +174,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
           <div className="flex-1">
 
             {/* Title */}
-            <Link href={`/publications/${currentPublication.slug}`}>
+            <Link href={`/publication/${currentPublication.slug}`}>
               <h2 className="text-xl lg:text-2xl font-bold mb-3 hover:text-gray-200 transition-colors max-w-full leading-tight">
                 {currentPublication.title}
               </h2>
