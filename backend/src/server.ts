@@ -275,12 +275,21 @@ export class FileManagerServer {
     }));
 
     // Rate limiting - configurable via environment variables
-    const limiter = rateLimit({
-      windowMs: serverConfig.rateLimit.windowMs,
-      max: serverConfig.rateLimit.max,
-      message: 'Too many requests from this IP, please try again later.'
-    });
-    this.app.use(limiter);
+    if (serverConfig.rateLimit?.enabled) {
+      const limiter = rateLimit({
+        windowMs: serverConfig.rateLimit.windowMs,
+        max: serverConfig.rateLimit.max,
+        standardHeaders: true,
+        legacyHeaders: false,
+      });
+      this.app.use(limiter);
+      this.logger.info('Rate limiting enabled', {
+        windowMs: serverConfig.rateLimit.windowMs,
+        max: serverConfig.rateLimit.max,
+      });
+    } else {
+      this.logger.info('Rate limiting disabled');
+    }
 
     // Body parsing
     this.app.use(express.json({ limit: '10mb' }));

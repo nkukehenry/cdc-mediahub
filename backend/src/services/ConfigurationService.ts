@@ -150,6 +150,7 @@ export class ConfigurationService {
         credentials: process.env.CORS_CREDENTIALS === 'true'
       },
       rateLimit: {
+        enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
         max: parseInt(process.env.RATE_LIMIT_MAX || '1000') // 1000 requests per window default
       }
