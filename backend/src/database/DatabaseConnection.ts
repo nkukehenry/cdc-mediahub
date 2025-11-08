@@ -498,7 +498,7 @@ export class DatabaseConnection {
       // Tags table
       await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS tags (
-          id VARCHAR(36) PRIMARY KEY,
+          id VARCHAR(191) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           slug VARCHAR(255) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -512,9 +512,9 @@ export class DatabaseConnection {
       // Post tags junction table
       await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_tags (
-          id VARCHAR(36) PRIMARY KEY,
-          post_id VARCHAR(36) NOT NULL,
-          tag_id VARCHAR(36) NOT NULL,
+          id VARCHAR(191) PRIMARY KEY,
+          post_id VARCHAR(191) NOT NULL,
+          tag_id VARCHAR(191) NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE,
