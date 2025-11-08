@@ -520,11 +520,10 @@ export class FileManagerServer {
      *             schema:
      *               $ref: '#/components/schemas/ErrorResponse'
      */
-    // File download - requires authentication (access checked in service)
-    this.app.get('/api/files/:id/download', 
-      this.authMiddleware.authenticate,
+    // File download - public endpoint (access control handled downstream if needed)
+    this.app.get('/api/files/:id/download',
       (req, res) => {
-      this.handleFileDownload(req, res);
+        this.handleFileDownload(req, res);
       }
     );
 
