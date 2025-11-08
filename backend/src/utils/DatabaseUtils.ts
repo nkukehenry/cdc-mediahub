@@ -35,7 +35,19 @@ export class DatabaseUtils {
   }
 
   static getCurrentTimestamp(): string {
-    return new Date().toISOString();
+    const now = new Date();
+
+    const pad = (value: number, length = 2) => value.toString().padStart(length, '0');
+
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    const milliseconds = pad(now.getMilliseconds(), 3);
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
   }
 
   static buildWhereClause(conditions: Record<string, any>): { clause: string; params: any[] } {
