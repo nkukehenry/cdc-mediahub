@@ -66,7 +66,7 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
       composed = 'Anonymous';
     }
 
-    return truncateText(composed, 20);
+    return truncateText(composed, 25);
   };
 
   return (
@@ -87,7 +87,7 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
         />
         
         {/* Translucent Overlay */}
-        <div className="absolute inset-0 bg-black/15" />
+        <div className="absolute inset-0" />
 
         {/* Category Tag */}
         <div className="absolute left-3 top-3 z-20">
