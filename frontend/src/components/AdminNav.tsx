@@ -263,20 +263,20 @@ export default function AdminNav() {
               {/* Language Selector */}
               <LanguageSelector />
 
-              {/* Search Icon - Hidden on mobile */}
+              {/* Search Icon - Hidden on mobile 
               <button className="hidden md:flex p-2 text-white hover:text-white hover:bg-au-corporate-green/80 rounded-lg transition-colors">
                 <Search className="h-5 w-5" />
-              </button>
+              </button> */}
 
-              {/* Settings Icon - Hidden on mobile */}
+              {/* Settings Icon - Hidden on mobile 
               <button className="hidden md:flex p-2 text-white hover:text-white hover:bg-au-corporate-green/80 rounded-lg transition-colors">
                 <Settings className="h-5 w-5" />
-              </button>
+              </button>*/}
 
-              {/* Notifications Icon - Hidden on mobile */}
+              {/* Notifications Icon - Hidden on mobile 
               <button className="hidden md:flex p-2 text-white hover:text-white hover:bg-au-corporate-green/80 rounded-lg transition-colors">
                 <Bell className="h-5 w-5" />
-              </button>
+              </button>*/}
 
               {/* User Avatar with Dropdown */}
               <div className="relative" ref={userMenuRef}>
