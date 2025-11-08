@@ -96,7 +96,7 @@ export default function PublicFooter() {
                 />
               ) : (
                 <img 
-                  src="/logo.png" 
+                  src="logo.png" 
                   alt="Site Logo" 
                   className="h-12 md:h-16 w-auto mr-3"
                 />
