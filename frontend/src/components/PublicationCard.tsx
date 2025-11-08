@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Music, Eye, MessageCircle, Camera, Video, FileText, Image } from 'lucide-react';
 import { Publication } from '@/store/publicationsSlice';
-import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileUtils';
 
 interface PublicationCardProps {
   publication: Publication;
@@ -50,28 +50,23 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
       return 'Anonymous';
     }
 
-    const first = creator.firstName?.trim() ?? '';
-    const last = creator.lastName?.trim() ?? '';
+    const first = creator.firstName?.trim();
+    const last = creator.lastName?.trim();
 
-    let name = '';
+    let composed = '';
 
     if (first || last) {
-      const truncatedLast =
-        last.length > 6 ? `${last.slice(0, 6).toUpperCase()}...` : last.toUpperCase();
-      name = `${first} ${truncatedLast}`.trim();
+      const lastSegment = last ? truncateText(last.toUpperCase(), 6) : '';
+      composed = [first, lastSegment].filter(Boolean).join(' ');
     } else if (creator.username) {
-      name = creator.username.trim();
+      composed = creator.username.trim();
     }
 
-    if (!name) {
-      name = 'Anonymous';
+    if (!composed) {
+      composed = 'Anonymous';
     }
 
-    if (name.length > 15) {
-      name = `${name.slice(0, 12).trimEnd()}...`;
-    }
-
-    return name;
+    return truncateText(composed, 20);
   };
 
   return (
@@ -92,7 +87,7 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
         />
         
         {/* Translucent Overlay */}
-        <div className="absolute inset-0" />
+        <div className="absolute inset-0 bg-black/15" />
 
         {/* Category Tag */}
         <div className="absolute left-3 top-3 z-20">
@@ -110,7 +105,7 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
       {/* Content */}
       <div className="flex flex-col gap-3 p-4">
         <h3 className="line-clamp-2 text-lg font-semibold text-gray-500 transition-colors duration-300 group-hover:text-au-green">
-          {publication.title}
+          {truncateText(publication.title, 32) || 'Untitled Publication'}
         </h3>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">

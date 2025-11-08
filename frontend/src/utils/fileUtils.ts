@@ -61,6 +61,19 @@ export const validateFileSize = (file: File, maxSize: number): boolean => {
   return file.size <= maxSize;
 };
 
+export const truncateText = (value?: string | null, maxLength = 32): string => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  const sliceEnd = Math.max(0, maxLength - 3);
+  return `${trimmed.slice(0, sliceEnd).trimEnd()}...`;
+};
+
 /**
  * Default placeholder image path in the uploads folder
  */

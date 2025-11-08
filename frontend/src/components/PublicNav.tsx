@@ -13,7 +13,7 @@ import { RootState } from '@/store';
 import { fetchNavLinks } from '@/store/navLinksSlice';
 import { fetchPublicSettings } from '@/store/settingsSlice';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
-import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileUtils';
 
 interface Category {
   id: string;
@@ -584,14 +584,14 @@ export default function PublicNav() {
                                         key={publication.id}
                                         href={`/publication/${publication.slug}`}
                                         onClick={() => setOpenMegaMenu(null)}
-                                        className="group relative bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 aspect-[2/1]"
+                                        className="group relative overflow-hidden rounded-lg bg-white shadow-sm transition-all duration-300 hover:shadow-md"
                                       >
                                         {/* Cover Image */}
-                                        <div className="relative w-full h-full overflow-hidden">
+                                        <div className="relative aspect-[2/1] w-full overflow-hidden">
                                           <img
                                             src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                                             alt={publication.title}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                                             onError={(e) => {
                                               const target = e.target as HTMLImageElement;
                                               target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
@@ -602,10 +602,10 @@ export default function PublicNav() {
                                           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/50" />
 
                                           {/* Content Overlay - Bottom */}
-                                          <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
+                                          <div className="absolute bottom-0 left-0 right-0 z-10 p-2">
                                             {/* Title */}
-                                            <h4 className="text-xs font-bold text-white mb-1 line-clamp-2">
-                                              {publication.title}
+                                            <h4 className="mb-1 line-clamp-2 text-xs font-bold text-white">
+                                              {truncateText(publication.title, 32) || 'Untitled Publication'}
                                             </h4>
                                           </div>
                                         </div>
