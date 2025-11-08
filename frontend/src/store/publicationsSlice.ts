@@ -55,6 +55,11 @@ export interface Publication {
     filePath: string;
     downloadUrl?: string;
   }>;
+  tags?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
 }
 
 interface PublicationsState {

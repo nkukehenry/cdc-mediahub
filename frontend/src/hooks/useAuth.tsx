@@ -17,6 +17,7 @@ interface User {
   language?: 'ar' | 'en' | 'fr' | 'pt' | 'es' | 'sw';
   roles: string[];
   permissions: string[];
+  isAdmin?: boolean;
 }
 
 interface AuthState {
@@ -26,7 +27,14 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
+  register: (data: {
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
+    recaptchaToken?: string;
+  }) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
   logout: () => void;
   checkAuth: () => Promise<void>;
 }
@@ -43,9 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
-      
-      const token = typeof window !== 'undefined' 
-        ? localStorage.getItem('authToken') 
+
+      const token = typeof window !== 'undefined'
+        ? localStorage.getItem('authToken')
         : null;
 
       if (!token) {
@@ -54,24 +62,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const response = await apiClient.getCurrentUser();
-      
+
       if (response.success && response.data?.user) {
         const userData = response.data.user as User;
         const roles = response.data?.roles || [];
         const permissions = response.data?.permissions || [];
-        console.log('[AuthProvider] User data received:', { id: userData.id, language: userData.language, roles, permissions });
+        const isAdmin = response.data?.isAdmin ?? false;
+        console.log('[AuthProvider] User data received:', { id: userData.id, language: userData.language, roles, permissions, isAdmin });
         setState({
           user: {
             ...userData,
-            language: userData.language || 'en', // Ensure language is always set
+            language: userData.language || 'en',
             roles: roles as string[],
             permissions: permissions as string[],
+            isAdmin,
           },
           loading: false,
           error: null,
         });
       } else {
-        // Token might be invalid, clear it
         if (typeof window !== 'undefined') {
           localStorage.removeItem('authToken');
         }
@@ -89,24 +98,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
-      
+
       const response = await apiClient.login(email, password);
-      
+
       if (response.success && response.data?.user) {
         const userData = response.data.user as User;
         const roles = response.data?.roles || [];
         const permissions = response.data?.permissions || [];
+        const isAdmin = response.data?.isAdmin ?? false;
         setState({
           user: {
             ...userData,
             language: userData.language || 'en',
             roles: roles as string[],
             permissions: permissions as string[],
+            isAdmin,
           },
           loading: false,
           error: null,
         });
-        return { success: true };
+        return { success: true, isAdmin };
       } else {
         const errorMessage = response.error?.message || 'Login failed';
         setState(prev => ({ ...prev, loading: false, error: errorMessage }));
@@ -114,6 +125,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      setState(prev => ({ ...prev, loading: false, error: errorMessage }));
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const register = async (data: {
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
+    recaptchaToken?: string;
+  }) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+
+      const response = await apiClient.register(data);
+
+      if (response.success && response.data?.user) {
+        const userData = response.data.user as User;
+        const roles = response.data?.roles || [];
+        const permissions = response.data?.permissions || [];
+        const isAdmin = response.data?.isAdmin ?? false;
+
+        setState({
+          user: {
+            ...userData,
+            language: userData.language || 'en',
+            roles: roles as string[],
+            permissions: permissions as string[],
+            isAdmin,
+          },
+          loading: false,
+          error: null,
+        });
+
+        return { success: true, isAdmin };
+      } else {
+        const errorMessage = response.error?.message || 'Registration failed';
+        setState(prev => ({ ...prev, loading: false, error: errorMessage }));
+        return { success: false, error: errorMessage };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Registration failed';
       setState(prev => ({ ...prev, loading: false, error: errorMessage }));
       return { success: false, error: errorMessage };
     }
@@ -129,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, checkAuth }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

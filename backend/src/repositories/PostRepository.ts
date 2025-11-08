@@ -248,6 +248,16 @@ export class PostRepository implements IPublicationRepository {
         query += ' INNER JOIN post_authors pa ON p.id = pa.post_id';
       }
 
+      let tagSlugs: string[] = [];
+      if (filters?.tags && filters.tags.length > 0) {
+        tagSlugs = this.normalizeTagSlugs(filters.tags);
+        if (tagSlugs.length > 0) {
+          query += ' INNER JOIN post_tags pt ON p.id = pt.post_id INNER JOIN tags tg ON tg.id = pt.tag_id';
+        } else {
+          return [];
+        }
+      }
+
       // Build WHERE conditions
       if (filters?.status) {
         conditions.push('p.status = ?');
@@ -288,6 +298,11 @@ export class PostRepository implements IPublicationRepository {
         const searchTerm = `%${filters.search}%`;
         conditions.push('(p.title LIKE ? OR p.description LIKE ? OR p.meta_title LIKE ? OR p.meta_description LIKE ?)');
         params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      }
+
+      if (tagSlugs.length > 0) {
+        conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
+        params.push(...tagSlugs);
       }
 
       if (conditions.length > 0) {
@@ -371,6 +386,21 @@ export class PostRepository implements IPublicationRepository {
         params.push(searchTerm, searchTerm, searchTerm, searchTerm);
       }
 
+      let tagSlugs: string[] = [];
+      if (filters?.tags && filters.tags.length > 0) {
+        tagSlugs = this.normalizeTagSlugs(filters.tags);
+        if (tagSlugs.length > 0) {
+          query += ' INNER JOIN post_tags pt ON p.id = pt.post_id INNER JOIN tags tg ON tg.id = pt.tag_id';
+        } else {
+          return 0;
+        }
+      }
+
+      if (tagSlugs.length > 0) {
+        conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
+        params.push(...tagSlugs);
+      }
+
       if (conditions.length > 0) {
         query += ' WHERE ' + conditions.join(' AND ');
       }
@@ -419,7 +449,7 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<PublicationEntity[]> {
+  async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<PublicationEntity[]> {
     try {
       const now = new Date().toISOString();
       let query = `SELECT DISTINCT p.* FROM posts p`;
@@ -434,10 +464,25 @@ export class PostRepository implements IPublicationRepository {
         params.push(subcategoryId);
       }
       
+      let tagSlugs: string[] = [];
+      if (tags && tags.length > 0) {
+        tagSlugs = this.normalizeTagSlugs(tags);
+        if (tagSlugs.length > 0) {
+          query += ' INNER JOIN post_tags pt ON p.id = pt.post_id INNER JOIN tags tg ON tg.id = pt.tag_id';
+        } else {
+          return [];
+        }
+      }
+
       // Filter by category
       if (categoryId) {
         conditions.push('p.category_id = ?');
         params.push(categoryId);
+      }
+
+      if (tagSlugs.length > 0) {
+        conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
+        params.push(...tagSlugs);
       }
       
       query += ` WHERE ${conditions.join(' AND ')}`;
@@ -460,7 +505,7 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async countPublished(categoryId?: string, subcategoryId?: string): Promise<number> {
+  async countPublished(categoryId?: string, subcategoryId?: string, tags?: string[]): Promise<number> {
     try {
       const now = new Date().toISOString();
       let query = `SELECT COUNT(DISTINCT p.id) as count FROM posts p`;
@@ -474,13 +519,28 @@ export class PostRepository implements IPublicationRepository {
         conditions.push('ps.subcategory_id = ?');
         params.push(subcategoryId);
       }
-      
+
+      let tagSlugs: string[] = [];
+      if (tags && tags.length > 0) {
+        tagSlugs = this.normalizeTagSlugs(tags);
+        if (tagSlugs.length > 0) {
+          query += ' INNER JOIN post_tags pt ON p.id = pt.post_id INNER JOIN tags tg ON tg.id = pt.tag_id';
+        } else {
+          return 0;
+        }
+      }
+
       // Filter by category
       if (categoryId) {
         conditions.push('p.category_id = ?');
         params.push(categoryId);
       }
-      
+
+      if (tagSlugs.length > 0) {
+        conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
+        params.push(...tagSlugs);
+      }
+ 
       query += ` WHERE ${conditions.join(' AND ')}`;
       
       const result = await DatabaseUtils.findOne<any>(query, params);
@@ -866,6 +926,15 @@ export class PostRepository implements IPublicationRepository {
         [id]
       );
 
+      // Get tags
+      const tags = await DatabaseUtils.findMany<any>(
+        `SELECT t.* FROM tags t
+         INNER JOIN post_tags pt ON t.id = pt.tag_id
+         WHERE pt.post_id = ?
+         ORDER BY t.name ASC`,
+        [id]
+      );
+
       const result: PublicationWithRelations = {
         ...post,
         category: category ? {
@@ -936,6 +1005,13 @@ export class PostRepository implements IPublicationRepository {
           language: (a.language || 'en') as 'ar' | 'en' | 'fr' | 'pt' | 'es' | 'sw',
           createdAt: new Date(),
           updatedAt: new Date()
+        })),
+        tags: tags.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          slug: t.slug,
+          createdAt: new Date(t.created_at),
+          updatedAt: new Date(t.updated_at)
         }))
       };
 
@@ -968,6 +1044,28 @@ export class PostRepository implements IPublicationRepository {
       createdAt: new Date(dbPost.created_at),
       updatedAt: new Date(dbPost.updated_at)
     };
+  }
+
+  private normalizeTagSlugs(tags: string[]): string[] {
+    const slugs = new Set<string>();
+
+    tags
+      .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+      .filter(tag => tag.length > 0)
+      .forEach(tag => {
+        const slug = tag
+          .toLowerCase()
+          .normalize('NFKD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 50);
+        if (slug.length > 0) {
+          slugs.add(slug);
+        }
+      });
+
+    return Array.from(slugs);
   }
 }
 

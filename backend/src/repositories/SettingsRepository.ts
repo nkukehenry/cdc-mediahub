@@ -17,7 +17,7 @@ export class SettingsRepository implements ISettingsRepository {
         created_at: string;
         updated_at: string;
       }>(
-        'SELECT * FROM settings WHERE key = ?',
+        'SELECT * FROM settings WHERE `key` = ?',
         [key]
       );
 
@@ -41,7 +41,7 @@ export class SettingsRepository implements ISettingsRepository {
         description: string | null;
         created_at: string;
         updated_at: string;
-      }>('SELECT * FROM settings ORDER BY key');
+      }>('SELECT * FROM settings ORDER BY `key`');
 
       return rows.map(row => this.mapToSettingsEntity(row));
     } catch (error) {
@@ -64,18 +64,16 @@ export class SettingsRepository implements ISettingsRepository {
         updatedAt: new Date(now)
       };
 
-      const { columns, placeholders, values } = DatabaseUtils.buildInsertValues({
-        id: setting.id,
-        key: setting.key,
-        value: setting.value,
-        description: setting.description || null,
-        created_at: now,
-        updated_at: now
-      });
-
       await DatabaseUtils.executeQuery(
-        `INSERT INTO settings (${columns}) VALUES (${placeholders})`,
-        values
+        'INSERT INTO settings (id, `key`, value, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          setting.id,
+          setting.key,
+          setting.value,
+          setting.description || null,
+          now,
+          now
+        ]
       );
 
       this.logger.debug('Setting created', { settingKey: key });
@@ -108,7 +106,7 @@ export class SettingsRepository implements ISettingsRepository {
       values.push(key);
 
       await DatabaseUtils.executeQuery(
-        `UPDATE settings SET ${set} WHERE key = ?`,
+        `UPDATE settings SET ${set} WHERE \`key\` = ?`,
         values
       );
 
@@ -145,7 +143,7 @@ export class SettingsRepository implements ISettingsRepository {
   async delete(key: string): Promise<boolean> {
     try {
       const result = await DatabaseUtils.executeQuery(
-        'DELETE FROM settings WHERE key = ?',
+        'DELETE FROM settings WHERE `key` = ?',
         [key]
       );
 

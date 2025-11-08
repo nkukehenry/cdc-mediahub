@@ -1,4 +1,4 @@
-import { IPublicationService, IPublicationRepository, ICategoryRepository, IUserRepository, IFileRepository, PublicationWithRelations, CreatePublicationData, UpdatePublicationData, PublicationEntity, PublicationStatus, PublicationFilters } from '../interfaces';
+import { IPublicationService, IPublicationRepository, ICategoryRepository, IUserRepository, IFileRepository, PublicationWithRelations, CreatePublicationData, UpdatePublicationData, PublicationEntity, PublicationStatus, PublicationFilters, ITagRepository, TagEntity } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 
@@ -10,7 +10,8 @@ export class PostService implements IPublicationService {
     private postRepository: IPublicationRepository,
     private categoryRepository: ICategoryRepository,
     private userRepository: IUserRepository,
-    private fileRepository: IFileRepository
+    private fileRepository: IFileRepository,
+    private tagRepository: ITagRepository
   ) {}
 
   async createPublication(postData: CreatePublicationData): Promise<PublicationEntity> {
@@ -89,7 +90,15 @@ export class PostService implements IPublicationService {
         }
       }
 
-      const post = await this.postRepository.create(postData);
+      const { tags, ...createData } = postData;
+
+      const post = await this.postRepository.create(createData);
+
+      if (tags && tags.length > 0) {
+        const tagEntities = await this.tagRepository.findOrCreate(tags);
+        await this.tagRepository.assignTagsToPost(post.id, tagEntities.map(tag => tag.id));
+      }
+
       this.logger.info('Post created successfully', { postId: post.id });
       return post;
     } catch (error) {
@@ -100,8 +109,7 @@ export class PostService implements IPublicationService {
 
   async getPublication(id: string): Promise<PublicationWithRelations | null> {
     try {
-      const post = await this.postRepository.getWithRelations(id);
-      return post;
+      return await this.postRepository.getWithRelations(id);
     } catch (error) {
       this.logger.error('Failed to get post', error as Error, { postId: id });
       throw error;
@@ -147,16 +155,16 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
+  async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
     try {
       const finalLimit = limit || 20;
       const finalOffset = offset || 0;
       
       // Get total count for pagination
-      const total = await this.postRepository.countPublished(categoryId, subcategoryId);
+      const total = await this.postRepository.countPublished(categoryId, subcategoryId, tags);
       
       // Get publications with pagination
-      const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset);
+      const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset, tags);
       const postsWithRelations = await Promise.all(
         posts.map((post: PublicationEntity) => this.postRepository.getWithRelations(post.id))
       );
@@ -221,7 +229,15 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async updatePublication(id: string, data: UpdatePublicationData, userId?: string): Promise<PublicationEntity> {
+  async updatePublication(
+    id: string,
+    data: UpdatePublicationData,
+    userContext?: {
+      userId?: string;
+      roles?: string[];
+      permissions?: string[];
+    }
+  ): Promise<PublicationEntity> {
     try {
       const existingPost = await this.postRepository.findById(id);
       if (!existingPost) {
@@ -229,10 +245,21 @@ export class PostService implements IPublicationService {
       }
 
       // Check if user has permission to update (must be creator or admin)
-      if (userId && existingPost.creatorId !== userId) {
-        // In a real system, check for admin role via RBAC
-        // For now, only creator can update
+      if (userContext?.userId && existingPost.creatorId !== userContext.userId) {
+        const hasOverridePermission = Boolean(
+          userContext.permissions?.includes('posts:approve') ||
+          userContext.roles?.includes('admin')
+        );
+
+        if (hasOverridePermission) {
+          this.logger.debug('Update override due to permission', {
+            postId: id,
+            userId: userContext.userId,
+            permissions: userContext.permissions
+          });
+        } else {
         throw this.errorHandler.createValidationError('You do not have permission to update this post');
+        }
       }
 
       // Validate category if being updated
@@ -321,8 +348,21 @@ export class PostService implements IPublicationService {
         }
       }
 
+      const { tags, ...updateData } = data;
+
+      const updatedPost = await this.postRepository.update(id, updateData);
+
+      if (tags !== undefined) {
+        const normalizedTags = tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0);
+        if (normalizedTags.length > 0) {
+          const tagEntities = await this.tagRepository.findOrCreate(normalizedTags);
+          await this.tagRepository.assignTagsToPost(id, tagEntities.map(tag => tag.id));
+        } else {
+          await this.tagRepository.assignTagsToPost(id, []);
+        }
+      }
+
       this.logger.debug('Updating publication', { postId: id, updateData: { ...data, attachmentFileIds: data.attachmentFileIds?.length || 0 } });
-      const updatedPost = await this.postRepository.update(id, data);
       this.logger.info('Post updated successfully', { postId: id });
       return updatedPost;
     } catch (error) {

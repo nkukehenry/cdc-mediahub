@@ -255,6 +255,8 @@ function FilePickerModalContent({
             onFileSelect={handleFileSelect}
             mode="picker"
             className="w-full h-full"
+            allowedMimeTypes={filterMimeTypes}
+            selectionLimit={multiple ? undefined : 1}
           />
         </div>
 

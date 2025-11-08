@@ -9,6 +9,7 @@ export interface JWTPayload {
   email: string;
   roles: string[];
   permissions: string[];
+  isAdmin?: boolean;
 }
 
 export interface AuthResult {
@@ -16,6 +17,7 @@ export interface AuthResult {
   token: string;
   roles: string[];
   permissions: string[];
+  isAdmin: boolean;
 }
 
 export class AuthService {
@@ -34,19 +36,19 @@ export class AuthService {
 
   async register(userData: CreateUserData): Promise<AuthResult> {
     try {
+      const normalizedUserData: CreateUserData = {
+        ...userData,
+        username: userData.username ?? userData.email
+      };
+
       // Check if user already exists
-      const existingUser = await this.userRepository.findByEmail(userData.email);
+      const existingUser = await this.userRepository.findByEmail(normalizedUserData.email);
       if (existingUser) {
         throw this.errorHandler.createValidationError('User with this email already exists', 'email');
       }
 
-      const existingUsername = await this.userRepository.findByUsername(userData.username);
-      if (existingUsername) {
-        throw this.errorHandler.createValidationError('User with this username already exists', 'username');
-      }
-
       // Create user
-      const user = await this.userRepository.create(userData);
+      const user = await this.userRepository.create(normalizedUserData);
 
       // Get default roles (assign 'author' role by default)
       const defaultRole = await this.roleRepository.findBySlug('author');
@@ -55,11 +57,15 @@ export class AuthService {
       }
 
       // Get user roles and permissions
-      const roles = await this.roleRepository.getUserRoles(user.id);
-      const permissions = await this.permissionRepository.getUserPermissions(user.id);
+      const roleEntities = await this.roleRepository.getUserRoles(user.id);
+      const permissionEntities = await this.permissionRepository.getUserPermissions(user.id);
+
+      const roleSlugs = roleEntities.map(r => r.slug);
+      const permissionSlugs = permissionEntities.map(p => p.slug);
+      const isAdmin = this.hasAdminAccess(roleSlugs, permissionSlugs);
 
       // Generate JWT
-      const token = this.generateToken(user, roles, permissions);
+      const token = this.generateToken(user, roleSlugs, permissionSlugs, isAdmin);
 
       this.logger.info('User registered successfully', { userId: user.id });
 
@@ -67,8 +73,9 @@ export class AuthService {
       return {
         user: userWithoutPassword,
         token,
-        roles: roles.map(r => r.slug),
-        permissions: permissions.map(p => p.slug)
+        roles: roleSlugs,
+        permissions: permissionSlugs,
+        isAdmin
       };
     } catch (error) {
       this.logger.error('Registration failed', error as Error);
@@ -93,11 +100,15 @@ export class AuthService {
       }
 
       // Get user roles and permissions
-      const roles = await this.roleRepository.getUserRoles(user.id);
-      const permissions = await this.permissionRepository.getUserPermissions(user.id);
+      const roleEntities = await this.roleRepository.getUserRoles(user.id);
+      const permissionEntities = await this.permissionRepository.getUserPermissions(user.id);
+
+      const roleSlugs = roleEntities.map(r => r.slug);
+      const permissionSlugs = permissionEntities.map(p => p.slug);
+      const isAdmin = this.hasAdminAccess(roleSlugs, permissionSlugs);
 
       // Generate JWT
-      const token = this.generateToken(user, roles, permissions);
+      const token = this.generateToken(user, roleSlugs, permissionSlugs, isAdmin);
 
       this.logger.info('User logged in successfully', { userId: user.id });
 
@@ -105,8 +116,9 @@ export class AuthService {
       return {
         user: userWithoutPassword,
         token,
-        roles: roles.map(r => r.slug),
-        permissions: permissions.map(p => p.slug)
+        roles: roleSlugs,
+        permissions: permissionSlugs,
+        isAdmin
       };
     } catch (error) {
       this.logger.error('Login failed', error as Error);
@@ -117,6 +129,11 @@ export class AuthService {
   async verifyToken(token: string): Promise<JWTPayload | null> {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+
+      if (typeof decoded.isAdmin === 'undefined') {
+        decoded.isAdmin = this.hasAdminAccess(decoded.roles ?? [], decoded.permissions ?? []);
+      }
+
       return decoded;
     } catch (error) {
       this.logger.warn('Token verification failed', error as Error);
@@ -187,17 +204,27 @@ export class AuthService {
     }
   }
 
-  private generateToken(user: UserEntity, roles: any[], permissions: any[]): string {
+  private generateToken(user: UserEntity, roles: string[], permissions: string[], isAdmin: boolean): string {
     const payload: JWTPayload = {
       userId: user.id,
       email: user.email,
-      roles: roles.map(r => r.slug),
-      permissions: permissions.map(p => p.slug)
+      roles,
+      permissions,
+      isAdmin
     };
 
     return jwt.sign(payload, this.jwtSecret, {
       expiresIn: '7d' // Token expires in 7 days
     });
+  }
+
+  public hasAdminAccess(roles: string[] = [], permissions: string[] = []): boolean {
+    if (roles.some(role => role && role !== 'author')) {
+      return true;
+    }
+
+    // Reserved for future permission-based admin detection if needed
+    return false;
   }
 }
 

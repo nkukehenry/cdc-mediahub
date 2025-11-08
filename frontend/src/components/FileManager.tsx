@@ -18,6 +18,7 @@ import FilePreviewModal from './FilePreviewModal';
 import ShareModal from './ShareModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
 import MoveModal from './MoveModal';
+import RenameFileModal from './RenameFileModal';
 import EmptyState from './EmptyState';
 import FileManagerNav from './file-manager/FileManagerNav';
 import { 
@@ -57,13 +58,31 @@ import {
 import FileListRow from './FileListRow';
 import FileGridCard from './FileGridCard';
 
+const matchesAllowedMimeTypes = (file: FileWithUrls, allowedMimeTypes?: string[]) => {
+  if (!allowedMimeTypes || allowedMimeTypes.length === 0) return true;
+  return allowedMimeTypes.some(filter => {
+    if (filter.endsWith('/*')) {
+      const baseType = filter.slice(0, -2);
+      return file.mimeType.startsWith(`${baseType}/`);
+    }
+    return file.mimeType === filter;
+  });
+};
+
+const filterFilesForPicker = (files: FileWithUrls[], allowedMimeTypes?: string[], mode?: 'manager' | 'picker') => {
+  if (mode !== 'picker') return files;
+  return files.filter(file => matchesAllowedMimeTypes(file, allowedMimeTypes));
+};
+
 export default function FileManager({ 
   config, 
   onFileSelect, 
   onFolderSelect, 
   onUpload,
   className,
-  mode = 'manager'
+  mode = 'manager',
+  allowedMimeTypes,
+  selectionLimit
 }: FileManagerProps) {
   const dispatch = useDispatch<AppDispatch>();
   const { t } = useTranslation();
@@ -99,6 +118,8 @@ export default function FileManager({
   const [sharedFiles, setSharedFiles] = useState<FileWithUrls[]>([]);
   const [sharedFolders, setSharedFolders] = useState<FolderWithFiles[]>([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameTargetFile, setRenameTargetFile] = useState<FileWithUrls | null>(null);
 
   // Helper function to find a folder by ID in the tree structure
   const findFolderById = (folders: FolderWithFiles[], folderId: string): FolderWithFiles | null => {
@@ -121,11 +142,11 @@ export default function FileManager({
   const currentFolderData = currentFolder 
     ? (findFolderById(folders, currentFolder) || findFolderById(sharedFolders, currentFolder))
     : null;
-  const currentFolderFiles = currentFolderData?.files || [];
+  const currentFolderFiles = filterFilesForPicker(currentFolderData?.files || [], allowedMimeTypes, mode);
   const currentFolderSubfolders = currentFolderData?.subfolders || [];
   
   // Get all files for recent section (from all folders)
-  const allFiles = folders.flatMap(folder => folder.files);
+  const allFiles = filterFilesForPicker(folders.flatMap(folder => folder.files), allowedMimeTypes, mode);
   
   // Sort files by updatedAt for recent section
   const recentFiles = allFiles
@@ -146,7 +167,7 @@ export default function FileManager({
       data: folder
     })),
     // Then shared files
-    ...sharedFiles.map(file => ({
+    ...filterFilesForPicker(sharedFiles, allowedMimeTypes, mode).map(file => ({
       id: file.id,
       name: file.originalName,
       type: file.mimeType.split('/')[0],
@@ -189,7 +210,7 @@ export default function FileManager({
       isFolder: true,
       data: folder
     })),
-    ...rootFiles.map(file => ({
+    ...filterFilesForPicker(rootFiles, allowedMimeTypes, mode).map(file => ({
       id: file.id,
       name: file.originalName,
       type: file.mimeType.split('/')[0],
@@ -444,23 +465,23 @@ export default function FileManager({
     setSelectedFileIds(new Set([id]));
   };
 
-  // Close recent menu when clicking outside (use 'click' so option onClick runs first)
-  useEffect(() => {
-    if (!recentMenuId) return;
-    const handleDocClick = () => setRecentMenuId(null);
-    document.addEventListener('click', handleDocClick);
-    return () => document.removeEventListener('click', handleDocClick);
-  }, [recentMenuId]);
-
   const toggleFileSelection = (fileId: string) => {
     setSelectedFileIds(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(fileId)) {
-        newSet.delete(fileId);
-      } else {
-        newSet.add(fileId);
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+        return next;
       }
-      return newSet;
+
+      if (selectionLimit === 1) {
+        return new Set([fileId]);
+      }
+
+      if (!selectionLimit || next.size < selectionLimit) {
+        next.add(fileId);
+      }
+
+      return next;
     });
   };
 
@@ -518,6 +539,62 @@ export default function FileManager({
   const handleMoveSelected = () => {
     if (selectedFileIds.size === 0) return;
     setIsMoveModalOpen(true);
+  };
+
+  const openRenameModal = (file: FileWithUrls) => {
+    setRenameTargetFile(file);
+    setIsRenameModalOpen(true);
+  };
+
+  const closeRenameModal = () => {
+    if (isRenameModalOpen) {
+      setIsRenameModalOpen(false);
+      setRenameTargetFile(null);
+    }
+  };
+
+  const handleRenameFile = async (newName: string) => {
+    if (!renameTargetFile) return;
+    try {
+      const response = await apiClient.renameFile(renameTargetFile.id, newName);
+      if (!response.success) {
+        throw new Error(response.error?.message || t('errors.failedToRenameFile'));
+      }
+      showSuccess(t('fileManager.fileRenamed') || 'File renamed successfully');
+      closeRenameModal();
+      await dispatch(fetchFolderTree(null));
+
+      if (currentFolder === null) {
+        try {
+          const res = await apiClient.getFiles(undefined);
+          if (res.success && res.data?.files) {
+            setRootFiles(res.data.files as FileWithUrls[]);
+          }
+        } catch {}
+      }
+
+      if (activeView === 'shared') {
+        try {
+          const filesRes = await apiClient.getSharedFiles();
+          if (filesRes.success && filesRes.data?.files) {
+            setSharedFiles(filesRes.data.files as FileWithUrls[]);
+          }
+          const foldersRes = await apiClient.getSharedFolders();
+          if (foldersRes.success && foldersRes.data?.folders) {
+            const foldersWithFiles: FolderWithFiles[] = foldersRes.data.folders.map((folder: any) => ({
+              ...folder,
+              files: [],
+              subfolders: []
+            }));
+            setSharedFolders(foldersWithFiles);
+          }
+        } catch {}
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('errors.failedToRenameFile');
+      showWarning(message);
+      throw error;
+    }
   };
 
   // Handle share button click - share first selected file or folder
@@ -915,6 +992,15 @@ export default function FileManager({
                         className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
                         onClick={() => {
                           setRecentMenuId(null);
+                          openRenameModal(file as FileWithUrls);
+                        }}
+                      >
+                        {t('common.rename')}
+                      </button>
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                        onClick={() => {
+                          setRecentMenuId(null);
                           selectSingle(file.id);
                           setIsMoveModalOpen(true);
                         }}
@@ -991,51 +1077,57 @@ export default function FileManager({
               <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
                 <div className="divide-y divide-gray-200">
                   {itemsSorted.map((item) => (
-                        <FileListRow
-                          key={item.id}
-                          item={item as any}
-                          selected={selectedFileIds.has(item.id)}
-                        onToggleSelect={(id) => {
-                          console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
-                          if (mode === 'picker' && !item.isFolder) {
-                            // In picker mode, always call onFileSelect so FilePickerModal can handle add/remove
-                            toggleFileSelection(id);
-                            const fileItem = item.data as FileWithUrls;
-                            console.log('FileManager - File item from data:', fileItem);
-                            console.log('FileManager - onFileSelect exists:', !!onFileSelect);
-                            if (fileItem) {
-                              console.log('FileManager - Calling onFileSelect with file:', fileItem);
-                              onFileSelect?.(fileItem);
-                            } else {
-                              console.error('FileManager - fileItem is null or undefined!');
-                            }
-                          } else {
-                            toggleFileSelection(id);
-                          }
-                        }}
-                          onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
-                          onShare={(it) => {
-                            if (it.isFolder) {
-                              setShareFolderId(it.id);
-                              setShareFileId(null);
-                              setShareType('folder');
-                            } else {
-                              setShareFileId(it.id);
-                              setShareFolderId(null);
-                              setShareType('file');
-                            }
-                            setIsShareModalOpen(true);
-                          }}
-                          onMove={(it) => {
-                            const single = new Set<string>();
-                            single.add(it.id);
-                            setSelectedFileIds(single);
-                            setIsMoveModalOpen(true);
-                          }}
-                          icon={getFileIcon(item)}
-                          mode={mode}
-                        />
-                      ))}
+                    <FileListRow
+                      key={item.id}
+                      item={item as any}
+                      selected={selectedFileIds.has(item.id)}
+                      onToggleSelect={(id) => {
+                        console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
+                        if (mode === 'picker' && !item.isFolder) {
+                          toggleFileSelection(id);
+                          onFileSelect?.(item.data as FileWithUrls);
+                        } else {
+                          toggleFileSelection(id);
+                        }
+                      }}
+                      onOpen={(it) =>
+                        it.isFolder
+                          ? handleFolderClick(it.data as FolderWithFiles)
+                          : handleFileClick(it.data as FileWithUrls)
+                      }
+                      onShare={(it) => {
+                        if (it.isFolder) {
+                          setShareFolderId(it.id);
+                          setShareFileId(null);
+                          setShareType('folder');
+                        } else {
+                          setShareFileId(it.id);
+                          setShareFolderId(null);
+                          setShareType('file');
+                        }
+                        setIsShareModalOpen(true);
+                      }}
+                      onMove={(it) => {
+                        const single = new Set<string>();
+                        single.add(it.id);
+                        setSelectedFileIds(single);
+                        setIsMoveModalOpen(true);
+                      }}
+                      onDelete={(it) => {
+                        const single = new Set<string>();
+                        single.add(it.id);
+                        setSelectedFileIds(single);
+                        setIsDeleteModalOpen(true);
+                      }}
+                      onRename={(it) => {
+                        if (!it.isFolder) {
+                          openRenameModal(it.data as FileWithUrls);
+                        }
+                      }}
+                      icon={getFileIcon(item)}
+                      mode={mode}
+                    />
+                  ))}
                         </div>
                           </div>
                 </>
@@ -1050,22 +1142,17 @@ export default function FileManager({
                         onToggleSelect={(id) => {
                           console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
                           if (mode === 'picker' && !item.isFolder) {
-                            // In picker mode, always call onFileSelect so FilePickerModal can handle add/remove
                             toggleFileSelection(id);
-                            const fileItem = item.data as FileWithUrls;
-                            console.log('FileManager - File item from data:', fileItem);
-                            console.log('FileManager - onFileSelect exists:', !!onFileSelect);
-                            if (fileItem) {
-                              console.log('FileManager - Calling onFileSelect with file:', fileItem);
-                              onFileSelect?.(fileItem);
-                            } else {
-                              console.error('FileManager - fileItem is null or undefined!');
-                            }
+                            onFileSelect?.(item.data as FileWithUrls);
                           } else {
                             toggleFileSelection(id);
                           }
                         }}
-                        onOpen={(it) => it.isFolder ? handleFolderClick(it.data as FolderWithFiles) : handleFileClick(it.data as FileWithUrls)}
+                        onOpen={(it) =>
+                          it.isFolder
+                            ? handleFolderClick(it.data as FolderWithFiles)
+                            : handleFileClick(it.data as FileWithUrls)
+                        }
                         onShare={(it) => {
                           if (it.isFolder) {
                             setShareFolderId(it.id);
@@ -1084,10 +1171,21 @@ export default function FileManager({
                           setSelectedFileIds(single);
                           setIsMoveModalOpen(true);
                         }}
+                        onDelete={(it) => {
+                          const single = new Set<string>();
+                          single.add(it.id);
+                          setSelectedFileIds(single);
+                          setIsDeleteModalOpen(true);
+                        }}
+                        onRename={(it) => {
+                          if (!it.isFolder) {
+                            openRenameModal(it.data as FileWithUrls);
+                          }
+                        }}
                         icon={getFileIcon(item)}
                         mode={mode}
                       />
-                  ))}
+                    ))}
                 </div>
               </div>
               )}
@@ -1213,6 +1311,13 @@ export default function FileManager({
           }
         }}
         folders={folders}
+      />
+
+      <RenameFileModal
+        isOpen={isRenameModalOpen}
+        initialValue={renameTargetFile?.originalName || renameTargetFile?.filename || ''}
+        onClose={closeRenameModal}
+        onSubmit={handleRenameFile}
       />
 
       {/* File Preview Modal */}

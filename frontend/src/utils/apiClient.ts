@@ -98,7 +98,7 @@ class ApiClient {
 
   // Authentication methods
   async login(email: string, password: string): Promise<ApiResponse> {
-    const response = await this.request<{ token: string; user: any; roles: string[]; permissions: string[] }>('/api/auth/login', {
+    const response = await this.request<{ token: string; user: any; roles: string[]; permissions: string[]; isAdmin: boolean }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
@@ -111,15 +111,18 @@ class ApiClient {
   }
 
   async register(userData: {
-    username: string;
     email: string;
     password: string;
     firstName?: string;
     lastName?: string;
+    recaptchaToken?: string;
   }): Promise<ApiResponse> {
-    const response = await this.request<{ token: string; user: any; roles: string[]; permissions: string[] }>('/api/auth/register', {
+    const response = await this.request<{ token: string; user: any; roles: string[]; permissions: string[]; isAdmin: boolean }>('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: JSON.stringify({
+        ...userData,
+        username: userData.email
+      }),
     });
 
     if (response.success && response.data?.token) {
@@ -158,9 +161,6 @@ class ApiClient {
 
   logout(): void {
     this.removeToken();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/admin';
-    }
   }
 
   // File Management methods
@@ -215,6 +215,13 @@ class ApiClient {
   async deleteFile(fileId: string): Promise<ApiResponse> {
     return this.request(`/api/files/${fileId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async renameFile(fileId: string, name: string): Promise<ApiResponse<{ file: any }>> {
+    return this.request<{ file: any }>(`/api/files/${fileId}/rename`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
     });
   }
 
@@ -382,6 +389,7 @@ class ApiClient {
     dateFrom?: string;
     dateTo?: string;
     search?: string;
+    tags?: string[];
   }, page?: number, limit?: number): Promise<ApiResponse<{ publications: Array<any>; pagination: { total: number; page: number; limit: number; totalPages: number } }>> {
     const params = new URLSearchParams();
     
@@ -393,6 +401,9 @@ class ApiClient {
       if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
       if (filters.dateTo) params.append('dateTo', filters.dateTo);
       if (filters.search) params.append('search', filters.search);
+      if (filters.tags && filters.tags.length > 0) {
+        filters.tags.forEach(tag => params.append('tags', tag));
+      }
     }
     
     if (page) params.append('page', page.toString());
@@ -417,6 +428,7 @@ class ApiClient {
     hasComments?: boolean;
     isFeatured?: boolean;
     isLeaderboard?: boolean;
+    tags?: string[];
   }): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>('/api/admin/posts', {
       method: 'POST',
@@ -431,6 +443,7 @@ class ApiClient {
     limit?: number;
     offset?: number;
     search?: string;
+    tags?: string[];
   }): Promise<ApiResponse<{ posts: Array<any>; pagination?: { total: number; page: number; limit: number; totalPages: number } }>> {
     const params = new URLSearchParams();
     if (filters?.categoryId) params.append('categoryId', filters.categoryId);
@@ -438,6 +451,9 @@ class ApiClient {
     if (filters?.search) params.append('search', filters.search);
     if (filters?.limit) params.append('limit', filters.limit.toString());
     if (filters?.offset) params.append('offset', filters.offset.toString());
+    if (filters?.tags && filters.tags.length > 0) {
+      filters.tags.forEach(tag => params.append('tags', tag));
+    }
     
     const queryString = params.toString();
     return this.request<{ posts: Array<any>; pagination?: { total: number; page: number; limit: number; totalPages: number } }>(`/api/public/posts${queryString ? `?${queryString}` : ''}`);
@@ -527,6 +543,7 @@ class ApiClient {
     hasComments?: boolean;
     isFeatured?: boolean;
     isLeaderboard?: boolean;
+    tags?: string[];
   }): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>(`/api/admin/posts/${id}`, {
       method: 'PUT',
@@ -790,6 +807,94 @@ class ApiClient {
     return this.request<{ message: string }>(`/api/admin/users/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // Role Management methods
+  async getRoles(): Promise<ApiResponse<{ roles: Array<any> }>> {
+    return this.request<{ roles: Array<any> }>('/api/admin/roles');
+  }
+
+  async getRoleById(id: string): Promise<ApiResponse<{ role: any }>> {
+    return this.request<{ role: any }>(`/api/admin/roles/${id}`);
+  }
+
+  async createRole(roleData: {
+    name: string;
+    slug: string;
+    description?: string;
+    permissionIds?: string[];
+  }): Promise<ApiResponse<{ role: any }>> {
+    return this.request<{ role: any }>('/api/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(roleData),
+    });
+  }
+
+  async updateRole(id: string, roleData: {
+    name?: string;
+    slug?: string;
+    description?: string;
+  }): Promise<ApiResponse<{ role: any }>> {
+    return this.request<{ role: any }>(`/api/admin/roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(roleData),
+    });
+  }
+
+  async deleteRole(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/api/admin/roles/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async assignPermissionsToRole(id: string, permissionIds: string[]): Promise<ApiResponse<{ role: any }>> {
+    return this.request<{ role: any }>(`/api/admin/roles/${id}/permissions`, {
+      method: 'POST',
+      body: JSON.stringify({ permissionIds }),
+    });
+  }
+
+  // Permission Management methods
+  async getPermissions(): Promise<ApiResponse<{ permissions: Array<any> }>> {
+    return this.request<{ permissions: Array<any> }>('/api/admin/permissions');
+  }
+
+  async getPermissionById(id: string): Promise<ApiResponse<{ permission: any }>> {
+    return this.request<{ permission: any }>(`/api/admin/permissions/${id}`);
+  }
+
+  async createPermission(permissionData: {
+    name: string;
+    slug: string;
+    description?: string;
+  }): Promise<ApiResponse<{ permission: any }>> {
+    return this.request<{ permission: any }>('/api/admin/permissions', {
+      method: 'POST',
+      body: JSON.stringify(permissionData),
+    });
+  }
+
+  async updatePermission(id: string, permissionData: {
+    name?: string;
+    slug?: string;
+    description?: string;
+  }): Promise<ApiResponse<{ permission: any }>> {
+    return this.request<{ permission: any }>(`/api/admin/permissions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(permissionData),
+    });
+  }
+
+  async deletePermission(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/api/admin/permissions/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getTags(): Promise<ApiResponse<{ tags: Array<{ id: string; name: string; slug: string; usageCount?: number }> }>> {
+    return this.request<{ tags: Array<{ id: string; name: string; slug: string; usageCount?: number }> }>(
+      '/api/public/tags?includeUsage=true'
+    );
   }
 }
 

@@ -56,9 +56,17 @@ function CategoryPageInner() {
   useEffect(() => {
     loadCategory();
     loadCategories();
-    // TODO: Load tags from API when available
-    setTags(['AFRICA HEALTH', 'UNGA', 'Head', 'Plants', 'Population', 'Briefing', 'Press', 'Reading', 'Cow', 'Rapid Response', 'Blind', 'CPHIA', 'Cat', 'Kira', 'Naj']);
+    loadTags();
   }, [categorySlug]);
+
+  useEffect(() => {
+    const tagParams = searchParams.getAll('tags');
+    if (tagParams.length > 0) {
+      setSelectedTags(new Set(tagParams));
+    } else {
+      setSelectedTags(new Set());
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (currentCategory) {
@@ -112,6 +120,20 @@ function CategoryPageInner() {
     }
   };
 
+  const loadTags = async () => {
+    try {
+      const response = await apiClient.getTags();
+      if (response.success && response.data?.tags) {
+        const tagNames = response.data.tags
+          .map((tag: { name: string }) => tag.name)
+          .filter((name: string) => typeof name === 'string' && name.trim().length > 0);
+        setTags(Array.from(new Set(tagNames.map((name: string) => name.trim()))));
+      }
+    } catch (error) {
+      console.error('Failed to load tags:', error);
+    }
+  };
+
   const loadPublications = async () => {
     if (!currentCategory) return;
     
@@ -122,6 +144,9 @@ function CategoryPageInner() {
     if (searchQuery.trim()) filters.search = searchQuery.trim();
     if (selectedSubcategories.size > 0) {
       filters.subcategoryId = Array.from(selectedSubcategories)[0];
+    }
+    if (selectedTags.size > 0) {
+      filters.tags = Array.from(selectedTags);
     }
 
     dispatch(fetchPublications({ filters, page: currentPage, limit }) as any);
@@ -134,6 +159,9 @@ function CategoryPageInner() {
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
     if (selectedSubcategories.size > 0) {
       Array.from(selectedSubcategories).forEach(subId => params.append('subcategoryId', subId));
+    }
+    if (selectedTags.size > 0) {
+      Array.from(selectedTags).forEach(tag => params.append('tags', tag));
     }
     if (author.trim()) params.set('author', author.trim());
     if (creator.trim()) params.set('creator', creator.trim());

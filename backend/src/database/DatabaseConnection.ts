@@ -160,6 +160,19 @@ export class DatabaseConnection {
         await DatabaseUtils.executeQuery(`ALTER TABLE users ADD COLUMN bio TEXT`);
         this.logger.info('Added bio column to users table');
       }
+
+      // Migrate posts table for SEO metadata fields
+      const postsHasMetaTitle = await this.columnExists('posts', 'meta_title');
+      if (!postsHasMetaTitle) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN meta_title VARCHAR(255)`);
+        this.logger.info('Added meta_title column to posts table');
+      }
+
+      const postsHasMetaDescription = await this.columnExists('posts', 'meta_description');
+      if (!postsHasMetaDescription) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN meta_description TEXT`);
+        this.logger.info('Added meta_description column to posts table');
+      }
     } catch (error) {
       this.logger.error('Error during table migration', error as Error);
       // Don't throw - migration errors shouldn't stop initialization
@@ -479,6 +492,35 @@ export class DatabaseConnection {
           INDEX idx_is_leaderboard (is_leaderboard),
           INDEX idx_publication_date (publication_date),
           INDEX idx_slug (slug)
+        )
+      `);
+
+      // Tags table
+      await DatabaseUtils.executeQuery(`
+        CREATE TABLE IF NOT EXISTS tags (
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_tag_name (name),
+          UNIQUE KEY unique_tag_slug (slug),
+          INDEX idx_tag_name (name)
+        )
+      `);
+
+      // Post tags junction table
+      await DatabaseUtils.executeQuery(`
+        CREATE TABLE IF NOT EXISTS post_tags (
+          id VARCHAR(36) PRIMARY KEY,
+          post_id VARCHAR(36) NOT NULL,
+          tag_id VARCHAR(36) NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE,
+          UNIQUE KEY unique_post_tag (post_id, tag_id),
+          INDEX idx_post_id (post_id),
+          INDEX idx_tag_id (tag_id)
         )
       `);
 

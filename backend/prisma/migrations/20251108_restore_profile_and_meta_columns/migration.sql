@@ -1,0 +1,11 @@
+-- Restore columns removed by previous migration
+
+ALTER TABLE `posts`
+  ADD COLUMN IF NOT EXISTS `meta_description` LONGTEXT NULL;
+
+ALTER TABLE `users`
+  ADD COLUMN IF NOT EXISTS `bio` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `phone` VARCHAR(50) NULL,
+  ADD COLUMN IF NOT EXISTS `job_title` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `organization` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `email_verified` TINYINT(1) NOT NULL DEFAULT 0;

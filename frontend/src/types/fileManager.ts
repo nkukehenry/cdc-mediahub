@@ -55,6 +55,8 @@ export interface FileManagerProps {
   onUpload?: (files: FileWithUrls[]) => void;
   className?: string;
   mode?: 'manager' | 'picker';
+  allowedMimeTypes?: string[];
+  selectionLimit?: number;
 }
 
 export interface FilePickerProps {

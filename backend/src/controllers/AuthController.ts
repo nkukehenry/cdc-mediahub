@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/AuthService';
+import { RecaptchaService } from '../services/RecaptchaService';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 
@@ -7,26 +8,61 @@ export class AuthController {
   private logger = getLogger('AuthController');
   private errorHandler = getErrorHandler();
 
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService, private recaptchaService: RecaptchaService) {}
 
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { username, email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, recaptchaToken } = req.body;
 
-      if (!username || !email || !password) {
+      if (!email || !password) {
         res.status(400).json({
           success: false,
           error: {
             type: 'VALIDATION_ERROR',
-            message: 'Username, email, and password are required',
+            message: 'Email and password are required',
             timestamp: new Date().toISOString()
           }
         });
         return;
       }
 
+      if (this.recaptchaService.isEnabled()) {
+        if (!recaptchaToken || typeof recaptchaToken !== 'string') {
+          res.status(400).json({
+            success: false,
+            error: {
+              type: 'VALIDATION_ERROR',
+              field: 'recaptchaToken',
+              message: 'reCAPTCHA verification failed',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
+        }
+
+        try {
+          const isHuman = await this.recaptchaService.verify(recaptchaToken, req.ip);
+          if (!isHuman) {
+            res.status(400).json({
+              success: false,
+              error: {
+                type: 'VALIDATION_ERROR',
+                field: 'recaptchaToken',
+                message: 'reCAPTCHA verification failed',
+                timestamp: new Date().toISOString()
+              }
+            });
+            return;
+          }
+        } catch (error) {
+          this.logger.error('reCAPTCHA verification error', error as Error);
+          res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          return;
+        }
+      }
+
       const result = await this.authService.register({
-        username,
+        username: email,
         email,
         password,
         firstName,
@@ -39,7 +75,8 @@ export class AuthController {
           user: result.user,
           token: result.token,
           roles: result.roles,
-          permissions: result.permissions
+          permissions: result.permissions,
+          isAdmin: result.isAdmin
         }
       });
     } catch (error) {
@@ -72,7 +109,8 @@ export class AuthController {
           user: result.user,
           token: result.token,
           roles: result.roles,
-          permissions: result.permissions
+          permissions: result.permissions,
+          isAdmin: result.isAdmin
         }
       });
     } catch (error) {
@@ -117,13 +155,15 @@ export class AuthController {
 
       const roles = await this.authService.getUserRoles(req.user.userId);
       const permissions = await this.authService.getUserPermissions(req.user.userId);
+      const isAdmin = this.authService.hasAdminAccess(roles, permissions);
 
       res.json({
         success: true,
         data: {
           user,
           roles,
-          permissions
+          permissions,
+          isAdmin
         }
       });
     } catch (error) {

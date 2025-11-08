@@ -24,7 +24,7 @@ export default function PublicTopNav() {
     if (user) {
       setShowAccountMenu(!showAccountMenu);
     } else {
-      router.push('/admin');
+      router.push('/login');
     }
   };
 
@@ -92,16 +92,26 @@ export default function PublicTopNav() {
                   <p className="text-xs text-gray-500">{user.email}</p>
                 </div>
                 <Link
-                  href="/admin"
+                  href="/profile"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   onClick={() => setShowAccountMenu(false)}
                 >
-                  Admin Dashboard
+                  Profile
                 </Link>
+                {user?.isAdmin && (
+                  <Link
+                    href="/admin"
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowAccountMenu(false)}
+                  >
+                    Admin Dashboard
+                  </Link>
+                )}
                 <button
                   onClick={() => {
                     logout();
                     setShowAccountMenu(false);
+                    router.push('/');
                   }}
                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 >

@@ -1,8 +1,9 @@
 'use client';
 
-import { CheckSquare, Square, Share2 } from 'lucide-react';
-import { cn } from '@/utils/fileUtils';
+import { useEffect, useRef, useState } from 'react';
+import { CheckSquare, Square, MoreVertical } from 'lucide-react';
 import { FileWithUrls, FolderWithFiles } from '@/types/fileManager';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface ItemData {
   id: string;
@@ -20,11 +21,43 @@ interface FileListRowProps {
   onOpen: (item: ItemData) => void;
   onShare: (item: ItemData) => void;
   onMove: (item: ItemData) => void;
+  onDelete: (item: ItemData) => void;
+  onRename?: (item: ItemData) => void;
   icon: React.ReactNode;
   mode?: 'manager' | 'picker';
 }
 
-export default function FileListRow({ item, selected, onToggleSelect, onOpen, onShare, onMove, icon, mode = 'manager' }: FileListRowProps) {
+export default function FileListRow({
+  item,
+  selected,
+  onToggleSelect,
+  onOpen,
+  onShare,
+  onMove,
+  onDelete,
+  onRename,
+  icon,
+  mode = 'manager'
+}: FileListRowProps) {
+  const { t } = useTranslation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
   const handleToggleSelect = () => {
     onToggleSelect(item.id);
   };
@@ -72,17 +105,71 @@ export default function FileListRow({ item, selected, onToggleSelect, onOpen, on
         </div>
         <div className="col-span-2 text-xs text-au-grey-text">{item.lastModified}</div>
         <div className="col-span-2 text-xs text-au-grey-text">{item.size}</div>
-        <div className="col-span-2 flex items-center space-x-2">
-          <button
-            onClick={() => onMove(item)}
-            className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-          >
-            Move
-          </button>
-          <button className="p-0.5 hover:bg-gray-200 rounded" onClick={() => onShare(item)} aria-label="Share">
-            <Share2 size={12} className="text-gray-400" />
-          </button>
-        </div>
+        {mode !== 'picker' && (
+          <div className="col-span-2 flex justify-end relative">
+            <button
+              onClick={() => setIsMenuOpen(prev => !prev)}
+              className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+              aria-label={t('fileManager.manage')}
+            >
+              <MoreVertical size={16} className="text-gray-500" />
+            </button>
+            {isMenuOpen && (
+              <div
+                ref={menuRef}
+                className="absolute right-0 top-6 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+              >
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onOpen(item);
+                  }}
+                >
+                  {t('fileManager.open') || t('common.view')}
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onShare(item);
+                  }}
+                >
+                  {t('fileManager.share')}
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onMove(item);
+                  }}
+                >
+                  {t('fileManager.move')}
+                </button>
+                {!item.isFolder && onRename && (
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onRename(item);
+                    }}
+                  >
+                    {t('common.rename')}
+                  </button>
+                )}
+                <button
+                  className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onDelete(item);
+                  }}
+                >
+                  {t('common.delete')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

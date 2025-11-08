@@ -35,6 +35,7 @@ export interface IFileService {
   download(id: string, userId?: string): Promise<{ filePath: string; fileName: string; mimeType: string }>;
   generateThumbnail(filePath: string, mimeType: string): Promise<string>;
   deleteFile(id: string, userId?: string): Promise<boolean>;
+  renameFile(id: string, newName: string, userId?: string): Promise<FileEntity>;
   getFiles(folderId: string | null, userId?: string): Promise<FileEntity[]>;
   searchFiles(query: string, userId?: string): Promise<FileEntity[]>;
   shareFile(fileId: string, userId: string, shareData: ShareFileData): Promise<FileShareEntity>;
@@ -324,6 +325,19 @@ export interface PublicationWithRelations extends PublicationEntity {
   subcategories?: SubcategoryEntity[];
   attachments?: FileEntity[];
   authors?: UserEntity[];
+  tags?: TagEntity[];
+}
+
+export interface TagEntity {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TagWithUsage extends TagEntity {
+  usageCount: number;
 }
 
 // File Sharing
@@ -444,6 +458,7 @@ export interface CreatePublicationData {
   hasComments?: boolean;
   isFeatured?: boolean;
   isLeaderboard?: boolean;
+  tags?: string[];
 }
 
 export interface UpdatePublicationData {
@@ -463,6 +478,7 @@ export interface UpdatePublicationData {
   isFeatured?: boolean;
   isLeaderboard?: boolean;
   approvedBy?: string;
+  tags?: string[];
 }
 
 export interface ShareFileData {
@@ -546,6 +562,16 @@ export interface PublicationFilters {
   dateFrom?: string; // ISO date string
   dateTo?: string; // ISO date string
   search?: string; // Search in title, description, meta fields
+  tags?: string[];
+}
+
+export interface ITagRepository {
+  findAll(): Promise<TagEntity[]>;
+  findAllWithUsage(): Promise<TagWithUsage[]>;
+  findByNames(names: string[]): Promise<TagEntity[]>;
+  findByPost(postId: string): Promise<TagEntity[]>;
+  findOrCreate(names: string[]): Promise<TagEntity[]>;
+  assignTagsToPost(postId: string, tagIds: string[]): Promise<void>;
 }
 
 export interface IPublicationRepository {
@@ -559,8 +585,8 @@ export interface IPublicationRepository {
   countAll(filters?: PublicationFilters): Promise<number>;
   findFeatured(limit?: number): Promise<PublicationEntity[]>;
   findLeaderboard(limit?: number): Promise<PublicationEntity[]>;
-  findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
-  countPublished(categoryId?: string, subcategoryId?: string): Promise<number>;
+  findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<PublicationEntity[]>;
+  countPublished(categoryId?: string, subcategoryId?: string, tags?: string[]): Promise<number>;
   search(query: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   update(id: string, data: UpdatePublicationData): Promise<PublicationEntity>;
   delete(id: string): Promise<boolean>;
@@ -594,9 +620,17 @@ export interface IPublicationService {
   getPublicationBySlug(slug: string): Promise<PublicationWithRelations | null>;
   getFeaturedPublications(limit?: number): Promise<PublicationWithRelations[]>;
   getLeaderboardPublications(limit?: number): Promise<PublicationWithRelations[]>;
-  getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
+  getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
   getPublications(filters?: PublicationFilters, userId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
-  updatePublication(id: string, data: UpdatePublicationData, userId?: string): Promise<PublicationEntity>;
+  updatePublication(
+    id: string,
+    data: UpdatePublicationData,
+    userContext?: {
+      userId?: string;
+      roles?: string[];
+      permissions?: string[];
+    }
+  ): Promise<PublicationEntity>;
   deletePublication(id: string, userId?: string): Promise<boolean>;
   approvePublication(id: string, approverId: string): Promise<PublicationEntity>;
   rejectPublication(id: string, approverId: string): Promise<PublicationEntity>;

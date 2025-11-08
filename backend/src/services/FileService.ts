@@ -188,6 +188,51 @@ export class FileService implements IFileService {
     }
   }
 
+  async renameFile(id: string, newName: string, userId?: string): Promise<FileEntity> {
+    try {
+      const file = await this.findFileById(id);
+      if (!file) {
+        throw this.errorHandler.createFileNotFoundError(id);
+      }
+
+      if (userId && file.userId && file.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to rename this file');
+      }
+
+      const trimmedName = newName?.trim();
+      if (!trimmedName) {
+        throw this.errorHandler.createValidationError('File name is required', 'originalName');
+      }
+
+      if (trimmedName.length > 255) {
+        throw this.errorHandler.createValidationError('File name is too long', 'originalName');
+      }
+
+      const originalExt = path.extname(file.originalName || file.filename || '');
+      const providedExt = path.extname(trimmedName);
+
+      let finalName = trimmedName;
+      if (!providedExt && originalExt) {
+        finalName = `${trimmedName}${originalExt}`;
+      }
+
+      const sanitizedName = finalName.replace(/[\r\n]+/g, '').trim();
+      if (!sanitizedName) {
+        throw this.errorHandler.createValidationError('File name is invalid', 'originalName');
+      }
+
+      const updatedFile = await this.updateFileInDatabase(id, {
+        originalName: sanitizedName
+      } as Partial<FileEntity>);
+
+      this.logger.info('File renamed successfully', { fileId: id, userId, newName: sanitizedName });
+      return updatedFile;
+    } catch (error) {
+      this.logger.error('File rename failed', error as Error, { fileId: id });
+      throw error;
+    }
+  }
+
   async getFiles(folderId: string | null, userId?: string): Promise<FileEntity[]> {
     try {
       const files = await this.findFilesByFolder(folderId);
@@ -420,6 +465,10 @@ export class FileService implements IFileService {
   }
 
   private async deleteFileFromDatabase(id: string): Promise<boolean> {
+    throw new Error('FileRepository not injected');
+  }
+
+  private async updateFileInDatabase(id: string, data: Partial<FileEntity>): Promise<FileEntity> {
     throw new Error('FileRepository not injected');
   }
 }

@@ -36,8 +36,8 @@ export class FolderRepository implements IFolderRepository {
       const { columns, placeholders, values } = DatabaseUtils.buildInsertValues({
         id: folder.id,
         name: folder.name,
-        parent_id: folder.parentId,
-        user_id: folder.userId,
+        parent_id: folder.parentId ?? null,
+        user_id: folder.userId ?? null,
         is_public: isPublic,
         created_at: now,
         updated_at: now

@@ -86,6 +86,7 @@ export default function AdminNav() {
       icon: Settings,
       subItems: [
         { label: t('nav.users'), path: '/admin/users' },
+        { label: t('nav.roles'), path: '/admin/roles' },
         { label: t('nav.navLinks'), path: '/admin/nav-links' },
         { label: t('nav.cache'), path: '/admin/cache' },
         { label: t('nav.settings'), path: '/admin/settings' },
@@ -101,18 +102,17 @@ export default function AdminNav() {
     if (path === '/admin/categories') {
       return pathname === '/admin/categories' || pathname === '/admin/subcategories';
     }
-    // For configurations dropdown, check if we're on users, nav-links, cache or settings page
+    // For configurations dropdown, check if we're on users, roles, nav-links, cache or settings page
     if (path === '/admin/settings') {
-      return pathname === '/admin/users' || pathname === '/admin/nav-links' || pathname === '/admin/cache' || pathname === '/admin/settings';
+      return pathname === '/admin/users' || pathname === '/admin/roles' || pathname === '/admin/nav-links' || pathname === '/admin/cache' || pathname === '/admin/settings';
     }
     return pathname?.startsWith(path);
   };
 
   const handleLogout = async () => {
     logout();
-    // Navigate to login page immediately after logout
-    // Use replace to prevent back button navigation
-    router.replace('/admin');
+    // Navigate to public homepage immediately after logout
+    router.replace('/');
   };
 
   const toggleDropdown = (itemId: string) => {
@@ -174,6 +174,10 @@ export default function AdminNav() {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [openDropdowns]);
+
+  if (!user?.isAdmin) {
+    return null;
+  }
 
   return (
     <>

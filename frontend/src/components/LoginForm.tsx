@@ -21,13 +21,13 @@ export default function LoginForm() {
     setIsLoading(true);
 
     const result = await login(email, password);
+    setIsLoading(false);
 
     if (result.success) {
-      // Redirect to admin files page
-      router.push('/admin/files');
+      // Redirect to admin dashboard
+      router.push('/admin');
     } else {
       setError(result.error || t('auth.loginFailed'));
-      setIsLoading(false);
     }
   };
 

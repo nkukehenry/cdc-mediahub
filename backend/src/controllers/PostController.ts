@@ -44,7 +44,20 @@ export class PostController {
       const subcategoryId = req.query.subcategoryId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
-      const result = await this.postService.getPublishedPublications(categoryId, subcategoryId, limit, offset);
+      let tags: string[] | undefined;
+
+      if (req.query.tags) {
+        const tagsParam = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+        const tagNames = tagsParam
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0);
+        if (tagNames.length > 0) {
+          tags = tagNames;
+        }
+      }
+
+      const result = await this.postService.getPublishedPublications(categoryId, subcategoryId, limit, offset, tags);
       
       res.json({
         success: true,
@@ -158,7 +171,8 @@ export class PostController {
         publicationDate,
         hasComments,
         isFeatured,
-        isLeaderboard
+        isLeaderboard,
+        tags
       } = req.body;
 
       if (!title || !slug || !categoryId) {
@@ -171,6 +185,27 @@ export class PostController {
           }
         });
         return;
+      }
+
+      let tagNames: string[] | undefined;
+      if (tags !== undefined) {
+        if (!Array.isArray(tags)) {
+          res.status(400).json({
+            success: false,
+            error: {
+              type: 'VALIDATION_ERROR',
+              field: 'tags',
+              message: 'Tags must be an array of strings',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
+        }
+
+        tagNames = tags
+          .filter((tag: unknown): tag is string => typeof tag === 'string')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0);
       }
 
       const post = await this.postService.createPublication({
@@ -189,7 +224,8 @@ export class PostController {
         publicationDate,
         hasComments,
         isLeaderboard,
-        isFeatured
+        isFeatured,
+        tags: tagNames
       });
 
       res.status(201).json({
@@ -217,9 +253,42 @@ export class PostController {
       }
 
       const { id } = req.params;
-      const updateData = req.body;
+      const {
+        tags,
+        ...rest
+      } = req.body as any;
 
-      const post = await this.postService.updatePublication(id, updateData, req.user.userId);
+      let tagNames: string[] | undefined;
+      if (tags !== undefined) {
+        if (!Array.isArray(tags)) {
+          res.status(400).json({
+            success: false,
+            error: {
+              type: 'VALIDATION_ERROR',
+              field: 'tags',
+              message: 'Tags must be an array of strings',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
+        }
+
+        tagNames = tags
+          .filter((tag: unknown): tag is string => typeof tag === 'string')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0);
+      }
+
+      const updateData = {
+        ...rest,
+        ...(tags !== undefined ? { tags: tagNames ?? [] } : {})
+      };
+
+      const post = await this.postService.updatePublication(id, updateData, {
+        userId: req.user.userId,
+        roles: req.user.roles,
+        permissions: req.user.permissions
+      });
 
       res.json({
         success: true,
@@ -387,6 +456,17 @@ export class PostController {
       
       if (req.query.search) {
         filters.search = req.query.search as string;
+      }
+
+      if (req.query.tags) {
+        const tagsParam = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+        const tagNames = tagsParam
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0);
+        if (tagNames.length > 0) {
+          filters.tags = tagNames;
+        }
       }
 
       // Check if user has permission to view all publications

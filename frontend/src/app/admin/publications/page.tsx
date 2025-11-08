@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { Plus, Search, Edit, Trash2, MoreVertical, X, Eye } from 'lucide-react';
+import { Plus, Search, Edit, MoreVertical, X, Eye, Check, Send } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -62,6 +62,25 @@ function PublicationsPageContent() {
   const menuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null);
+
+  const canManagePublicationFlags = Boolean(
+    user?.isAdmin ||
+    user?.permissions?.some((permission) =>
+      ['posts:edit', 'posts:update', 'posts:approve', 'posts:manage'].includes(permission)
+    )
+  );
+
+  const canApprovePublications = Boolean(
+    user?.isAdmin ||
+    user?.permissions?.includes('posts:approve')
+  );
+
+  const canPublishPublications = Boolean(
+    user?.isAdmin ||
+    user?.permissions?.some((permission) =>
+      ['posts:create', 'posts:edit', 'posts:update', 'posts:manage', 'posts:approve'].includes(permission)
+    )
+  );
 
   // Debounce search query
   useEffect(() => {
@@ -155,6 +174,89 @@ function PublicationsPageContent() {
 
   const getEditUrl = (publicationId: string) => {
     return ['', 'admin', 'publications', publicationId, 'edit'].join('/');
+  };
+
+  const handleUpdatePublicationFlags = async (
+    publicationId: string,
+    updates: { isFeatured?: boolean; isLeaderboard?: boolean },
+    successMessage: string
+  ) => {
+    setActionMenuOpen(null);
+    try {
+      const response = await apiClient.updatePublication(publicationId, updates);
+
+      if (response.success) {
+        showSuccess(successMessage);
+        await loadPublications(currentPage);
+      } else {
+        throw new Error(response.error?.message || t('publications.failedToUpdatePublication'));
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  };
+
+  const handleToggleFeatured = async (publication: Publication) => {
+    const shouldFeature = !publication.isFeatured;
+    await handleUpdatePublicationFlags(
+      publication.id,
+      { isFeatured: shouldFeature },
+      shouldFeature ? t('publications.featuredAddedSuccess') : t('publications.featuredRemovedSuccess')
+    );
+  };
+
+  const handleToggleLeadership = async (publication: Publication) => {
+    const shouldBeOnLeadership = !publication.isLeaderboard;
+    await handleUpdatePublicationFlags(
+      publication.id,
+      { isLeaderboard: shouldBeOnLeadership },
+      shouldBeOnLeadership ? t('publications.leadershipAddedSuccess') : t('publications.leadershipRemovedSuccess')
+    );
+  };
+
+  const handleApprovePublication = async (publication: Publication) => {
+    setActionMenuOpen(null);
+    try {
+      const response = await apiClient.approvePublication(publication.id);
+      if (response.success) {
+        showSuccess(t('publications.publicationApproved') || 'Publication approved successfully');
+        await loadPublications(currentPage);
+      } else {
+        throw new Error(response.error?.message || t('publications.failedToUpdatePublication'));
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  };
+
+  const handleRejectPublication = async (publication: Publication) => {
+    setActionMenuOpen(null);
+    try {
+      const response = await apiClient.rejectPublication(publication.id);
+      if (response.success) {
+        showSuccess(t('publications.publicationRejected') || 'Publication rejected successfully');
+        await loadPublications(currentPage);
+      } else {
+        throw new Error(response.error?.message || t('publications.failedToUpdatePublication'));
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  };
+
+  const handlePublishPublication = async (publication: Publication) => {
+    setActionMenuOpen(null);
+    try {
+      const response = await apiClient.updatePublication(publication.id, { status: 'pending' });
+      if (response.success) {
+        showSuccess(t('publications.publicationPublished') || 'Publication moved to Pending successfully');
+        await loadPublications(currentPage);
+      } else {
+        throw new Error(response.error?.message || t('publications.failedToUpdatePublication'));
+      }
+    } catch (error) {
+      handleError(error);
+    }
   };
 
   if (loading) {
@@ -253,13 +355,25 @@ function PublicationsPageContent() {
                           {publication.category?.name || '-'}
                         </td>
                         <td className="px-3 md:px-4 py-3">
-                          <span className={cn('px-2 py-1 text-xs font-medium rounded-full', getStatusBadgeColor(publication.status))}>
-                            {publication.status === 'approved' ? t('publications.statusApproved') :
-                             publication.status === 'pending' ? t('nav.pendingPublications') :
-                             publication.status === 'rejected' ? t('publications.statusRejected') :
-                             publication.status === 'draft' ? t('nav.draftPublications') :
-                             publication.status}
-                          </span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className={cn('px-2 py-1 text-xs font-medium rounded-full', getStatusBadgeColor(publication.status))}>
+                              {publication.status === 'approved' ? t('publications.statusApproved') :
+                               publication.status === 'pending' ? t('nav.pendingPublications') :
+                               publication.status === 'rejected' ? t('publications.statusRejected') :
+                               publication.status === 'draft' ? t('nav.draftPublications') :
+                               publication.status}
+                            </span>
+                            {publication.isFeatured && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 uppercase tracking-wide">
+                                {t('publications.isFeatured')}
+                              </span>
+                            )}
+                            {publication.isLeaderboard && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800 uppercase tracking-wide">
+                                {t('publications.isLeaderboard')}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 md:px-4 py-3 text-sm text-au-grey-text hidden lg:table-cell">
                           {formatDate(publication.createdAt)}
@@ -302,6 +416,49 @@ function PublicationsPageContent() {
                                   <Edit size={14} />
                                   <span>{t('common.edit')}</span>
                                 </Link>
+                                {canPublishPublications && publication.status === 'draft' && (
+                                  <button
+                                    onClick={() => handlePublishPublication(publication)}
+                                    className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100 flex items-center space-x-2"
+                                  >
+                                    <Send size={14} />
+                                    <span>{t('publications.publish')}</span>
+                                  </button>
+                                )}
+                                {canApprovePublications && publication.status === 'pending' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleApprovePublication(publication)}
+                                      className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100 flex items-center space-x-2"
+                                    >
+                                      <Check size={14} />
+                                      <span>{t('publications.approve')}</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleRejectPublication(publication)}
+                                      className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-red-500 hover:bg-red-50 flex items-center space-x-2"
+                                    >
+                                      <X size={14} />
+                                      <span>{t('publications.reject')}</span>
+                                    </button>
+                                  </>
+                                )}
+                                {publication.status === 'approved' && canManagePublicationFlags && (
+                                  <>
+                                    <button
+                                      onClick={() => handleToggleFeatured(publication)}
+                                      className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100"
+                                    >
+                                      {publication.isFeatured ? t('publications.removeFromFeatured') : t('publications.addToFeatured')}
+                                    </button>
+                                    <button
+                                      onClick={() => handleToggleLeadership(publication)}
+                                      className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100"
+                                    >
+                                      {publication.isLeaderboard ? t('publications.removeFromLeadershipList') : t('publications.addToLeadershipList')}
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>

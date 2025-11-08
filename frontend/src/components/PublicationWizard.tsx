@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, Eye } from 'lucide-react';
 import { cn, getImageUrl, PLACEHOLDER_IMAGE_PATH, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -26,6 +26,13 @@ interface Subcategory {
   slug: string;
 }
 
+interface TagOption {
+  id: string;
+  name: string;
+  slug: string;
+  usageCount?: number;
+}
+
 interface PublicationWizardProps {
   publicationId?: string; // For edit mode
   onSuccess?: () => void;
@@ -48,6 +55,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   // Step 1: Basic Information
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const [isSlugDirty, setIsSlugDirty] = useState(false);
   const [categoryId, setCategoryId] = useState('');
   const [subcategoryIds, setSubcategoryIds] = useState<string[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -65,12 +73,16 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const [metaDescription, setMetaDescription] = useState('');
   const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [availableTags, setAvailableTags] = useState<TagOption[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
 
   // Step 3: Description
   const [description, setDescription] = useState('');
 
   // Step 4: Settings & Publishing
   const [status, setStatus] = useState<'draft' | 'pending' | 'approved' | 'rejected'>('draft');
+  const [saveAsDraft, setSaveAsDraft] = useState(!isEditMode);
   const [publicationDate, setPublicationDate] = useState('');
   const [hasComments, setHasComments] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
@@ -79,8 +91,129 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const normalizedSelectedTags = useMemo(() => {
+    return new Set(selectedTags.map(tag => tag.toLowerCase()));
+  }, [selectedTags]);
+
+  const filteredTagSuggestions = useMemo(() => {
+    const query = tagInput.trim().toLowerCase();
+    const pool = query
+      ? availableTags.filter(tag => tag.name.toLowerCase().includes(query))
+      : availableTags;
+
+    return pool
+      .filter(tag => !normalizedSelectedTags.has(tag.name.toLowerCase()))
+      .slice(0, 8);
+  }, [availableTags, normalizedSelectedTags, tagInput]);
+
+  const addTag = useCallback((tagName: string) => {
+    const normalized = tagName.trim();
+    if (!normalized) {
+      return;
+    }
+
+    const normalizedLower = normalized.toLowerCase();
+    if (normalizedSelectedTags.has(normalizedLower)) {
+      showError('Tag already added');
+      setTagInput('');
+      return;
+    }
+
+    setSelectedTags(prev => [...prev, normalized]);
+    setTagInput('');
+
+    setAvailableTags(prev => {
+      if (prev.some(tag => tag.name.toLowerCase() === normalizedLower)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: normalizedLower,
+          name: normalized,
+          slug: normalizedLower,
+          usageCount: 0
+        }
+      ];
+    });
+  }, [normalizedSelectedTags, showError]);
+
+  const removeTag = useCallback((tagName: string) => {
+    setSelectedTags(prev => prev.filter(tag => tag !== tagName));
+  }, []);
+
+  const handleTagSuggestionClick = useCallback((tagName: string) => {
+    addTag(tagName);
+  }, [addTag]);
+
+  const handleTagInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' || event.key === ',' || event.key === 'Tab') {
+      event.preventDefault();
+      if (tagInput.trim()) {
+        addTag(tagInput);
+      }
+    } else if (event.key === 'Backspace' && !tagInput) {
+      setSelectedTags(prev => prev.slice(0, -1));
+    }
+  }, [addTag, tagInput]);
+
+  const stepErrorFields: Record<number, string[]> = {
+    1: ['title', 'slug', 'categoryId'],
+    2: ['cover', 'attachments']
+  };
+
+  const applyFieldErrors = (step: number, fieldErrors: Record<string, string>) => {
+    setErrors(prev => {
+      const updated = { ...prev };
+      const fieldsToClear = stepErrorFields[step] || [];
+      fieldsToClear.forEach(field => {
+        if (!(field in fieldErrors) && updated[field]) {
+          delete updated[field];
+        }
+      });
+      return Object.keys(fieldErrors).length > 0 ? { ...updated, ...fieldErrors } : updated;
+    });
+  };
+
+  const showFieldErrors = (messages: string[]) => {
+    messages.forEach(msg => showError(msg));
+  };
+
+  const getStatusLabel = (value: 'draft' | 'pending' | 'approved' | 'rejected') => {
+    if (value === 'approved') return t('publications.statusApproved') || 'Approved';
+    if (value === 'pending') return t('nav.pendingPublications');
+    if (value === 'rejected') return t('publications.statusRejected') || 'Rejected';
+    return t('nav.draftPublications');
+  };
+
+  const handleSaveAsDraftToggle = (checked: boolean) => {
+    setSaveAsDraft(checked);
+    setStatus(checked ? 'draft' : 'pending');
+  };
+
+  useEffect(() => {
+    if (isEditMode) {
+      setSaveAsDraft((status || 'draft') === 'draft');
+    }
+  }, [isEditMode, status]);
+
   useEffect(() => {
     loadCategories();
+  }, []);
+
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const response = await apiClient.getTags();
+        if (response.success && response.data?.tags) {
+          setAvailableTags(response.data.tags as TagOption[]);
+        }
+      } catch (error) {
+        console.error('Failed to load tags:', error);
+      }
+    };
+
+    fetchTags();
   }, []);
 
   // Load publication data when in edit mode
@@ -92,14 +225,27 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   // Generate slug from title (only in create mode)
   useEffect(() => {
-    if (!isEditMode && title && !slug) {
-      const generatedSlug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
-      setSlug(generatedSlug);
+    if (isEditMode) {
+      return;
     }
-  }, [title, slug, isEditMode]);
+
+    if (!title) {
+      if (!isSlugDirty) {
+        setSlug('');
+      }
+      return;
+    }
+
+    if (isSlugDirty) {
+      return;
+    }
+
+    const generatedSlug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    setSlug(generatedSlug);
+  }, [title, isEditMode, isSlugDirty]);
 
   // Load subcategories when category changes
   useEffect(() => {
@@ -157,10 +303,11 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         setMetaTitle(publication.metaTitle || '');
         setMetaDescription(publication.metaDescription || '');
         setStatus(publication.status || 'draft');
+        setSaveAsDraft((publication.status || 'draft') === 'draft');
         setPublicationDate(publication.publicationDate ? publication.publicationDate.split('T')[0] : '');
-        setHasComments(publication.hasComments !== false);
-        setIsFeatured(publication.isFeatured || false);
-        setIsLeaderboard(publication.isLeaderboard || false);
+        setHasComments(publication.hasComments ?? true);
+        setIsFeatured(publication.isFeatured ?? false);
+        setIsLeaderboard(publication.isLeaderboard ?? false);
         
         // Handle cover image
         if (publication.coverImage) {
@@ -224,6 +371,29 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
             setAttachmentFiles(attachmentFiles);
           }
         }
+
+        if (publication.tags && Array.isArray(publication.tags)) {
+          const tagNames = publication.tags
+            .map((tag: any) => typeof tag.name === 'string' ? tag.name.trim() : '')
+            .filter((tag: string) => tag.length > 0);
+          setSelectedTags(tagNames);
+          if (tagNames.length > 0) {
+            setAvailableTags(prev => {
+              const existing = new Set(prev.map(tag => tag.name.toLowerCase()));
+              const additions = tagNames
+                .filter((tag: string) => !existing.has(tag.toLowerCase()))
+                .map((tag: string) => ({
+                  id: tag.toLowerCase(),
+                  name: tag,
+                  slug: tag.toLowerCase(),
+                  usageCount: 0
+                }));
+              return additions.length > 0 ? [...prev, ...additions] : prev;
+            });
+          }
+        } else {
+          setSelectedTags([]);
+        }
       } else {
         showError(t('publications.failedToLoadPublication'));
       }
@@ -264,6 +434,11 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       if (isEditMode) {
         setExistingCoverImage(null);
       }
+      setErrors(prev => {
+        const updated = { ...prev };
+        delete updated.cover;
+        return updated;
+      });
     } else {
       setCoverFile(null);
     }
@@ -271,21 +446,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   const handleFilePickerSelect = (files: FileWithUrls[]) => {
     console.log('Attachment files selected:', files);
-    setAttachmentFiles(files);
-    setAttachmentFileIds(files.map(f => f.id));
-    console.log('Attachment file IDs set:', files.map(f => f.id));
-    console.log('Current attachmentFiles state will be:', files);
-    
-    // Clear attachment errors when files are selected
-    if (errors.attachments) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.attachments;
-        return newErrors;
-      });
-    }
-    
-    // Validate first attachment matches category type if applicable
+
     if (categoryId && files.length > 0) {
       const selectedCategory = categories.find(c => c.id === categoryId);
       if (selectedCategory) {
@@ -293,21 +454,35 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         const categorySlugLower = selectedCategory.slug.toLowerCase();
         const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
         const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
-        
+
         if (isAudioCategory || isVideoCategory) {
           const firstAttachment = files[0];
           const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
                                          (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
-          
+
           if (!firstAttachmentMatches) {
+            const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
             setErrors(prev => ({
               ...prev,
-              attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+              attachments: message
             }));
+            showError(message);
+            return;
           }
         }
       }
     }
+
+    setAttachmentFiles(files);
+    setAttachmentFileIds(files.map(f => f.id));
+    console.log('Attachment file IDs set:', files.map(f => f.id));
+    console.log('Current attachmentFiles state will be:', files);
+
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors.attachments;
+      return newErrors;
+    });
   };
 
   const removeAttachment = (fileId: string) => {
@@ -317,7 +492,30 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     setAttachmentFileIds(updatedIds);
     
     // Re-validate after removal if category requires attachments
-    if (categoryId && updatedFiles.length > 0) {
+    if (updatedFiles.length === 0) {
+      let message = t('publications.attachmentsRequired') || 'Please select at least one attachment.';
+      if (categoryId) {
+        const selectedCategory = categories.find(c => c.id === categoryId);
+        if (selectedCategory) {
+          const categoryNameLower = selectedCategory.name.toLowerCase();
+          const categorySlugLower = selectedCategory.slug.toLowerCase();
+          const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+          const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+          if (isAudioCategory || isVideoCategory) {
+            message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
+          }
+        }
+      }
+
+      setErrors(prev => ({
+        ...prev,
+        attachments: message
+      }));
+      showError(message);
+      return;
+    }
+
+    if (categoryId) {
       const selectedCategory = categories.find(c => c.id === categoryId);
       if (selectedCategory) {
         const categoryNameLower = selectedCategory.name.toLowerCase();
@@ -332,10 +530,13 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                                            (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
             
             if (!firstAttachmentMatches) {
+              const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
               setErrors(prev => ({
                 ...prev,
-                attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+                attachments: message
               }));
+              showError(message);
+              return;
             } else {
               // Clear error if validation passes
               setErrors(prev => {
@@ -348,6 +549,13 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         }
       }
     }
+
+    // Clear attachment error if none of the above conditions triggered
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors.attachments;
+      return newErrors;
+    });
   };
 
   const handleAttachmentPreview = (file: FileWithUrls) => {
@@ -387,7 +595,14 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     if (!categoryId) return true;
     
     const selectedCategory = categories.find(c => c.id === categoryId);
-    if (!selectedCategory) return true;
+    if (!selectedCategory) {
+      setErrors(prev => ({
+        ...prev,
+        attachments: 'Selected category not found'
+      }));
+      showError('Selected category not found');
+      return false;
+    }
     
     const categoryNameLower = selectedCategory.name.toLowerCase();
     const categorySlugLower = selectedCategory.slug.toLowerCase();
@@ -396,20 +611,24 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     
     if (isAudioCategory || isVideoCategory) {
       if (attachmentFiles.length === 0) {
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
         setErrors(prev => ({
           ...prev,
-          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+          attachments: message
         }));
+        showError(message);
         return false;
       }
       
       // Mandate that the FIRST attachment matches the category type
       const firstAttachment = attachmentFiles[0];
       if (!firstAttachment) {
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
         setErrors(prev => ({
           ...prev,
-          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+          attachments: message
         }));
+        showError(message);
         return false;
       }
       
@@ -418,10 +637,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                                      (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
       
       if (!firstAttachmentMatches) {
+        const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
         setErrors(prev => ({
           ...prev,
-          attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+          attachments: message
         }));
+        showError(message);
         return false;
       }
       
@@ -437,10 +658,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       });
       
       if (!hasMatchingAttachment) {
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
         setErrors(prev => ({
           ...prev,
-          attachments: `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`
+          attachments: message
         }));
+        showError(message);
         return false;
       }
     }
@@ -450,14 +673,44 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   const validateStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {};
+    const errorMessages: string[] = [];
 
     if (step === 1) {
-      if (!title.trim()) newErrors.title = t('publications.titleRequired');
-      if (!slug.trim()) newErrors.slug = t('publications.slugRequired');
-      if (!categoryId) newErrors.categoryId = t('publications.categoryRequired');
+      if (!title.trim()) {
+        const message = t('publications.titleRequired');
+        newErrors.title = message;
+        errorMessages.push(message);
+      }
+      if (!slug.trim()) {
+        const message = t('publications.slugRequired');
+        newErrors.slug = message;
+        errorMessages.push(message);
+      }
+      if (!categoryId) {
+        const message = t('publications.categoryRequired');
+        newErrors.categoryId = message;
+        errorMessages.push(message);
+      }
     }
 
-    setErrors(newErrors);
+    if (step === 2) {
+      const hasCover = Boolean(coverFile || existingCoverImage);
+      if (!hasCover) {
+        const message = t('publications.coverRequired') || 'A cover image is required.';
+        newErrors.cover = message;
+        errorMessages.push(message);
+      }
+
+      if (attachmentFiles.length === 0) {
+        const message = t('publications.attachmentsRequired') || 'Please select at least one attachment.';
+        newErrors.attachments = message;
+        errorMessages.push(message);
+      }
+    }
+
+    applyFieldErrors(step, newErrors);
+    showFieldErrors(errorMessages);
+
     return Object.keys(newErrors).length === 0;
   };
 
@@ -495,6 +748,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
       if (isEditMode && publicationId) {
         // Update existing publication
+        const submissionStatus = saveAsDraft ? 'draft' : 'pending';
+        setStatus(submissionStatus);
+
         const response = await apiClient.updatePublication(publicationId, {
           title: title.trim(),
           slug: slug.trim(),
@@ -505,11 +761,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           categoryId,
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
-          status,
+          status: submissionStatus,
           publicationDate: publicationDate || undefined,
           hasComments,
           isFeatured,
           isLeaderboard,
+          tags: selectedTags,
         });
 
         if (response.success) {
@@ -529,6 +786,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         }
       } else {
         // Create new publication
+        const submissionStatus = 'draft';
+        setStatus(submissionStatus);
+
         const response = await apiClient.createPublication({
           title: title.trim(),
           slug: slug.trim(),
@@ -539,11 +799,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           categoryId,
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
-          status,
+          status: submissionStatus,
           publicationDate: publicationDate || undefined,
           hasComments,
           isFeatured,
           isLeaderboard,
+          tags: selectedTags,
         });
 
         if (response.success) {
@@ -716,7 +977,11 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                 <input
                   type="text"
                   value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
+                  onChange={(e) => {
+                    const newSlug = e.target.value;
+                    setSlug(newSlug);
+                    setIsSlugDirty(newSlug.trim().length > 0);
+                  }}
                   placeholder={t('publications.enterSlug')}
                   className={cn(
                     "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors",
@@ -928,6 +1193,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                     <p className="text-sm text-gray-600">{t('publications.selectImageOrVideo')}</p>
                   </button>
                 )}
+                {errors.cover && (
+                  <p className="text-xs text-red-500 mt-2">{errors.cover}</p>
+                )}
               </div>
 
               <div>
@@ -1072,41 +1340,151 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                   disabled={isLoading}
                 />
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-sm font-medium text-au-grey-text">Tags</span>
+                  <span className="text-xs text-au-grey-text/60">Add keywords that describe this publication.</span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedTags.length > 0 ? (
+                    selectedTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-au-green/10 text-au-green rounded-full"
+                      >
+                        #{tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="hover:text-red-500 transition-colors"
+                          aria-label={`Remove tag ${tag}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-au-grey-text/60">No tags selected yet.</span>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(event) => setTagInput(event.target.value)}
+                    onKeyDown={handleTagInputKeyDown}
+                    placeholder="Type a tag and press Enter"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
+                    disabled={isLoading}
+                  />
+                  {tagInput.trim() && filteredTagSuggestions.length > 0 && (
+                    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            handleTagSuggestionClick(tag.name);
+                          }}
+                          className="w-full px-4 py-2 flex items-center justify-between text-sm text-au-grey-text hover:bg-gray-50 transition-colors"
+                        >
+                          <span>{tag.name}</span>
+                          {tag.usageCount !== undefined && tag.usageCount > 0 && (
+                            <span className="text-xs text-au-grey-text/60">{tag.usageCount}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {!tagInput.trim() && availableTags.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-au-grey-text/60 mb-2">Popular tags</p>
+                    <div className="flex flex-wrap gap-2">
+                      {availableTags
+                        .filter((tag) => !normalizedSelectedTags.has(tag.name.toLowerCase()))
+                        .slice(0, 8)
+                        .map((tag) => (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => handleTagSuggestionClick(tag.name)}
+                            className="px-3 py-1.5 text-xs font-medium text-au-grey-text bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                          >
+                            #{tag.name}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Step 4: Settings & Publishing */}
           {currentStep === 4 && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-au-grey-text mb-1">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-au-grey-text">
                   {t('publications.status')}
                 </label>
-                {canUpdateStatus ? (
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as 'draft' | 'pending' | 'approved' | 'rejected')}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
-                    disabled={isLoading}
-                  >
-                    <option value="draft">{t('nav.draftPublications')}</option>
-                    <option value="pending">{t('nav.pendingPublications')}</option>
-                    {isEditMode && (
-                      <>
-                        <option value="approved">{t('publications.statusApproved') || 'Approved'}</option>
-                        <option value="rejected">{t('publications.statusRejected') || 'Rejected'}</option>
-                      </>
-                    )}
-                  </select>
-                ) : (
-                  <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
-                    <span className="text-au-grey-text font-medium">
-                      {status === 'approved' ? (t('publications.statusApproved') || 'Approved') :
-                       status === 'pending' ? t('nav.pendingPublications') :
-                       status === 'rejected' ? (t('publications.statusRejected') || 'Rejected') :
-                       t('nav.draftPublications')}
-                    </span>
+
+                {!isEditMode && (
+                  <div className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-sm text-au-grey-text/80">
+                    {t('publications.newSavesAsDraft') || 'New publications are saved as drafts by default.'}
                   </div>
+                )}
+
+                {isEditMode && (
+                  canUpdateStatus ? (
+                    <div className="space-y-3">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={saveAsDraft}
+                          onChange={(e) => handleSaveAsDraftToggle(e.target.checked)}
+                          className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-gold"
+                          disabled={isLoading}
+                        />
+                        <span className="text-sm text-au-grey-text font-medium">
+                          {t('publications.saveAsDraft') || 'Save as Draft'}
+                        </span>
+                      </label>
+                      <p className="text-xs text-au-grey-text/70">
+                        {saveAsDraft
+                          ? (t('publications.saveAsDraftHelper') || 'Keep this publication unpublished until you are ready.')
+                          : (t('publications.autoPendingHelper') || 'This update will mark the publication as Pending for review.')}
+                      </p>
+                      {!saveAsDraft && (
+                        <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                          {t('publications.pendingOnSubmit') || 'Saving will move this publication back to Pending status.'}
+                        </div>
+                      )}
+                      {status !== 'draft' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveAsDraftToggle(true)}
+                          disabled={isLoading}
+                          className="inline-flex items-center px-3 py-2 text-xs font-medium text-au-grey-text bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          {t('publications.unpublish') || 'Unpublish'}
+                        </button>
+                      )}
+                      <div className="px-3 py-2 border border-gray-200 rounded bg-gray-50 text-xs text-au-grey-text/80">
+                        <span className="font-medium">{t('publications.currentStatus') || 'Current status:'}</span>{' '}
+                        {getStatusLabel(status)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                      <span className="text-au-grey-text font-medium">{getStatusLabel(status)}</span>
+                    </div>
+                  )
                 )}
               </div>
 

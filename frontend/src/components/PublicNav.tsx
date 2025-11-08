@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronDown, Menu, X, User, LogOut, Settings, LayoutDashboard } from 'lucide-react';
+import { ChevronDown, Menu, X, User, LogOut, LayoutDashboard, FileText, Folder } from 'lucide-react';
 import { cn } from '@/utils/fileUtils';
 import { apiClient } from '@/utils/apiClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -311,6 +311,24 @@ export default function PublicNav() {
               {/* Right - Language Selector & Login/Register */}
               <div className="flex items-center gap-3 md:gap-4">
                 <LanguageSelector />
+                {user && (
+                  <div className="hidden md:flex items-center gap-2">
+                    <Link
+                      href="/my/publications"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white/90 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <FileText size={14} />
+                      My Publications
+                    </Link>
+                    <Link
+                      href="/my/files"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white/90 border border-white/30 rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <Folder size={14} />
+                      My Files
+                    </Link>
+                  </div>
+                )}
                 {user ? (
                   <div className="relative" ref={topUserMenuRef}>
                     <button
@@ -329,14 +347,14 @@ export default function PublicNav() {
                           <p className="text-xs text-au-grey-text/70">{user?.email}</p>
                         </div>
                         <Link
-                          href="/admin/profile"
+                          href="/profile"
                           onClick={() => setShowTopUserMenu(false)}
                           className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
                         >
                           <User className="h-4 w-4 mr-2" />
                           Profile
                         </Link>
-                        {user?.roles?.includes('admin') && (
+                        {user?.isAdmin && (
                           <Link
                             href="/admin"
                             onClick={() => setShowTopUserMenu(false)}
@@ -361,7 +379,7 @@ export default function PublicNav() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Link href="/admin" className="text-white/90 hover:text-white transition-colors text-xs md:text-sm">
+                    <Link href="/login" className="text-white/90 hover:text-white transition-colors text-xs md:text-sm">
                       Login
                     </Link>
                     <span className="text-white/70">/</span>
@@ -647,7 +665,15 @@ export default function PublicNav() {
                           <p className="text-sm font-medium text-au-grey-text">{user?.firstName || user?.username}</p>
                           <p className="text-xs text-au-grey-text/70">{user?.email}</p>
                         </div>
-                        {user?.roles?.includes('admin') && (
+                        <Link
+                          href="/profile"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center w-full text-left px-4 py-2 text-sm text-au-grey-text hover:bg-au-gold/10 transition-colors"
+                        >
+                          <User className="h-4 w-4 mr-2" />
+                          Profile
+                        </Link>
+                        {user?.isAdmin && (
                           <Link
                             href="/admin"
                             onClick={() => setShowUserMenu(false)}
@@ -668,12 +694,20 @@ export default function PublicNav() {
                     )}
                   </div>
                 ) : (
-                  <Link
-                    href="/admin"
-                    className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-white bg-au-gold hover:bg-au-gold/90 rounded-lg transition-colors"
-                  >
-                    Login
-                  </Link>
+                  <div className="flex items-center space-x-2">
+                    <Link
+                      href="/register"
+                      className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-au-gold border border-au-gold rounded-lg hover:bg-au-gold/10 transition-colors"
+                    >
+                      Register
+                    </Link>
+                    <Link
+                      href="/login"
+                      className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-white bg-au-gold hover:bg-au-gold/90 rounded-lg transition-colors"
+                    >
+                      Login
+                    </Link>
+                  </div>
                 )}
               </div>
 
@@ -813,13 +847,39 @@ export default function PublicNav() {
                     <p className="text-xs text-au-grey-text/70">{user.email}</p>
                   </div>
                   <Link
-                    href="/admin"
+                    href="/my/publications"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded-lg mb-2"
                   >
-                    <Settings className="h-4 w-4 mr-3" />
-                    Dashboard
+                    <FileText className="h-4 w-4 mr-3" />
+                    My Publications
                   </Link>
+                  <Link
+                    href="/profile"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded-lg mb-2"
+                  >
+                    <User className="h-4 w-4 mr-3" />
+                    Profile
+                  </Link>
+                  <Link
+                    href="/my/files"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded-lg mb-2"
+                  >
+                    <Folder className="h-4 w-4 mr-3" />
+                    My Files
+                  </Link>
+                  {user.isAdmin && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center w-full px-4 py-3 text-sm font-medium text-au-grey-text hover:bg-au-gold/10 hover:text-au-gold rounded-lg mb-2"
+                    >
+                      <LayoutDashboard className="h-4 w-4 mr-3" />
+                      Admin Panel
+                    </Link>
+                  )}
                   <button
                     onClick={() => {
                       handleLogout();
@@ -833,9 +893,16 @@ export default function PublicNav() {
                 </div>
               )}
               {!user && (
-                <div className="border-t border-gray-200 mt-4 pt-4">
+                <div className="border-t border-gray-200 mt-4 pt-4 space-y-3">
                   <Link
-                    href="/admin"
+                    href="/register"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-au-gold border border-au-gold rounded-lg hover:bg-au-gold/10"
+                  >
+                    Register
+                  </Link>
+                  <Link
+                    href="/login"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white bg-au-gold hover:bg-au-gold/90 rounded-lg"
                   >

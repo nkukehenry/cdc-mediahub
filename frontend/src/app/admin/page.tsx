@@ -1,36 +1,51 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import LoginForm from '@/components/LoginForm';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import DashboardContent from '@/components/DashboardContent';
 import { Provider } from 'react-redux';
 import { store } from '@/store';
 
 export default function AdminPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const { t } = useTranslation();
+  const router = useRouter();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <LoadingSpinner />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/login?redirect=/admin');
+    }
+  }, [loading, user, router]);
 
   if (!user) {
+    return null;
+  }
+
+  if (!user.isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-au-grey-text">{t('auth.adminLogin')}</h2>
-            <p className="mt-2 text-sm text-au-grey-text/70">
-              {t('auth.signInToAccess')}
-            </p>
+        <div className="max-w-md w-full space-y-6 text-center bg-white shadow-lg rounded-2xl p-8">
+          <h2 className="text-2xl font-semibold text-au-grey-text">No Admin Access</h2>
+          <p className="text-sm text-au-grey-text/70">
+            You are signed in as <strong>{user.email}</strong>, but this account does not have permission to access the admin dashboard.
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => logout()}
+              className="w-full py-2 rounded-lg bg-au-green text-white font-medium hover:bg-au-corporate-green transition-colors"
+            >
+              Sign in with a different account
+            </button>
+            <button
+              onClick={() => window.location.assign('/')}
+              className="w-full py-2 rounded-lg border border-au-green text-au-green font-medium hover:bg-au-green/5 transition-colors"
+            >
+              Go to homepage
+            </button>
           </div>
-          <LoginForm />
         </div>
       </div>
     );

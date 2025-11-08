@@ -4,6 +4,7 @@ import { LogLevel } from '../interfaces';
 export class ConfigurationService {
   private config!: IFileManagerConfig;
   private cacheConfig!: ICacheConfig;
+  private recaptchaSecret?: string;
 
   constructor() {
     this.loadConfiguration();
@@ -58,6 +59,8 @@ export class ConfigurationService {
       enableOfflineQueue: process.env.REDIS_ENABLE_OFFLINE_QUEUE === 'true'
     };
 
+    this.recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY || undefined;
+
     this.validateConfiguration();
   }
 
@@ -87,6 +90,10 @@ export class ConfigurationService {
 
   getCacheConfig(): ICacheConfig {
     return { ...this.cacheConfig };
+  }
+
+  getRecaptchaSecret(): string | undefined {
+    return this.recaptchaSecret;
   }
 
   updateConfig(updates: Partial<IFileManagerConfig>): void {

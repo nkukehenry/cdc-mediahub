@@ -21,24 +21,40 @@ export class RoleRepository implements IRoleRepository {
         updatedAt: new Date(now)
       };
 
-      const { columns, placeholders, values } = DatabaseUtils.buildInsertValues({
-        id: role.id,
-        name: role.name,
-        slug: role.slug,
-        description: role.description,
-        created_at: now,
-        updated_at: now
-      });
-
       await DatabaseUtils.executeQuery(
-        `INSERT INTO roles (${columns}) VALUES (${placeholders})`,
-        values
+        'INSERT INTO roles (id, name, slug, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          role.id,
+          role.name,
+          role.slug,
+          role.description ?? null,
+          now,
+          now
+        ]
       );
 
       this.logger.debug('Role created', { roleId: id });
       return role;
     } catch (error) {
-      this.logger.error('Failed to create role', error as Error);
+      const err = error as any;
+      if (err?.code === 'ER_DUP_ENTRY') {
+        const message: string = err?.message || '';
+        let field: 'name' | 'slug' | undefined;
+        if (message.includes('roles.slug') || message.includes("'slug'")) {
+          field = 'slug';
+        } else if (message.includes('roles.name') || message.includes("'name'")) {
+          field = 'name';
+        }
+
+        const errorMessage = field === 'name'
+          ? 'A role with this name already exists'
+          : 'A role with this slug already exists';
+
+        this.logger.warn('Duplicate role detected', { field, value: field ? (roleData as any)[field] : undefined, error: message });
+        throw this.errorHandler.createValidationError(errorMessage, field, field ? (roleData as any)[field] : undefined);
+      }
+
+      this.logger.error('Failed to create role', error as Error, { roleData });
       throw this.errorHandler.createDatabaseError('Failed to create role', 'create', 'roles');
     }
   }

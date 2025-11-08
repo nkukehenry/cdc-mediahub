@@ -19,7 +19,8 @@ import { PostRepository } from './repositories/PostRepository';
 import { FileShareRepository } from './repositories/FileShareRepository';
 import { FolderShareRepository } from './repositories/FolderShareRepository';
 import { SettingsRepository } from './repositories/SettingsRepository';
-import { UserEntity } from './interfaces';
+import { TagRepository } from './repositories/TagRepository';
+import { UserEntity, FileEntity } from './interfaces';
 import { FileService } from './services/FileService';
 import { FolderService } from './services/FolderService';
 import { AuthService } from './services/AuthService';
@@ -34,13 +35,14 @@ import { UserService } from './services/UserService';
 import { EmailService } from './services/EmailService';
 import { CacheFactory, FileManagerCacheStrategy } from './services/CacheService';
 import { ConfigurationService } from './services/ConfigurationService';
-import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController, CacheController, SettingsController, UserController, RoleController, PermissionController } from './controllers';
+import { AuthController, PostController, CategoryController, SubcategoryController, NavLinkController, AnalyticsController, YouTubeController, CacheController, SettingsController, UserController, RoleController, PermissionController, TagController } from './controllers';
 import { AuthMiddleware, RBACMiddleware } from './middleware';
 import { getLogger } from './utils/Logger';
 import { getErrorHandler } from './utils/ErrorHandler';
 import { setupSwagger } from './config/swagger';
 import { seedPublications } from './scripts/seedPublications';
 import { seedNavLinks } from './scripts/seedNavLinks';
+import { RecaptchaService } from './services/RecaptchaService';
 
 export class FileManagerServer {
   private app: express.Application;
@@ -67,6 +69,7 @@ export class FileManagerServer {
   private fileShareRepository!: FileShareRepository;
   private folderShareRepository!: FolderShareRepository;
   private settingsRepository!: SettingsRepository;
+  private tagRepository!: TagRepository;
   
   // Services
   private fileService!: FileService;
@@ -81,6 +84,7 @@ export class FileManagerServer {
   private settingsService!: SettingsService;
   private userService!: UserService;
   private emailService!: EmailService;
+  private recaptchaService!: RecaptchaService;
 
   // Controllers
   private authController!: AuthController;
@@ -95,6 +99,7 @@ export class FileManagerServer {
   private userController!: UserController;
   private roleController!: RoleController;
   private permissionController!: PermissionController;
+  private tagController!: TagController;
 
   // Middleware
   private authMiddleware!: AuthMiddleware;
@@ -169,6 +174,7 @@ export class FileManagerServer {
     this.fileShareRepository = new FileShareRepository();
     this.folderShareRepository = new FolderShareRepository();
     this.settingsRepository = new SettingsRepository();
+    this.tagRepository = new TagRepository();
 
     // Services
     const appConfig = this.config.getConfig();
@@ -193,7 +199,8 @@ export class FileManagerServer {
       this.postRepository,
       this.categoryRepository,
       this.userRepository,
-      this.fileRepository
+      this.fileRepository,
+      this.tagRepository
     );
     this.categoryService = new CategoryService(this.categoryRepository);
     this.subcategoryService = new SubcategoryService(this.subcategoryRepository);
@@ -207,9 +214,10 @@ export class FileManagerServer {
     this.emailService = new EmailService(emailConfig);
     
     this.userService = new UserService(this.userRepository, this.roleRepository, this.emailService);
+    this.recaptchaService = new RecaptchaService(this.config);
 
     // Controllers
-    this.authController = new AuthController(this.authService);
+    this.authController = new AuthController(this.authService, this.recaptchaService);
     this.postController = new PostController(this.postService);
     this.categoryController = new CategoryController(this.categoryService);
     this.subcategoryController = new SubcategoryController(this.subcategoryService);
@@ -221,6 +229,7 @@ export class FileManagerServer {
     this.userController = new UserController(this.userService);
     this.roleController = new RoleController(this.roleRepository, this.permissionRepository);
     this.permissionController = new PermissionController(this.permissionRepository);
+    this.tagController = new TagController(this.tagRepository);
 
     // Middleware
     this.authMiddleware = new AuthMiddleware(this.authService);
@@ -242,6 +251,7 @@ export class FileManagerServer {
     (this.fileService as any).findFilesByFolder = this.fileRepository.findByFolder.bind(this.fileRepository);
     (this.fileService as any).searchFilesInDatabase = this.fileRepository.search.bind(this.fileRepository);
     (this.fileService as any).deleteFileFromDatabase = this.fileRepository.delete.bind(this.fileRepository);
+    (this.fileService as any).updateFileInDatabase = this.fileRepository.update.bind(this.fileRepository);
 
     (this.folderService as any).saveFolderToDatabase = this.folderRepository.create.bind(this.folderRepository);
     (this.folderService as any).findFolderById = this.folderRepository.findById.bind(this.folderRepository);
@@ -668,6 +678,58 @@ export class FileManagerServer {
           this.logger.error('Shared files fetch failed', error as Error);
           return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
         }
+      }
+    );
+
+    /**
+     * @swagger
+     * /api/files/{id}/rename:
+     *   put:
+     *     summary: Rename a file
+     *     description: Update the display name of a file. Only the file owner or an administrator can rename a file.
+     *     tags: [Files]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - $ref: '#/components/parameters/FileId'
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               name:
+     *                 type: string
+     *                 description: New file name (extension optional)
+     *     responses:
+     *       200:
+     *         description: File renamed successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               allOf:
+     *                 - $ref: '#/components/schemas/SuccessResponse'
+     *                 - type: object
+     *                   properties:
+     *                     data:
+     *                       type: object
+     *                       properties:
+     *                         file:
+     *                           $ref: '#/components/schemas/File'
+     *       400:
+     *         description: Validation error
+     *       401:
+     *         description: Unauthorized
+     *       404:
+     *         description: File not found
+     *       500:
+     *         description: Internal server error
+     */
+    this.app.put('/api/files/:id/rename',
+      this.authMiddleware.authenticate,
+      (req, res) => {
+        this.handleFileRename(req, res);
       }
     );
 
@@ -2142,7 +2204,7 @@ export class FileManagerServer {
     // ========================================
     this.app.get('/api/admin/nav-links',
       this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
+      this.rbacMiddleware.requirePermission('nav-links:manage'),
       (req, res) => {
         this.navLinkController.getAll(req, res);
       }
@@ -2150,7 +2212,7 @@ export class FileManagerServer {
 
     this.app.get('/api/admin/nav-links/:id',
       this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
+      this.rbacMiddleware.requirePermission('nav-links:manage'),
       (req, res) => {
         this.navLinkController.getById(req, res);
       }
@@ -2158,7 +2220,7 @@ export class FileManagerServer {
 
     this.app.post('/api/admin/nav-links',
       this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
+      this.rbacMiddleware.requirePermission('nav-links:manage'),
       (req, res) => {
         this.navLinkController.create(req, res);
       }
@@ -2166,7 +2228,7 @@ export class FileManagerServer {
 
     this.app.put('/api/admin/nav-links/:id',
       this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
+      this.rbacMiddleware.requirePermission('nav-links:manage'),
       (req, res) => {
         this.navLinkController.update(req, res);
       }
@@ -2174,7 +2236,7 @@ export class FileManagerServer {
 
     this.app.delete('/api/admin/nav-links/:id',
       this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
+      this.rbacMiddleware.requirePermission('nav-links:manage'),
       (req, res) => {
         this.navLinkController.delete(req, res);
       }
@@ -2727,7 +2789,7 @@ export class FileManagerServer {
       // ========================================
       this.app.post('/api/admin/roles',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.create(req, res);
         }
@@ -2735,7 +2797,7 @@ export class FileManagerServer {
 
       this.app.get('/api/admin/roles',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.getAll(req, res);
         }
@@ -2743,7 +2805,7 @@ export class FileManagerServer {
 
       this.app.get('/api/admin/roles/:id',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.getById(req, res);
         }
@@ -2751,7 +2813,7 @@ export class FileManagerServer {
 
       this.app.put('/api/admin/roles/:id',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.update(req, res);
         }
@@ -2759,7 +2821,7 @@ export class FileManagerServer {
 
       this.app.delete('/api/admin/roles/:id',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.delete(req, res);
         }
@@ -2767,7 +2829,7 @@ export class FileManagerServer {
 
       this.app.post('/api/admin/roles/:id/permissions',
         this.authMiddleware.authenticate,
-        this.rbacMiddleware.requireRole('admin'),
+        this.rbacMiddleware.requirePermission('roles:manage'),
         (req, res) => {
           this.roleController.assignPermissions(req, res);
         }
@@ -3011,6 +3073,38 @@ export class FileManagerServer {
           this.youtubeController.refreshCache(req, res);
         }
       );
+
+      // ========================================
+      // Tag Routes (Public)
+      // ========================================
+      /**
+       * @swagger
+       * /api/public/tags:
+       *   get:
+       *     summary: Get all tags
+       *     description: Get list of all tags
+       *     tags: [Tags (Public)]
+       *     responses:
+       *       200:
+       *         description: List of tags
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         tags:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/Tag'
+       */
+      this.app.get('/api/public/tags', (req, res) => {
+        this.tagController.getAll(req, res);
+      });
   
       this.logger.info('Routes setup completed');
     } catch (error) {
@@ -3216,6 +3310,50 @@ export class FileManagerServer {
       });
     } catch (error) {
       this.logger.error('File search failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  private async handleFileRename(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { name } = req.body;
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      if (!name || typeof name !== 'string') {
+        throw this.errorHandler.createValidationError('File name is required', 'name');
+      }
+
+      const updatedFile = await (this.fileService as any).renameFile(id, name, userId) as FileEntity;
+      const responseFile = {
+        ...updatedFile,
+        downloadUrl: `${req.protocol}://${req.get('host')}/api/files/${updatedFile.id}/download`,
+        thumbnailUrl: updatedFile.thumbnailPath ? `${req.protocol}://${req.get('host')}/${updatedFile.thumbnailPath.replace(/\\/g, '/')}` : null
+      };
+
+      res.json({
+        success: true,
+        data: { file: responseFile }
+      });
+
+      await this.cacheDelPattern('files', userId);
+      await this.cacheDelPattern('folders', userId);
+      await this.cacheDelPattern('files');
+      await this.cacheDelPattern('folders');
+    } catch (error) {
+      this.logger.error('File rename failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
     }
   }
