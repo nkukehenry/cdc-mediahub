@@ -3481,4 +3481,225 @@ export class FileManagerServer {
       }
 
       // Use service method that filters folders by user
-      const cacheId = `
+      const cacheId = `tree:${folderParentId || 'root'}`;
+      const cached = await this.cacheGet<any[]>('folders', cacheId, userId);
+      const folders = cached ?? await this.folderService.getFolders(folderParentId);
+      if (!cached) await this.cacheSet('folders', cacheId, folders, userId);
+
+      // Resolve creators in batch
+      const ownerIds = Array.from(new Set(folders.map((f: any) => f.userId).filter(Boolean))) as string[];
+      const ownersMap: Record<string, any> = {};
+      for (const oid of ownerIds) {
+        const u = await this.userRepository.findById(oid);
+        if (u) ownersMap[oid] = u;
+      }
+      const foldersEnriched = folders.map((folder: any) => {
+        const owner = folder.userId ? ownersMap[folder.userId] : undefined;
+        return {
+          ...folder,
+          createdBy: owner ? { id: owner.id, username: owner.username } : null,
+          sharedBy: owner ? { id: owner.id, username: owner.username } : null
+        };
+      });
+      if (!cached) await this.cacheSet('folders', cacheId, foldersEnriched, userId);
+
+      res.json({
+        success: true,
+        data: { folders: foldersEnriched }
+      });
+    } catch (error) {
+      this.logger.error('Folder tree fetch failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  private async handleFolderUpdate(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { name } = req.body;
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      if (!name || typeof name !== 'string') {
+        throw this.errorHandler.createValidationError('Folder name is required', 'name');
+      }
+
+      const updatedFolder = await this.folderService.updateFolder(id, { name }, userId);
+
+      res.json({
+        success: true,
+        data: { folder: updatedFolder }
+      });
+
+      await this.cacheDelPattern('folders', userId);
+      await this.cacheDelPattern('folders');
+    } catch (error) {
+      this.logger.error('Folder update failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  private async handleFolderDelete(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const deleted = await this.folderService.deleteFolder(id, userId);
+
+      res.json({
+        success: true,
+        data: { deleted }
+      });
+
+      await this.cacheDelPattern('folders', userId);
+      await this.cacheDelPattern('folders');
+    } catch (error) {
+      this.logger.error('Folder deletion failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  public async start(): Promise<void> {
+    const serverConfig = this.config.getServerConfig();
+
+    await this.setupServices();
+    this.setupRoutes();
+    this.setupErrorHandling();
+
+    await this.runSeeders();
+
+    await new Promise<void>((resolve, reject) => {
+      this.server = this.app.listen(serverConfig.port, serverConfig.host, () => {
+        this.logger.info('Server started', { port: serverConfig.port, host: serverConfig.host });
+        resolve();
+      });
+
+      this.server.on('error', (error: Error) => {
+        this.logger.error('Failed to start server', error);
+        reject(error);
+      });
+    });
+
+    this.setupProcessHandlers();
+  }
+
+  public async stop(): Promise<void> {
+    if (this.youtubeFetchInterval) {
+      clearInterval(this.youtubeFetchInterval);
+      this.youtubeFetchInterval = undefined;
+    }
+
+    if (this.server) {
+      await new Promise<void>((resolve, reject) => {
+        this.server.close((error: Error | undefined) => {
+          if (error) {
+            this.logger.error('Error shutting down HTTP server', error);
+            reject(error);
+          } else {
+            this.logger.info('HTTP server stopped');
+            resolve();
+          }
+        });
+      });
+      this.server = null;
+    }
+
+    if (this.dbConnection) {
+      try {
+        await this.dbConnection.close();
+      } catch (error) {
+        this.logger.error('Error closing database connection', error as Error);
+      }
+    }
+  }
+
+  private setupProcessHandlers(): void {
+    const signals: Array<NodeJS.Signals> = ['SIGINT', 'SIGTERM'];
+    signals.forEach((signal) => {
+      process.once(signal, async () => {
+        this.logger.info(`Received ${signal}, shutting down gracefully...`);
+        try {
+          await this.stop();
+          process.exit(0);
+        } catch (error) {
+          this.logger.error('Error during shutdown', error as Error);
+          process.exit(1);
+        }
+      });
+    });
+  }
+
+  private async runSeeders(): Promise<void> {
+    const shouldSeedNavLinks = process.env.SEED_NAV_LINKS_ON_STARTUP === 'true';
+    const shouldSeedPublications = process.env.SEED_PUBLICATIONS_ON_STARTUP === 'true';
+
+    if (!shouldSeedNavLinks && !shouldSeedPublications) {
+      return;
+    }
+
+    try {
+      if (shouldSeedNavLinks) {
+        await seedNavLinks();
+        this.logger.info('Navigation links seeding completed');
+      }
+
+      if (shouldSeedPublications) {
+        const publicationCount = process.env.SEED_PUBLICATIONS_COUNT ? parseInt(process.env.SEED_PUBLICATIONS_COUNT, 10) : undefined;
+        await seedPublications(publicationCount);
+        this.logger.info('Publications seeding completed');
+      }
+    } catch (error) {
+      this.logger.error('Seeder execution failed', error as Error);
+    }
+  }
+
+  private getContentType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    const map: Record<string, string> = {
+      '.html': 'text/html; charset=utf-8',
+      '.htm': 'text/html; charset=utf-8',
+      '.js': 'application/javascript; charset=utf-8',
+      '.mjs': 'application/javascript; charset=utf-8',
+      '.cjs': 'application/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.txt': 'text/plain; charset=utf-8',
+      '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+      '.eot': 'application/vnd.ms-fontobject',
+      '.otf': 'font/otf'
+    };
+    return map[ext] || 'application/octet-stream';
+  }
+}

@@ -110,11 +110,15 @@ export class FolderService implements IFolderService {
     }
   }
 
-  async updateFolder(id: string, data: Partial<FolderEntity>): Promise<FolderEntity> {
+  async updateFolder(id: string, data: Partial<FolderEntity>, userId?: string): Promise<FolderEntity> {
     try {
       const existingFolder = await this.findFolderById(id);
       if (!existingFolder) {
         throw this.errorHandler.createFolderNotFoundError(id);
+      }
+
+      if (userId && existingFolder.userId && existingFolder.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to update this folder');
       }
 
       // Validate name if being updated
@@ -133,11 +137,15 @@ export class FolderService implements IFolderService {
     }
   }
 
-  async deleteFolder(id: string): Promise<boolean> {
+  async deleteFolder(id: string, userId?: string): Promise<boolean> {
     try {
       const folder = await this.findFolderById(id);
       if (!folder) {
         throw this.errorHandler.createFolderNotFoundError(id);
+      }
+
+      if (userId && folder.userId && folder.userId !== userId) {
+        throw this.errorHandler.createValidationError('You do not have permission to delete this folder');
       }
 
       // Check if folder has children

@@ -47,8 +47,8 @@ export interface IFolderService {
   createFolder(name: string, parentId?: string, userId?: string): Promise<FolderEntity>;
   getFolders(parentId?: string): Promise<FolderEntity[]>;
   getFoldersWithFiles(parentId?: string, userId?: string): Promise<FolderWithFiles[]>;
-  updateFolder(id: string, data: Partial<FolderEntity>): Promise<FolderEntity>;
-  deleteFolder(id: string): Promise<boolean>;
+  updateFolder(id: string, data: Partial<FolderEntity>, userId?: string): Promise<FolderEntity>;
+  deleteFolder(id: string, userId?: string): Promise<boolean>;
   shareFolderWithUsers(folderId: string, userId: string, sharedWithUserIds: string[], accessLevel?: AccessLevel): Promise<any[]>;
   getFoldersSharedWithUser(userId: string): Promise<FolderEntity[]>;
 }
