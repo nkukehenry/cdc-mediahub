@@ -572,22 +572,21 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async trackView(id: string, userId?: string, ipAddress?: string, userAgent?: string): Promise<void> {
+  async trackView(id: string, userId?: string, viewerToken?: string, ipAddress?: string, userAgent?: string): Promise<void> {
     try {
       const post = await this.postRepository.findById(id);
       if (!post) {
         return; // Silently fail for tracking
       }
 
-      // Record view in post_views table
-      await this.postRepository.recordView(id, userId, ipAddress, userAgent);
+      // Record view in post_views table and determine if this visitor is unique
+      const recorded = await this.postRepository.recordView(id, userId, viewerToken, ipAddress, userAgent);
+      if (!recorded) {
+        this.logger.debug('Post view already counted', { postId: id, userId, viewerToken, ipAddress });
+        return;
+      }
 
-      // Check if this is a unique view - check if user/IP already viewed
-      // For simplicity, increment unique_hits if userId is provided (assume unique)
-      // In production, you'd query post_views to check for duplicates
-      const isUnique = !!userId;
-
-      await this.postRepository.incrementViews(id, isUnique);
+      await this.postRepository.incrementViews(id);
       
       this.logger.debug('Post view tracked', { postId: id, userId, ipAddress });
     } catch (error) {

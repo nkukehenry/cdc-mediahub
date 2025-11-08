@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { IPublicationService, PublicationStatus, PublicationFilters } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
@@ -122,7 +123,27 @@ export class PostController {
       const userId = req.user?.userId;
       const ipAddress = req.ip;
       const userAgent = req.get('user-agent');
-      this.postService.trackView(post.id, userId, ipAddress, userAgent).catch((err: Error) => {
+      const viewerCookieName = 'mhub_viewer';
+      let viewerToken: string | undefined = undefined;
+
+      const existingViewerCookie = (req as any).cookies ? (req as any).cookies[viewerCookieName] : undefined;
+      this.logger.debug('Incoming viewer cookie', { viewerCookieName, existingViewerCookie });
+      if (typeof existingViewerCookie === 'string' && existingViewerCookie.trim().length > 0) {
+        viewerToken = existingViewerCookie;
+      } else {
+        viewerToken = uuidv4();
+        const isSecure = req.secure || req.get('x-forwarded-proto') === 'https';
+        const cookieOptions = {
+          maxAge: 1000 * 60 * 60 * 24 * 365, // 1 year
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: isSecure,
+        } as const;
+        res.cookie(viewerCookieName, viewerToken, cookieOptions);
+        this.logger.debug('Viewer cookie set', { viewerToken, cookieOptions });
+      }
+
+      this.postService.trackView(post.id, userId, viewerToken, ipAddress, userAgent).catch((err: Error) => {
         this.logger.warn('Failed to track view', err);
       });
 

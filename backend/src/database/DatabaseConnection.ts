@@ -608,16 +608,33 @@ export class DatabaseConnection {
           id VARCHAR(36) PRIMARY KEY,
           post_id VARCHAR(36) NOT NULL,
           user_id VARCHAR(36),
+          viewer_token VARCHAR(191),
           ip_address VARCHAR(45),
           user_agent TEXT,
           viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
           INDEX idx_post_id (post_id),
-          INDEX idx_user_id (user_id)
+          INDEX idx_user_id (user_id),
+          INDEX idx_post_viewer_token (post_id, viewer_token)
         )
         CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
+
+      const viewerTokenColumn = await DatabaseUtils.findMany<any>(`SHOW COLUMNS FROM post_views LIKE 'viewer_token'`);
+      if (viewerTokenColumn.length === 0) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE post_views ADD COLUMN viewer_token VARCHAR(191)`);
+      }
+
+      const postViewerIndex = await DatabaseUtils.findMany<any>(`SHOW INDEX FROM post_views WHERE Key_name = 'idx_post_viewer_token'`);
+      if (postViewerIndex.length === 0) {
+        await DatabaseUtils.executeQuery(`CREATE INDEX idx_post_viewer_token ON post_views (post_id, viewer_token)`);
+      }
+
+      const postUserIndex = await DatabaseUtils.findMany<any>(`SHOW INDEX FROM post_views WHERE Key_name = 'idx_post_user'`);
+      if (postUserIndex.length === 0) {
+        await DatabaseUtils.executeQuery(`CREATE INDEX idx_post_user ON post_views (post_id, user_id)`);
+      }
 
       await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS post_likes (

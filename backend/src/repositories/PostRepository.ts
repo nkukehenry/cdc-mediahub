@@ -730,41 +730,63 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async incrementViews(id: string, isUnique: boolean): Promise<void> {
+  async incrementViews(id: string): Promise<void> {
     try {
       await DatabaseUtils.executeQuery(
-        'UPDATE posts SET views = views + 1 WHERE id = ?',
+        'UPDATE posts SET views = views + 1, unique_hits = unique_hits + 1 WHERE id = ?',
         [id]
       );
-
-      if (isUnique) {
-        await DatabaseUtils.executeQuery(
-          'UPDATE posts SET unique_hits = unique_hits + 1 WHERE id = ?',
-          [id]
-        );
-      }
-
-      this.logger.debug('Post views incremented', { postId: id, isUnique });
+      this.logger.debug('Post views incremented', { postId: id });
     } catch (error) {
       this.logger.error('Failed to increment post views', error as Error, { postId: id });
       throw this.errorHandler.createDatabaseError('Failed to increment post views', 'update', 'posts');
     }
   }
 
-  async recordView(postId: string, userId?: string, ipAddress?: string, userAgent?: string): Promise<void> {
+  async recordView(postId: string, userId?: string, viewerToken?: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
     try {
+      let existing: any = null;
+
+      if (userId) {
+        existing = await DatabaseUtils.findOne<any>(
+          'SELECT id FROM post_views WHERE post_id = ? AND user_id = ? LIMIT 1',
+          [postId, userId]
+        );
+      }
+
+      if (!existing && viewerToken) {
+        existing = await DatabaseUtils.findOne<any>(
+          'SELECT id FROM post_views WHERE post_id = ? AND viewer_token = ? LIMIT 1',
+          [postId, viewerToken]
+        );
+      }
+
+      if (!existing && ipAddress && userAgent) {
+        existing = await DatabaseUtils.findOne<any>(
+          'SELECT id FROM post_views WHERE post_id = ? AND ip_address = ? AND user_agent = ? LIMIT 1',
+          [postId, ipAddress, userAgent]
+        );
+      }
+
+      if (existing) {
+        this.logger.debug('Post view already recorded for viewer', { postId, userId, viewerToken, ipAddress });
+        return false;
+      }
+
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
 
       await DatabaseUtils.executeQuery(
-        `INSERT INTO post_views (id, post_id, user_id, ip_address, user_agent, viewed_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, postId, userId || null, ipAddress || null, userAgent || null, now]
+        `INSERT INTO post_views (id, post_id, user_id, viewer_token, ip_address, user_agent, viewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, postId, userId || null, viewerToken || null, ipAddress || null, userAgent || null, now]
       );
 
-      this.logger.debug('Post view recorded', { postId, userId, ipAddress });
+      this.logger.debug('Post view recorded', { postId, userId, viewerToken, ipAddress });
+      return true;
     } catch (error) {
       this.logger.error('Failed to record post view', error as Error, { postId });
       // Don't throw - view tracking failures shouldn't break requests
+      return false;
     }
   }
 

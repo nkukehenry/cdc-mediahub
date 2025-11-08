@@ -593,8 +593,8 @@ export interface IPublicationRepository {
   search(query: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   update(id: string, data: UpdatePublicationData): Promise<PublicationEntity>;
   delete(id: string): Promise<boolean>;
-  incrementViews(id: string, isUnique: boolean): Promise<void>;
-  recordView(publicationId: string, userId?: string, ipAddress?: string, userAgent?: string): Promise<void>;
+  incrementViews(id: string): Promise<void>;
+  recordView(publicationId: string, userId?: string, viewerToken?: string, ipAddress?: string, userAgent?: string): Promise<boolean>;
   addSubcategory(publicationId: string, subcategoryId: string): Promise<boolean>;
   removeSubcategory(publicationId: string, subcategoryId: string): Promise<boolean>;
   addAttachment(publicationId: string, fileId: string, displayOrder?: number): Promise<boolean>;
@@ -672,7 +672,7 @@ export interface IPublicationService {
   deletePublication(id: string, userId?: string): Promise<boolean>;
   approvePublication(id: string, approverId: string): Promise<PublicationEntity>;
   rejectPublication(id: string, approverId: string): Promise<PublicationEntity>;
-  trackView(id: string, userId?: string, ipAddress?: string, userAgent?: string): Promise<void>;
+  trackView(id: string, userId?: string, viewerToken?: string, ipAddress?: string, userAgent?: string): Promise<void>;
   searchPublications(query: string, limit?: number, offset?: number): Promise<PublicationWithRelations[]>;
   likePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;
   unlikePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;
