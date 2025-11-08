@@ -1047,25 +1047,23 @@ export class PostRepository implements IPublicationRepository {
   }
 
   private normalizeTagSlugs(tags: string[]): string[] {
-    const slugs = new Set<string>();
-
-    tags
-      .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
-      .filter(tag => tag.length > 0)
-      .forEach(tag => {
-        const slug = tag
-          .toLowerCase()
-          .normalize('NFKD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 50);
-        if (slug.length > 0) {
-          slugs.add(slug);
-        }
-      });
-
-    return Array.from(slugs);
+    return Array.from(
+      new Set(
+        tags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter((tag) => tag.length > 0)
+          .map((tag) =>
+            tag
+              .toLowerCase()
+              .normalize('NFKD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .slice(0, 50)
+          )
+          .filter((slug) => slug.length > 0)
+      )
+    );
   }
 }
 
