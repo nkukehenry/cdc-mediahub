@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, File as FileIcon, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn, validateFileType, validateFileSize, formatFileSize } from '@/utils/fileUtils';
@@ -30,6 +30,11 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
   const { t } = useTranslation();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const uploadFilesRef = useRef<UploadFile[]>([]);
+
+  useEffect(() => {
+    uploadFilesRef.current = uploadFiles;
+  }, [uploadFiles]);
 
   // Reset files when modal closes
   useEffect(() => {
@@ -112,13 +117,17 @@ export default function UploadModal({ isOpen, onClose, onUpload, folderId, disab
       
       // Wait a bit for state updates, then notify parent component
       setTimeout(async () => {
-        setUploadFiles(currentFiles => {
-          const successfulFiles = currentFiles.filter(f => f.status === 'success').map(f => f.file);
-          if (successfulFiles.length > 0) {
-            onUpload(successfulFiles, folderId).catch(console.error);
+        const successfulFiles = uploadFilesRef.current
+          .filter(f => f.status === 'success')
+          .map(f => f.file);
+
+        if (successfulFiles.length > 0) {
+          try {
+            await onUpload(successfulFiles, folderId);
+          } catch (uploadError) {
+            console.error(uploadError);
           }
-          return currentFiles;
-        });
+        }
 
         // Close modal after showing success state
         setTimeout(() => {

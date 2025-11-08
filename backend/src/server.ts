@@ -22,7 +22,7 @@ import { FileShareRepository } from './repositories/FileShareRepository';
 import { FolderShareRepository } from './repositories/FolderShareRepository';
 import { SettingsRepository } from './repositories/SettingsRepository';
 import { TagRepository } from './repositories/TagRepository';
-import { UserEntity, FileEntity } from './interfaces';
+import { UserEntity, FileEntity, FolderWithFiles } from './interfaces';
 import { FileService } from './services/FileService';
 import { FolderService } from './services/FolderService';
 import { AuthService } from './services/AuthService';
@@ -1003,8 +1003,10 @@ export class FileManagerServer {
           
           // Evict caches for owner and recipients
           await this.cacheDelPattern('folders', userId);
+          await this.cacheDelPattern('folders-tree', userId);
           for (const recipientId of userIds) {
             await this.cacheDelPattern('folders', recipientId);
+            await this.cacheDelPattern('folders-tree', recipientId);
           }
 
           return res.json({
@@ -1193,8 +1195,10 @@ export class FileManagerServer {
           // Evict caches impacted by move
           await this.cacheDelPattern('files', userId);
           await this.cacheDelPattern('folders', userId);
+          await this.cacheDelPattern('folders-tree', userId);
           await this.cacheDelPattern('files');
           await this.cacheDelPattern('folders');
+          await this.cacheDelPattern('folders-tree');
 
           return res.json({ success: true, data: { moved: movedCount } });
         } catch (error) {
@@ -3216,6 +3220,8 @@ export class FileManagerServer {
       await this.cacheDelPattern('files');
       await this.cacheDelPattern('folders', userId);
       await this.cacheDelPattern('folders');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
     } catch (error) {
       this.logger.error('File upload failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
@@ -3388,6 +3394,10 @@ export class FileManagerServer {
       await this.cacheDelPattern('folders', userId);
       await this.cacheDelPattern('files');
       await this.cacheDelPattern('folders');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
     } catch (error) {
       this.logger.error('File rename failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
@@ -3453,6 +3463,8 @@ export class FileManagerServer {
       // Evict caches for folders tree and lists
       await this.cacheDelPattern('folders', userId);
       await this.cacheDelPattern('folders');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
     } catch (error) {
       this.logger.error('Folder creation failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
@@ -3501,6 +3513,62 @@ export class FileManagerServer {
     }
   }
 
+  private collectFolderOwnerIdsFromTree(folders: FolderWithFiles[], ownerIds: Set<string>): void {
+    for (const folder of folders) {
+      const ownerId = (folder as any)?.userId;
+      if (ownerId) {
+        ownerIds.add(ownerId);
+      }
+      if (folder.subfolders && folder.subfolders.length > 0) {
+        this.collectFolderOwnerIdsFromTree(folder.subfolders, ownerIds);
+      }
+    }
+  }
+
+  private mapFolderTreeForResponse(
+    folders: FolderWithFiles[],
+    req: express.Request,
+    ownersMap: Record<string, UserEntity>
+  ): any[] {
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+    const mapFile = (file: FileEntity) => ({
+      id: file.id,
+      filename: file.filename,
+      originalName: file.originalName,
+      filePath: file.filePath,
+      thumbnailPath: file.thumbnailPath ?? null,
+      fileSize: file.fileSize,
+      mimeType: file.mimeType,
+      folderId: file.folderId ?? null,
+      createdAt: file.createdAt instanceof Date ? file.createdAt.toISOString() : file.createdAt,
+      updatedAt: file.updatedAt instanceof Date ? file.updatedAt.toISOString() : file.updatedAt,
+      downloadUrl: `${baseUrl}/api/files/${file.id}/download`,
+      thumbnailUrl: file.thumbnailPath ? `${baseUrl}/${file.thumbnailPath.replace(/\\/g, '/')}` : null
+    });
+
+    const mapFolder = (folder: FolderWithFiles): any => {
+      const ownerId = (folder as any)?.userId;
+      const owner = ownerId ? ownersMap[ownerId] : undefined;
+      const createdBy = owner ? { id: owner.id, username: owner.username } : null;
+
+      return {
+        id: folder.id,
+        name: folder.name,
+        parentId: folder.parentId ?? null,
+        userId: ownerId ?? null,
+        createdAt: folder.createdAt instanceof Date ? folder.createdAt.toISOString() : folder.createdAt,
+        updatedAt: folder.updatedAt instanceof Date ? folder.updatedAt.toISOString() : folder.updatedAt,
+        createdBy,
+        sharedBy: createdBy,
+        files: (folder.files || []).map(mapFile),
+        subfolders: (folder.subfolders || []).map(mapFolder)
+      };
+    };
+
+    return folders.map(mapFolder);
+  }
+
   private async handleFolderTree(req: express.Request, res: express.Response): Promise<void> {
     try {
       const { parentId } = req.query;
@@ -3516,32 +3584,33 @@ export class FileManagerServer {
         return;
       }
 
-      // Use service method that filters folders by user
+      const cacheNamespace = 'folders-tree';
       const cacheId = `tree:${folderParentId || 'root'}`;
-      const cached = await this.cacheGet<any[]>('folders', cacheId, userId);
-      const folders = cached ?? await this.folderService.getFolders(folderParentId);
-      if (!cached) await this.cacheSet('folders', cacheId, folders, userId);
+      const cached = await this.cacheGet<any[]>(cacheNamespace, cacheId, userId);
 
-      // Resolve creators in batch
-      const ownerIds = Array.from(new Set(folders.map((f: any) => f.userId).filter(Boolean))) as string[];
-      const ownersMap: Record<string, any> = {};
-      for (const oid of ownerIds) {
-        const u = await this.userRepository.findById(oid);
-        if (u) ownersMap[oid] = u;
+      let responseTree: any[] | null = cached ?? null;
+
+      if (!responseTree) {
+        const foldersWithFiles = await this.folderService.getFoldersWithFiles(folderParentId, userId);
+
+        const ownerIds = new Set<string>();
+        this.collectFolderOwnerIdsFromTree(foldersWithFiles, ownerIds);
+
+        const ownersMap: Record<string, UserEntity> = {};
+        for (const ownerId of ownerIds) {
+          const owner = await this.userRepository.findById(ownerId);
+          if (owner) {
+            ownersMap[ownerId] = owner;
+          }
+        }
+
+        responseTree = this.mapFolderTreeForResponse(foldersWithFiles, req, ownersMap);
+        await this.cacheSet(cacheNamespace, cacheId, responseTree, userId);
       }
-      const foldersEnriched = folders.map((folder: any) => {
-        const owner = folder.userId ? ownersMap[folder.userId] : undefined;
-        return {
-          ...folder,
-          createdBy: owner ? { id: owner.id, username: owner.username } : null,
-          sharedBy: owner ? { id: owner.id, username: owner.username } : null
-        };
-      });
-      if (!cached) await this.cacheSet('folders', cacheId, foldersEnriched, userId);
 
       res.json({
         success: true,
-        data: { folders: foldersEnriched }
+        data: { folders: responseTree }
       });
     } catch (error) {
       this.logger.error('Folder tree fetch failed', error as Error);
@@ -3580,6 +3649,8 @@ export class FileManagerServer {
 
       await this.cacheDelPattern('folders', userId);
       await this.cacheDelPattern('folders');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
     } catch (error) {
       this.logger.error('Folder update failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
@@ -3612,6 +3683,8 @@ export class FileManagerServer {
 
       await this.cacheDelPattern('folders', userId);
       await this.cacheDelPattern('folders');
+      await this.cacheDelPattern('folders-tree', userId);
+      await this.cacheDelPattern('folders-tree');
     } catch (error) {
       this.logger.error('Folder deletion failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));

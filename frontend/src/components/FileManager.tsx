@@ -58,7 +58,8 @@ import {
 import FileListRow from './FileListRow';
 import FileGridCard from './FileGridCard';
 
-const matchesAllowedMimeTypes = (file: FileWithUrls, allowedMimeTypes?: string[]) => {
+const matchesAllowedMimeTypes = (file: FileWithUrls | undefined, allowedMimeTypes?: string[]) => {
+  if (!file) return false;
   if (!allowedMimeTypes || allowedMimeTypes.length === 0) return true;
   return allowedMimeTypes.some(filter => {
     if (filter.endsWith('/*')) {
@@ -69,7 +70,7 @@ const matchesAllowedMimeTypes = (file: FileWithUrls, allowedMimeTypes?: string[]
   });
 };
 
-const filterFilesForPicker = (files: FileWithUrls[], allowedMimeTypes?: string[], mode?: 'manager' | 'picker') => {
+const filterFilesForPicker = (files: FileWithUrls[] = [], allowedMimeTypes?: string[], mode?: 'manager' | 'picker') => {
   if (mode !== 'picker') return files;
   return files.filter(file => matchesAllowedMimeTypes(file, allowedMimeTypes));
 };
@@ -122,7 +123,7 @@ export default function FileManager({
   const [renameTargetFile, setRenameTargetFile] = useState<FileWithUrls | null>(null);
 
   // Helper function to find a folder by ID in the tree structure
-  const findFolderById = (folders: FolderWithFiles[], folderId: string): FolderWithFiles | null => {
+  const findFolderById = (folders: FolderWithFiles[] =[], folderId: string): FolderWithFiles | null => {
     for (const folder of folders) {
       if (folder.id === folderId) {
         return folder;
@@ -161,10 +162,11 @@ export default function FileManager({
       name: folder.name,
       type: 'folder',
       lastModified: new Date(folder.updatedAt).toLocaleDateString(),
-      size: `${folder.files.length} files`,
-      icon: 'folder',
+      size: `${(folder?.files?.length || 0)} files`,
+      icon: Folder,
+      data: folder,
       isFolder: true,
-      data: folder
+      isShared: true,
     })),
     // Then shared files
     ...filterFilesForPicker(sharedFiles, allowedMimeTypes, mode).map(file => ({
@@ -183,10 +185,10 @@ export default function FileManager({
       name: folder.name,
       type: 'folder',
       lastModified: new Date(folder.updatedAt).toLocaleDateString(),
-      size: `${folder.files.length} files`,
-      icon: 'folder',
+      size: `${(folder?.files?.length || 0)} files`,
+      icon: Folder,
+      data: folder,
       isFolder: true,
-      data: folder
     })),
     ...currentFolderFiles.map(file => ({
       id: file.id,
@@ -205,10 +207,10 @@ export default function FileManager({
       name: folder.name,
       type: 'folder',
       lastModified: new Date(folder.updatedAt).toLocaleDateString(),
-      size: `${folder.files.length} files`,
-      icon: 'folder',
+      size: `${(folder?.files?.length || 0)} files`,
+      icon: Folder,
+      data: folder,
       isFolder: true,
-      data: folder
     })),
     ...filterFilesForPicker(rootFiles, allowedMimeTypes, mode).map(file => ({
       id: file.id,
@@ -331,7 +333,7 @@ export default function FileManager({
     const foldersWithSubfolders = new Set<string>();
     const collectFoldersWithSubfolders = (folders: FolderWithFiles[]) => {
       folders.forEach(folder => {
-        if (folder.subfolders.length > 0) {
+        if (folder?.subfolders && folder?.subfolders?.length > 0) {
           foldersWithSubfolders.add(folder.id);
           collectFoldersWithSubfolders(folder.subfolders);
         }
@@ -725,7 +727,7 @@ export default function FileManager({
           )}
         >
           {/* Expand/Collapse Button */}
-          {folder.subfolders.length > 0 ? (
+          {folder?.subfolders && folder?.subfolders?.length > 0 ? (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -758,7 +760,7 @@ export default function FileManager({
         </div>
         
         {/* Render subfolders if expanded */}
-        {expandedFolders.has(folder.id) && folder.subfolders.length > 0 && (
+        {expandedFolders.has(folder.id) && folder?.subfolders && folder?.subfolders?.length > 0 && (
           <div className="ml-2">
             {renderFolderTree(folder.subfolders, level + 1)}
           </div>
@@ -949,15 +951,15 @@ export default function FileManager({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
               {recentFiles.map((file) => (
                 <div
-                  key={file.id}
+                  key={file?.id || Math.random().toString()}
                   className="relative bg-white rounded-lg border border-gray-200 p-2 hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => handleFileClick(file)}
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
                       {getFileIcon({
-                        icon: file.mimeType.split('/')[0],
-                        type: file.mimeType.split('/')[0]
+                        icon: file?.mimeType?.split('/')?.[0] || '',
+                        type: file?.mimeType?.split('/')?.[0] || ''
                       })}
                     </div>
                     <button
@@ -968,10 +970,10 @@ export default function FileManager({
                       <MoreVertical size={12} className="text-gray-400" />
                     </button>
                   </div>
-                  <h3 className="text-xs font-medium text-gray-900 truncate mb-0.5">{file.originalName}</h3>
-                  <p className="text-[10px] text-gray-500">{file.mimeType.split('/')[0].toUpperCase()}, {formatFileSize(file.fileSize)}</p>
+                  <h3 className="text-xs font-medium text-gray-900 truncate mb-0.5">{file?.originalName || ''}</h3>
+                  <p className="text-[10px] text-gray-500">{file?.mimeType?.split('/')?.[0]?.toUpperCase() || ''}, {formatFileSize(file?.fileSize ?? 0)}</p>
 
-                  {recentMenuId === file.id && (
+                  {file && recentMenuId === file.id && (
                     <div className="absolute right-2 top-8 z-10 w-32 bg-white border border-gray-200 rounded-md shadow-lg py-1"
                       onClick={(e) => e.stopPropagation()}
                     >
