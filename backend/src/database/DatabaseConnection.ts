@@ -173,6 +173,27 @@ export class DatabaseConnection {
         await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN meta_description TEXT`);
         this.logger.info('Added meta_description column to posts table');
       }
+
+      const tablesToConvertCollation = [
+        'posts',
+        'tags',
+        'post_tags',
+        'post_subcategories',
+        'post_authors',
+        'post_attachments',
+        'post_views'
+      ];
+
+      for (const tableName of tablesToConvertCollation) {
+        try {
+          await DatabaseUtils.executeQuery(
+            `ALTER TABLE ${tableName} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+          );
+          this.logger.debug(`Converted table ${tableName} to utf8mb4_unicode_ci collation`);
+        } catch (conversionError) {
+          this.logger.warn(`Could not convert table ${tableName} collation`, conversionError as Error);
+        }
+      }
     } catch (error) {
       this.logger.error('Error during table migration', error as Error);
       // Don't throw - migration errors shouldn't stop initialization
@@ -197,6 +218,7 @@ export class DatabaseConnection {
           INDEX idx_parent_id (parent_id),
           INDEX idx_user_id (user_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Files table
@@ -204,11 +226,11 @@ export class DatabaseConnection {
         CREATE TABLE IF NOT EXISTS files (
           id VARCHAR(36) PRIMARY KEY,
           filename VARCHAR(255) NOT NULL,
-          original_name VARCHAR(255) NOT NULL,
+          original_name VARCHAR(255),
           file_path TEXT NOT NULL,
           thumbnail_path TEXT,
-          file_size BIGINT NOT NULL,
-          mime_type VARCHAR(255) NOT NULL,
+          file_size BIGINT,
+          mime_type VARCHAR(255),
           folder_id VARCHAR(36),
           user_id VARCHAR(36),
           access_type VARCHAR(20) DEFAULT 'private',
@@ -217,9 +239,9 @@ export class DatabaseConnection {
           FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL,
           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
           INDEX idx_folder_id (folder_id),
-          INDEX idx_user_id (user_id),
-          INDEX idx_access_type (access_type)
+          INDEX idx_user_id (user_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Users table
@@ -231,22 +253,18 @@ export class DatabaseConnection {
           password VARCHAR(255) NOT NULL,
           first_name VARCHAR(255),
           last_name VARCHAR(255),
-          avatar TEXT,
           phone VARCHAR(50),
           job_title VARCHAR(255),
           organization VARCHAR(255),
           bio TEXT,
+          avatar TEXT,
+          language VARCHAR(10) DEFAULT 'en',
           is_active TINYINT(1) DEFAULT 1,
           email_verified TINYINT(1) DEFAULT 0,
-          language VARCHAR(10) DEFAULT 'en',
-          last_login DATETIME,
-          password_reset_token VARCHAR(255),
-          password_reset_expires DATETIME,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX idx_email (email),
-          INDEX idx_username (username)
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Add new columns if they don't exist (migration)
@@ -293,6 +311,7 @@ export class DatabaseConnection {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_slug (slug)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Permissions table
@@ -306,6 +325,7 @@ export class DatabaseConnection {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_slug (slug)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // User roles junction table
@@ -321,6 +341,7 @@ export class DatabaseConnection {
           INDEX idx_user_id (user_id),
           INDEX idx_role_id (role_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Role permissions junction table
@@ -336,6 +357,7 @@ export class DatabaseConnection {
           INDEX idx_role_id (role_id),
           INDEX idx_permission_id (permission_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // File sharing table
@@ -351,49 +373,23 @@ export class DatabaseConnection {
           INDEX idx_file_id (file_id),
           INDEX idx_shared_with_user_id (shared_with_user_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
-      // Ensure a Public folder exists
-      try {
-        const existingPublic = await DatabaseUtils.findOne<any>('SELECT id FROM folders WHERE is_public = 1 LIMIT 1');
-        let pubId = existingPublic?.id;
-        if (!pubId) {
-          pubId = uuidv4();
-          await DatabaseUtils.executeQuery(
-            `INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES (?, ?, NULL, NULL, 'public', 1, NOW(), NOW())`,
-            [pubId, 'Public']
-          );
-          this.logger.info('Created Public folder');
-        }
-        // Create initial subfolders if none exist
-        const hasChildren = await DatabaseUtils.findOne<any>('SELECT id FROM folders WHERE parent_id = ? LIMIT 1', [pubId]);
-        if (!hasChildren) {
-          const names = ['Images', 'Videos', 'Audios', 'Documents'];
-          for (const n of names) {
-            await DatabaseUtils.executeQuery(
-              `INSERT INTO folders (id, name, parent_id, user_id, access_type, is_public, created_at, updated_at) VALUES (?, ?, ?, NULL, 'public', 1, NOW(), NOW())`,
-              [uuidv4(), n, pubId]
-            );
-          }
-          this.logger.info('Seeded initial public subfolders');
-        }
-      } catch (error) {
-        this.logger.warn('Error creating public folder', error as Error);
-      }
-
-      // Folder sharing table
+      // Folder shares table
       await DatabaseUtils.executeQuery(`
         CREATE TABLE IF NOT EXISTS folder_shares (
           id VARCHAR(36) PRIMARY KEY,
           folder_id VARCHAR(36) NOT NULL,
-          shared_with_user_id VARCHAR(36),
-          access_level VARCHAR(20) DEFAULT 'write',
+          shared_with_user_id VARCHAR(36) NOT NULL,
+          access_type VARCHAR(20) DEFAULT 'readonly',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE CASCADE,
           FOREIGN KEY (shared_with_user_id) REFERENCES users (id) ON DELETE CASCADE,
-          INDEX idx_folder_id (folder_id),
-          INDEX idx_shared_with_user_id (shared_with_user_id)
+          UNIQUE KEY unique_folder_user (folder_id, shared_with_user_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Categories table
@@ -410,6 +406,7 @@ export class DatabaseConnection {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_slug (slug)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Add cover_image column if it doesn't exist (migration)
@@ -443,6 +440,7 @@ export class DatabaseConnection {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY unique_name_slug (name, slug)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Category subcategories junction table (many-to-many)
@@ -458,6 +456,7 @@ export class DatabaseConnection {
           INDEX idx_category_id (category_id),
           INDEX idx_subcategory_id (subcategory_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Posts table
@@ -493,6 +492,7 @@ export class DatabaseConnection {
           INDEX idx_publication_date (publication_date),
           INDEX idx_slug (slug)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Tags table
@@ -507,6 +507,7 @@ export class DatabaseConnection {
           UNIQUE KEY unique_tag_slug (slug),
           INDEX idx_tag_name (name)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Post tags junction table
@@ -522,6 +523,7 @@ export class DatabaseConnection {
           INDEX idx_post_id (post_id),
           INDEX idx_tag_id (tag_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Post subcategories junction table
@@ -537,6 +539,7 @@ export class DatabaseConnection {
           INDEX idx_post_id (post_id),
           INDEX idx_subcategory_id (subcategory_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Post attachments junction table (files attached to posts)
@@ -553,6 +556,7 @@ export class DatabaseConnection {
           INDEX idx_post_id (post_id),
           INDEX idx_file_id (file_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Post authors junction table (associated authors)
@@ -568,6 +572,7 @@ export class DatabaseConnection {
           INDEX idx_post_id (post_id),
           INDEX idx_author_id (author_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Post views tracking table (for unique hits)
@@ -584,6 +589,7 @@ export class DatabaseConnection {
           INDEX idx_post_id (post_id),
           INDEX idx_user_id (user_id)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Navigation links table
@@ -599,6 +605,7 @@ export class DatabaseConnection {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Settings table (stores site configuration as JSON)
@@ -612,6 +619,7 @@ export class DatabaseConnection {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_key (\`key\`)
         )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
       // Run migrations for existing tables (must happen before index creation)
