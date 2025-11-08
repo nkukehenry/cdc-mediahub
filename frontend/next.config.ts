@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig = {
-  basePath: '/mediahub',
+ // basePath: '/mediahub',
   assetPrefix: '/mediahub',
   trailingSlash: false, // let Next.js add the trailing slash
   reactStrictMode: true,
