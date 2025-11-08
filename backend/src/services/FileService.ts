@@ -365,6 +365,11 @@ export class FileService implements IFileService {
   }
 
   private async checkFileAccess(fileId: string, userId: string | undefined, file: FileEntity): Promise<boolean> {
+    if (!userId) {
+      this.logger.debug('File access granted: public download', { fileId });
+      return true;
+    }
+
     // Owner always has access
     if (userId && file.userId && file.userId === userId) {
       this.logger.debug('File access granted: owner', { fileId, userId, fileUserId: file.userId });
