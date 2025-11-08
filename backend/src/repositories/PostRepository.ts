@@ -320,17 +320,29 @@ export class PostRepository implements IPublicationRepository {
         }
       }
 
-      const posts = await DatabaseUtils.findMany<any>(query, params);
-      this.logger.debug('findAll query executed', {
+      this.logger.debug('Executing findAll query', {
+        query,
+        params,
         filters,
         tagSlugs,
         limit,
         offset,
+      });
+      const posts = await DatabaseUtils.findMany<any>(query, params);
+      this.logger.debug('findAll query executed', {
         resultCount: posts.length,
       });
       return posts.map(post => this.mapToPublicationEntity(post));
     } catch (error) {
-      this.logger.error('Failed to find all posts', error as Error);
+      this.logger.error('Failed to find all posts', error as Error, {
+        filters,
+        tagSlugs,
+        limit,
+        offset,
+        params,
+        query,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       throw this.errorHandler.createDatabaseError('Failed to find all posts', 'select', 'posts');
     }
   }
