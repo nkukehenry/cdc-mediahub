@@ -265,6 +265,8 @@ function PublicationDetailsContent() {
   }
 
   const publication = currentPublication;
+  const firstAttachment = publication.attachments?.[0];
+  const hideCoverImage = Boolean(firstAttachment?.mimeType?.startsWith('video/'));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -283,7 +285,7 @@ function PublicationDetailsContent() {
         {/* Main Content */}
         <div className="bg-white rounded-lg shadow-md">
           {/* Cover Image */}
-          {publication.coverImage && (
+          {publication.coverImage && !hideCoverImage && (
             <div className="relative w-full h-64 md:h-96 overflow-hidden">
               <img
                 src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
@@ -306,7 +308,6 @@ function PublicationDetailsContent() {
                 return null;
               }
 
-              const firstAttachment = publication.attachments[0];
               if (!firstAttachment) {
                 return null;
               }
