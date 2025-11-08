@@ -16,24 +16,13 @@ import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 import { useAuth } from '@/hooks/useAuth';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { apiClient } from '@/utils/apiClient';
+import CommentsSection, { PublicationComment } from '@/components/CommentsSection';
 
 const COMMENTS_PAGE_SIZE = 10;
 
-interface PostComment {
-  id: string;
+interface PostComment extends PublicationComment {
   postId: string;
-  content: string;
-  createdAt: string;
   userId?: string | null;
-  authorName?: string | null;
-  authorEmail?: string | null;
-  author?: {
-    id?: string;
-    username?: string;
-    firstName?: string;
-    lastName?: string;
-    avatar?: string;
-  };
 }
 
 function PublicationDetailsContent() {
@@ -87,8 +76,7 @@ function PublicationDetailsContent() {
     }
   }, [currentPublication, dispatch]);
 
-  const publication = currentPublication;
-  const publicationId = publication?.id;
+  const publicationId = currentPublication?.id;
 
   const loadComments = useCallback(async (page = 1, replace = false) => {
     if (!publicationId) {
@@ -116,7 +104,8 @@ function PublicationDetailsContent() {
         throw new Error(response.error?.message || 'Failed to load comments');
       }
 
-      const fetchedComments: PostComment[] = response.data.comments ?? [];
+      const responseData = response.data;
+      const fetchedComments: PostComment[] = responseData.comments ?? [];
       setComments((prev) => {
         if (isInitial) {
           return fetchedComments;
@@ -126,7 +115,7 @@ function PublicationDetailsContent() {
         return [...prev, ...filtered];
       });
 
-      const pagination = response.data.pagination;
+      const pagination = responseData.pagination;
       if (pagination) {
         setCommentsPagination({
           total: pagination.total ?? fetchedComments.length,
@@ -166,13 +155,13 @@ function PublicationDetailsContent() {
   }, [publicationId, handleError]);
 
   useEffect(() => {
-     if (!publicationId || !publication) {
+     if (!publicationId || !currentPublication) {
        return;
      }
  
-     setLikesCount(publication.likesCount ?? publication.likes ?? 0);
-     setIsLiked(Boolean(publication.isLiked));
-     setCommentsCount(publication.commentsCount ?? publication.comments ?? 0);
+     setLikesCount(currentPublication.likesCount ?? currentPublication.likes ?? 0);
+     setIsLiked(Boolean(currentPublication.isLiked));
+     setCommentsCount(currentPublication.commentsCount ?? currentPublication.comments ?? 0);
      setComments([]);
      setCommentsPagination({
        total: 0,
@@ -186,19 +175,11 @@ function PublicationDetailsContent() {
      setGuestEmail('');
  
      loadComments(1, true);
-  }, [
-    publicationId,
-    publication?.likesCount,
-    publication?.commentsCount,
-    publication?.likes,
-    publication?.comments,
-    publication?.isLiked,
-    loadComments,
-  ]);
+  }, [publicationId, currentPublication, loadComments]);
 
   // Load first attachment as blob for preview (similar to FilePreviewModal)
   useEffect(() => {
-    if (!publication?.attachments || publication.attachments.length === 0) {
+    if (!currentPublication?.attachments || currentPublication.attachments.length === 0) {
       // Clean up if no attachments
       if (mediaBlobUrlRef.current) {
         URL.revokeObjectURL(mediaBlobUrlRef.current);
@@ -209,7 +190,7 @@ function PublicationDetailsContent() {
     }
 
     // Get first attachment for preview
-    const firstAttachment = publication.attachments[0];
+    const firstAttachment = currentPublication.attachments[0];
     if (!firstAttachment) {
       return;
     }
@@ -259,7 +240,7 @@ function PublicationDetailsContent() {
       }
       setMediaBlobUrl(null);
     };
-  }, [publication?.id, publication?.attachments]);
+  }, [currentPublication?.id, currentPublication?.attachments]);
 
   // Close share menu when clicking outside
   useEffect(() => {
@@ -276,7 +257,7 @@ function PublicationDetailsContent() {
   }, [showShareMenu]);
 
   const handleToggleLike = async () => {
-    if (!publication) {
+    if (!currentPublication) {
       return;
     }
 
@@ -298,8 +279,8 @@ function PublicationDetailsContent() {
     setLikeLoading(true);
     try {
       const response = isLiked
-        ? await apiClient.unlikePost(publication.id)
-        : await apiClient.likePost(publication.id);
+        ? await apiClient.unlikePost(currentPublication.id)
+        : await apiClient.likePost(currentPublication.id);
 
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to update like status');
@@ -317,7 +298,7 @@ function PublicationDetailsContent() {
   const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
      event.preventDefault();
  
-    if (!publication) {
+    if (!currentPublication) {
       return;
     }
  
@@ -350,7 +331,7 @@ function PublicationDetailsContent() {
  
     setCommentSubmitting(true);
     try {
-      const response = await apiClient.addPostComment(publication.id, {
+      const response = await apiClient.addPostComment(currentPublication.id, {
         content: trimmedContent,
         authorName: finalAuthorName,
         authorEmail: finalAuthorEmail,
@@ -359,14 +340,15 @@ function PublicationDetailsContent() {
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to add comment');
       }
- 
+
+      const responseData = response.data;
       showSuccess('Comment added successfully.');
       setCommentContent('');
       if (!user) {
         setGuestName('');
         setGuestEmail('');
       }
-      setCommentsCount((prev) => response.data.commentsCount ?? prev + 1);
+      setCommentsCount((prev) => responseData.commentsCount ?? prev + 1);
       await loadComments(1, true);
     } catch (err) {
       handleError(err, 'Failed to add comment');
@@ -412,6 +394,54 @@ function PublicationDetailsContent() {
     if (mimeType.startsWith('audio/')) return Music;
     return FileText;
   };
+  const handleShare = () => {
+    setShowShareMenu((prev) => !prev);
+  };
+
+  const shareToSocial = (platform: 'twitter' | 'facebook' | 'linkedin' | 'whatsapp') => {
+    if (typeof window === 'undefined' || !currentPublication) {
+      return;
+    }
+
+    const shareUrl = window.location.href;
+    const title = encodeURIComponent(currentPublication.title);
+    const url = encodeURIComponent(shareUrl);
+
+    let shareLink = '';
+    switch (platform) {
+      case 'twitter':
+        shareLink = `https://twitter.com/intent/tweet?text=${title}&url=${url}`;
+        break;
+      case 'facebook':
+        shareLink = `https://www.facebook.com/sharer/sharer.php?u=${url}`;
+        break;
+      case 'linkedin':
+        shareLink = `https://www.linkedin.com/shareArticle?mini=true&url=${url}&title=${title}`;
+        break;
+      case 'whatsapp':
+        shareLink = `https://api.whatsapp.com/send?text=${title}%20${url}`;
+        break;
+      default:
+        break;
+    }
+
+    if (shareLink) {
+      window.open(shareLink, '_blank', 'noopener,noreferrer');
+    }
+    setShowShareMenu(false);
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+      await navigator.clipboard.writeText(shareUrl);
+      showSuccess('Link copied to clipboard.');
+    } catch (err) {
+      handleError(err, 'Failed to copy link');
+    } finally {
+      setShowShareMenu(false);
+    }
+  };
 
   const handleDownload = async (fileId: string, fileName: string) => {
     try {
@@ -425,62 +455,32 @@ function PublicationDetailsContent() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
-      console.error('Failed to download file:', err);
+      handleError(err, 'Failed to download file');
     }
   };
 
   const handlePreview = (attachment: any) => {
-    // Convert attachment to FileWithUrls format for preview modal
+    if (!attachment) {
+      return;
+    }
+
     const fileWithUrls: FileWithUrls = {
       id: attachment.id,
       filename: attachment.originalName,
       originalName: attachment.originalName,
       mimeType: attachment.mimeType,
-      fileSize: attachment.size,
-      filePath: attachment.filePath,
+      fileSize: attachment.size ?? 0,
+      filePath: attachment.filePath || '',
       downloadUrl: attachment.downloadUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/files/${attachment.id}/download`,
-      thumbnailUrl: attachment.mimeType?.startsWith('image/') ? attachment.downloadUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/files/${attachment.id}/download` : null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      folderId: undefined,
+      thumbnailPath: attachment.thumbnailPath,
+      thumbnailUrl: attachment.thumbnailUrl ?? null,
+      folderId: attachment.folderId,
+      createdAt: attachment.createdAt || new Date().toISOString(),
+      updatedAt: attachment.updatedAt || new Date().toISOString(),
     };
+
     setPreviewFile(fileWithUrls);
     setIsPreviewOpen(true);
-  };
-
-  const handleShare = () => {
-    if (typeof window === 'undefined' || !currentPublication) return;
-    
-    setShowShareMenu(!showShareMenu);
-  };
-
-  const shareToSocial = (platform: 'twitter' | 'facebook' | 'linkedin' | 'whatsapp') => {
-    if (typeof window === 'undefined' || !currentPublication) return;
-    
-    const url = encodeURIComponent(window.location.href);
-    const title = encodeURIComponent(currentPublication.title);
-    const text = encodeURIComponent(currentPublication.metaDescription || currentPublication.description || '');
-    
-    const shareUrls = {
-      twitter: `https://twitter.com/intent/tweet?url=${url}&text=${title}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}`,
-      whatsapp: `https://wa.me/?text=${title}%20${url}`,
-    };
-    
-    window.open(shareUrls[platform], '_blank', 'width=600,height=400');
-    setShowShareMenu(false);
-  };
-
-  const copyToClipboard = async () => {
-    if (typeof window === 'undefined') return;
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setShowShareMenu(false);
-      // You could show a toast notification here
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
-    }
   };
 
   if (loading) {
@@ -528,18 +528,17 @@ function PublicationDetailsContent() {
     );
   }
 
+  const publication = currentPublication!;
   const firstAttachment = publication.attachments?.[0];
   const firstAttachmentMime = firstAttachment?.mimeType || '';
   const isFirstAttachmentVideo = firstAttachmentMime.startsWith('video/');
-  const hideCoverImage = Boolean(firstAttachment?.mimeType?.startsWith('video/'));
-  const hasMoreComments = commentsPagination.page < commentsPagination.totalPages;
+  const commentsSectionEnabled = Boolean(publication.hasComments);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <PublicNav />
-      
+
       <div className="container mx-auto px-12 md:px-16 lg:px-24 xl:px-32 py-8 md:py-12">
-        {/* Back Button */}
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-au-grey-text hover:text-au-corporate-green transition-colors mb-6"
@@ -548,9 +547,7 @@ function PublicationDetailsContent() {
           <span>Back</span>
         </Link>
 
-        {/* Main Content */}
         <div className="bg-white rounded-lg shadow-md">
-          {/* Cover Image */}
           {publication.coverImage && !isFirstAttachmentVideo && (
             <div className="relative w-full h-64 md:h-96 overflow-hidden">
               <img
@@ -566,9 +563,7 @@ function PublicationDetailsContent() {
             </div>
           )}
 
-          {/* Content */}
           <div className="p-6 md:p-8 lg:p-12">
-            {/* First Attachment Preview - Show before title for all categories */}
             {(() => {
               if (!publication.attachments || publication.attachments.length === 0) {
                 return null;
@@ -629,10 +624,14 @@ function PublicationDetailsContent() {
                     ) : null}
                   </div>
                 );
-              } else if (firstAttachment && (isFirstAttachmentVideo || isAudio || isImage || isPdf)) {
-                // Show loading state while fetching blob
+              }
+
+              if (isFirstAttachmentVideo || isAudio || isImage || isPdf) {
                 return (
-                  <div className="mb-8 bg-gray-100 rounded-lg p-6 shadow-md flex items-center justify-center" style={{ minHeight: '200px' }}>
+                  <div
+                    className="mb-8 bg-gray-100 rounded-lg p-6 shadow-md flex items-center justify-center"
+                    style={{ minHeight: '200px' }}
+                  >
                     <div className="text-center">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-corporate-green mx-auto mb-2"></div>
                       <p className="text-sm text-gray-600">Loading preview...</p>
@@ -640,13 +639,11 @@ function PublicationDetailsContent() {
                   </div>
                 );
               }
-              
+
               return null;
             })()}
 
-            {/* Header */}
             <div className="mb-6">
-              {/* Category Badge */}
               {publication.category && (
                 <Link
                   href={`/category/${publication.category.slug}`}
@@ -656,19 +653,15 @@ function PublicationDetailsContent() {
                 </Link>
               )}
 
-              {/* Title */}
               <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-au-grey-text mb-4">
                 {publication.title}
               </h1>
 
-              {/* Meta Information */}
               <div className="flex flex-wrap items-center gap-4 md:gap-6 text-sm text-au-grey-text/70 mb-6">
                 {publication.creator && (
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    <span>
-                      {publication.creator.firstName || publication.creator.username}
-                    </span>
+                    <span>{publication.creator.firstName || publication.creator.username}</span>
                   </div>
                 )}
                 {publication.publicationDate && (
@@ -689,10 +682,9 @@ function PublicationDetailsContent() {
                 )}
               </div>
 
-              {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3 mb-6 relative">
                 <div className="relative" ref={shareMenuRef}>
-                  <button 
+                  <button
                     onClick={handleShare}
                     className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm"
                   >
@@ -747,8 +739,9 @@ function PublicationDetailsContent() {
                 </button>
               </div>
 
-              {/* Subcategories */}
-              {publication.subcategories && publication.subcategories.length > 0 && (
+            </div>
+
+            {publication.subcategories && publication.subcategories.length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-au-grey-text mb-2">Subcategories:</h3>
                   <div className="flex flex-wrap gap-2">
@@ -765,7 +758,6 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
-              {/* Description */}
               {publication.description && (
                 <div className="mb-8">
                   <div
@@ -775,7 +767,6 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
-              {/* Attachments */}
               {publication.attachments && publication.attachments.length > 0 && (
                 <div className="border-t border-gray-200 pt-8">
                   <h2 className="text-xl font-bold text-au-grey-text mb-4">Attachments</h2>
@@ -821,106 +812,28 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
-              {/* Comments Section */}
-               <div className="border-t border-gray-200 pt-8 mt-8">
-                {publication.hasComments ? (
-                  <>
-                    <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-                      <h2 className="text-xl font-bold text-au-grey-text">Comments ({commentsCount})</h2>
-                      {commentsCount > 0 && (
-                        <span className="text-sm text-au-grey-text/70">Showing {comments.length} of {commentsCount}</span>
-                      )}
-                    </div>
-
-                    <form onSubmit={handleCommentSubmit} className="mb-6 space-y-4">
-                      {!user && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-au-grey-text mb-1">Name *</label>
-                            <input
-                              type="text"
-                              value={guestName}
-                              onChange={(e) => setGuestName(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
-                              placeholder="Your name"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-au-grey-text mb-1">Email *</label>
-                            <input
-                              type="email"
-                              value={guestEmail}
-                              onChange={(e) => setGuestEmail(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
-                              placeholder="your@email.com"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-au-grey-text mb-1">Comment *</label>
-                        <textarea
-                          value={commentContent}
-                          onChange={(e) => setCommentContent(e.target.value)}
-                          rows={4}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
-                          placeholder="Share your thoughts..."
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={commentSubmitting}
-                          className="px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                        >
-                          {commentSubmitting ? 'Submitting...' : 'Post Comment'}
-                        </button>
-                      </div>
-                    </form>
-
-                    {commentsLoading && comments.length === 0 ? (
-                      <div className="space-y-4">
-                        <div className="h-20 bg-gray-100 rounded-lg animate-pulse"></div>
-                        <div className="h-20 bg-gray-100 rounded-lg animate-pulse"></div>
-                      </div>
-                    ) : comments.length === 0 ? (
-                      <p className="text-sm text-au-grey-text/70">No comments yet. Be the first to share your thoughts.</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {comments.map((comment) => (
-                          <div key={comment.id} className="p-4 bg-gray-50 rounded-lg">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-sm font-medium text-au-grey-text">
-                                {comment.authorName || comment.author?.firstName || comment.author?.username || 'Anonymous'}
-                              </div>
-                              <div className="text-xs text-au-grey-text/60">
-                                {formatDateTime(comment.createdAt)}
-                              </div>
-                            </div>
-                            <p className="text-sm text-au-grey-text leading-relaxed whitespace-pre-line">{comment.content}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {hasMoreComments && (
-                      <div className="flex justify-center mt-4">
-                        <button
-                          onClick={handleLoadMoreComments}
-                          disabled={commentsLoadingMore}
-                          className="px-4 py-2 bg-gray-100 text-au-grey-text rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                        >
-                          {commentsLoadingMore ? 'Loading...' : 'Load more comments'}
-                        </button>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-au-grey-text/70">Comments are disabled for this publication.</p>
-                )}
+              <div className="border-t border-gray-200 pt-8 mt-8">
+                <CommentsSection
+                  enabled={commentsSectionEnabled}
+                  user={user}
+                  comments={comments}
+                  commentsCount={commentsCount}
+                  commentsLoading={commentsLoading}
+                  commentsLoadingMore={commentsLoadingMore}
+                  pagination={commentsPagination}
+                  guestName={guestName}
+                  setGuestName={setGuestName}
+                  guestEmail={guestEmail}
+                  setGuestEmail={setGuestEmail}
+                  commentContent={commentContent}
+                  setCommentContent={setCommentContent}
+                  commentSubmitting={commentSubmitting}
+                  onSubmit={handleCommentSubmit}
+                  onLoadMore={handleLoadMoreComments}
+                  formatDateTime={formatDateTime}
+                />
               </div>
 
-            {/* Authors */}
             {publication.authors && publication.authors.length > 0 && (
               <div className="border-t border-gray-200 pt-8 mt-8">
                 <h2 className="text-xl font-bold text-au-grey-text mb-4">Authors</h2>
@@ -942,7 +855,6 @@ function PublicationDetailsContent() {
               </div>
             )}
 
-            {/* Related Publications Carousel */}
             {relatedPublications && relatedPublications.length > 0 && (
               <div className="border-t border-gray-200 pt-8 mt-8">
                 <PublicationsCarousel 
@@ -955,7 +867,6 @@ function PublicationDetailsContent() {
         </div>
       </div>
       
-      {/* File Preview Modal */}
       <FilePreviewModal
         isOpen={isPreviewOpen}
         onClose={() => {

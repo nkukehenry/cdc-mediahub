@@ -415,7 +415,7 @@ export default function PublicNav() {
                       />
                     ) : (
                       <img 
-                        src="logo.png" 
+                        src="./logo.png" 
                         alt="Site Logo" 
                         className="h-12 md:h-14 lg:h-16 w-auto"
                       />
