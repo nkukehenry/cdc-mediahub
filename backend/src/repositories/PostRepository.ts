@@ -29,6 +29,8 @@ export class PostRepository implements IPublicationRepository {
         uniqueHits: 0,
         isFeatured: postData.isFeatured ?? false,
         isLeaderboard: postData.isLeaderboard ?? false,
+        likesCount: 0,
+        commentsCount: 0,
         createdAt: new Date(now),
         updatedAt: new Date(now)
       };
@@ -44,6 +46,8 @@ export class PostRepository implements IPublicationRepository {
         has_comments: post.hasComments ? 1 : 0,
         views: post.views,
         unique_hits: post.uniqueHits,
+        likes_count: post.likesCount,
+        comments_count: post.commentsCount,
         is_featured: post.isFeatured ? 1 : 0,
         is_leaderboard: post.isLeaderboard ? 1 : 0,
         created_at: now,
@@ -1084,6 +1088,8 @@ export class PostRepository implements IPublicationRepository {
       uniqueHits: dbPost.unique_hits || 0,
       isFeatured: Boolean(dbPost.is_featured),
       isLeaderboard: Boolean(dbPost.is_leaderboard),
+      likesCount: dbPost.likes_count !== undefined && dbPost.likes_count !== null ? Number(dbPost.likes_count) : 0,
+      commentsCount: dbPost.comments_count !== undefined && dbPost.comments_count !== null ? Number(dbPost.comments_count) : 0,
       createdAt: new Date(dbPost.created_at),
       updatedAt: new Date(dbPost.updated_at)
     };
@@ -1107,6 +1113,37 @@ export class PostRepository implements IPublicationRepository {
           .filter((slug) => slug.length > 0)
       )
     );
+  }
+
+  async updateCounts(id: string, counts: { likesCount?: number; commentsCount?: number }): Promise<void> {
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (counts.likesCount !== undefined) {
+      updates.push('likes_count = ?');
+      params.push(counts.likesCount);
+    }
+
+    if (counts.commentsCount !== undefined) {
+      updates.push('comments_count = ?');
+      params.push(counts.commentsCount);
+    }
+
+    if (updates.length === 0) {
+      return;
+    }
+
+    params.push(id);
+
+    try {
+      await DatabaseUtils.executeQuery(
+        `UPDATE posts SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+    } catch (error) {
+      this.logger.error('Failed to update post counts', error as Error, { postId: id, counts });
+      throw this.errorHandler.createDatabaseError('Failed to update post counts', 'update', 'posts');
+    }
   }
 }
 

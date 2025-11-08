@@ -449,8 +449,12 @@ class ApiClient {
     if (filters?.categoryId) params.append('categoryId', filters.categoryId);
     if (filters?.subcategoryId) params.append('subcategoryId', filters.subcategoryId);
     if (filters?.search) params.append('search', filters.search);
-    if (filters?.limit) params.append('limit', filters.limit.toString());
-    if (filters?.offset) params.append('offset', filters.offset.toString());
+    if (filters?.limit !== undefined && Number.isFinite(filters.limit)) {
+      params.append('limit', Math.max(1, Math.floor(filters.limit)).toString());
+    }
+    if (filters?.offset !== undefined && Number.isFinite(filters.offset)) {
+      params.append('offset', Math.max(0, Math.floor(filters.offset)).toString());
+    }
     if (filters?.tags && filters.tags.length > 0) {
       filters.tags.forEach(tag => params.append('tags', tag));
     }
@@ -461,6 +465,39 @@ class ApiClient {
 
   async getPublicationBySlug(slug: string): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>(`/api/public/posts/${slug}`);
+  }
+
+  async likePost(postId: string): Promise<ApiResponse<{ liked: boolean; likes: number }>> {
+    return this.request<{ liked: boolean; likes: number }>(`/api/public/posts/${postId}/like`, {
+      method: 'POST',
+    });
+  }
+
+  async unlikePost(postId: string): Promise<ApiResponse<{ liked: boolean; likes: number }>> {
+    return this.request<{ liked: boolean; likes: number }>(`/api/public/posts/${postId}/like`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getPostComments(postId: string, params?: { limit?: number; offset?: number }): Promise<ApiResponse<{ comments: Array<any>; pagination?: { total: number; page: number; limit: number; offset: number; totalPages: number } }>> {
+    const searchParams = new URLSearchParams();
+    if (params?.limit !== undefined && Number.isFinite(params.limit)) {
+      searchParams.append('limit', Math.max(1, Math.floor(params.limit)).toString());
+    }
+    if (params?.offset !== undefined && Number.isFinite(params.offset)) {
+      searchParams.append('offset', Math.max(0, Math.floor(params.offset)).toString());
+    }
+    const queryString = searchParams.toString();
+    return this.request<{ comments: Array<any>; pagination?: { total: number; page: number; limit: number; offset: number; totalPages: number } }>(
+      `/api/public/posts/${postId}/comments${queryString ? `?${queryString}` : ''}`
+    );
+  }
+
+  async addPostComment(postId: string, data: { content: string; authorName?: string; authorEmail?: string }): Promise<ApiResponse<{ comment: any; commentsCount: number }>> {
+    return this.request<{ comment: any; commentsCount: number }>(`/api/public/posts/${postId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async searchPublications(query: string, limit?: number, offset?: number): Promise<ApiResponse<{ posts: Array<any> }>> {

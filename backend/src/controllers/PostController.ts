@@ -104,7 +104,7 @@ export class PostController {
   async getBySlug(req: Request, res: Response): Promise<void> {
     try {
       const { slug } = req.params;
-      const post = await this.postService.getPublicationBySlug(slug);
+      const post = await this.postService.getPublicationBySlug(slug, req.user?.userId);
 
       if (!post) {
         res.status(404).json({
@@ -132,6 +132,145 @@ export class PostController {
       });
     } catch (error) {
       this.logger.error('Get post by slug failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async like(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const { id } = req.params;
+      const result = await this.postService.likePublication(id, req.user.userId);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      this.logger.error('Like post failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async unlike(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const { id } = req.params;
+      const result = await this.postService.unlikePublication(id, req.user.userId);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      this.logger.error('Unlike post failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async getComments(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        const parsed = parseInt(req.query.limit as string, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          limit = parsed;
+        }
+      }
+
+      let offset: number | undefined;
+      if (req.query.offset !== undefined) {
+        const parsed = parseInt(req.query.offset as string, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          offset = parsed;
+        }
+      }
+
+      const result = await this.postService.getComments(id, { limit, offset });
+
+      res.json({
+        success: true,
+        data: {
+          comments: result.comments,
+          pagination: {
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            offset: result.offset,
+            totalPages: result.totalPages,
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.error('Get comments failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async createComment(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { content, authorName, authorEmail } = req.body || {};
+
+      if (!req.user) {
+        const trimmedName = typeof authorName === 'string' ? authorName.trim() : '';
+        const trimmedEmail = typeof authorEmail === 'string' ? authorEmail.trim() : '';
+
+        if (!trimmedName || !trimmedEmail) {
+          throw this.errorHandler.createValidationError('Name and email are required to comment', 'author');
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) {
+          throw this.errorHandler.createValidationError('Invalid email address', 'authorEmail');
+        }
+      }
+
+      const result = await this.postService.addComment(id, {
+        postId: id,
+        userId: req.user?.userId,
+        authorName,
+        authorEmail,
+        content,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          comment: result.comment,
+          commentsCount: result.commentsCount,
+        },
+      });
+    } catch (error) {
+      if ((error as any)?.type === 'VALIDATION_ERROR') {
+        res.status(400).json(this.errorHandler.formatErrorResponse(error as Error));
+        return;
+      }
+      this.logger.error('Create comment failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
     }
   }
@@ -420,7 +559,7 @@ export class PostController {
   async getById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const post = await this.postService.getPublication(id);
+      const post = await this.postService.getPublication(id, req.user?.userId);
 
       if (!post) {
         res.status(404).json({

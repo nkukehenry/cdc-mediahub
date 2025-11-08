@@ -43,10 +43,11 @@ export interface Publication {
   uniqueHits: number;
   isFeatured: boolean;
   isLeaderboard: boolean;
+  likesCount?: number;
+  commentsCount?: number;
+  isLiked?: boolean;
   createdAt: string;
   updatedAt: string;
-  comments?: number;
-  likes?: number;
   attachments?: Array<{
     id: string;
     originalName: string;
@@ -60,6 +61,8 @@ export interface Publication {
     name: string;
     slug: string;
   }>;
+  comments?: number;
+  likes?: number;
 }
 
 interface PublicationsState {

@@ -174,6 +174,18 @@ export class DatabaseConnection {
         this.logger.info('Added meta_description column to posts table');
       }
 
+      const postsHasLikesCount = await this.columnExists('posts', 'likes_count');
+      if (!postsHasLikesCount) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN likes_count INT DEFAULT 0`);
+        this.logger.info('Added likes_count column to posts table');
+      }
+
+      const postsHasCommentsCount = await this.columnExists('posts', 'comments_count');
+      if (!postsHasCommentsCount) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN comments_count INT DEFAULT 0`);
+        this.logger.info('Added comments_count column to posts table');
+      }
+
       const tablesToConvertCollation = [
         'posts',
         'tags',
@@ -492,6 +504,8 @@ export class DatabaseConnection {
           unique_hits INT DEFAULT 0,
           is_featured TINYINT(1) DEFAULT 0,
           is_leaderboard TINYINT(1) DEFAULT 0,
+          likes_count INT DEFAULT 0,
+          comments_count INT DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           FOREIGN KEY (category_id) REFERENCES categories (id),
@@ -597,6 +611,38 @@ export class DatabaseConnection {
           ip_address VARCHAR(45),
           user_agent TEXT,
           viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
+          INDEX idx_post_id (post_id),
+          INDEX idx_user_id (user_id)
+        )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await DatabaseUtils.executeQuery(`
+        CREATE TABLE IF NOT EXISTS post_likes (
+          id VARCHAR(191) PRIMARY KEY,
+          post_id VARCHAR(191) NOT NULL,
+          user_id VARCHAR(36) NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+          UNIQUE KEY unique_post_user (post_id, user_id),
+          INDEX idx_post_id (post_id),
+          INDEX idx_user_id (user_id)
+        )
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await DatabaseUtils.executeQuery(`
+        CREATE TABLE IF NOT EXISTS post_comments (
+          id VARCHAR(191) PRIMARY KEY,
+          post_id VARCHAR(191) NOT NULL,
+          user_id VARCHAR(36),
+          author_name VARCHAR(255),
+          author_email VARCHAR(255),
+          content TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
           INDEX idx_post_id (post_id),

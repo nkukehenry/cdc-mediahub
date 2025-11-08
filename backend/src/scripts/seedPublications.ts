@@ -7,6 +7,8 @@ import { UserRepository } from '../repositories/UserRepository';
 import { FileRepository } from '../repositories/FileRepository';
 import { TagRepository } from '../repositories/TagRepository';
 import { CreatePublicationData } from '../interfaces';
+import { PostLikeRepository } from '../repositories/PostLikeRepository';
+import { PostCommentRepository } from '../repositories/PostCommentRepository';
 
 const logger = getLogger('SeedPublications');
 
@@ -98,7 +100,15 @@ export async function seedPublications(count: number = 30): Promise<void> {
     const fileRepository = new FileRepository();
     const postRepository = new PostRepository();
     const tagRepository = new TagRepository();
-    const postService = new PostService(postRepository, categoryRepository, userRepository, fileRepository, tagRepository);
+    const postService = new PostService(
+      postRepository,
+      categoryRepository,
+      userRepository,
+      fileRepository,
+      tagRepository,
+      new PostLikeRepository(),
+      new PostCommentRepository()
+    );
 
     // Get all categories
     const categories = await categoryRepository.findAll();

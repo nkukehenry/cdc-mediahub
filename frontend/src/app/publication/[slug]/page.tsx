@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, useRef, useCallback, FormEvent } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, User, Eye, MessageCircle, Heart, Share2, Download, FileText, Image as ImageIcon, Video, Music, Eye as EyeIcon } from 'lucide-react';
 import PublicNav from '@/components/PublicNav';
@@ -13,9 +13,32 @@ import FilePreviewModal from '@/components/FilePreviewModal';
 import { FileWithUrls } from '@/types/fileManager';
 import PublicationsCarousel from '@/components/PublicationsCarousel';
 import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
+import { useAuth } from '@/hooks/useAuth';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { apiClient } from '@/utils/apiClient';
+
+const COMMENTS_PAGE_SIZE = 10;
+
+interface PostComment {
+  id: string;
+  postId: string;
+  content: string;
+  createdAt: string;
+  userId?: string | null;
+  authorName?: string | null;
+  authorEmail?: string | null;
+  author?: {
+    id?: string;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    avatar?: string;
+  };
+}
 
 function PublicationDetailsContent() {
   const params = useParams();
+  const router = useRouter();
   const dispatch = useDispatch();
   const slug = params?.slug as string;
   const { currentPublication, loading, error, relatedPublications } = useSelector((state: RootState) => state.publications);
@@ -25,6 +48,28 @@ function PublicationDetailsContent() {
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
   const mediaBlobUrlRef = useRef<string | null>(null);
+  const { user } = useAuth();
+  const { handleError, showWarning, showSuccess } = useErrorHandler();
+
+  const [likesCount, setLikesCount] = useState<number>(0);
+  const [isLiked, setIsLiked] = useState<boolean>(false);
+  const [likeLoading, setLikeLoading] = useState<boolean>(false);
+
+  const [commentsCount, setCommentsCount] = useState<number>(0);
+  const [comments, setComments] = useState<PostComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState<boolean>(false);
+  const [commentsLoadingMore, setCommentsLoadingMore] = useState<boolean>(false);
+  const [commentsPagination, setCommentsPagination] = useState({
+    total: 0,
+    page: 1,
+    totalPages: 1,
+    limit: COMMENTS_PAGE_SIZE,
+    offset: 0,
+  });
+  const [commentContent, setCommentContent] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     if (slug) {
@@ -32,7 +77,6 @@ function PublicationDetailsContent() {
     }
   }, [slug, dispatch]);
 
-  // Fetch related publications when current publication is loaded
   useEffect(() => {
     if (currentPublication && currentPublication.categoryId) {
       dispatch(fetchRelatedPublications({
@@ -43,9 +87,118 @@ function PublicationDetailsContent() {
     }
   }, [currentPublication, dispatch]);
 
+  const publication = currentPublication;
+  const publicationId = publication?.id;
+
+  const loadComments = useCallback(async (page = 1, replace = false) => {
+    if (!publicationId) {
+      return;
+    }
+
+    const safePage = Math.max(1, page);
+    const limit = COMMENTS_PAGE_SIZE;
+    const offset = (safePage - 1) * limit;
+    const isInitial = replace || safePage === 1;
+
+    if (isInitial) {
+      setCommentsLoading(true);
+    } else {
+      setCommentsLoadingMore(true);
+    }
+
+    try {
+      const response = await apiClient.getPostComments(publicationId, {
+        limit,
+        offset,
+      });
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to load comments');
+      }
+
+      const fetchedComments: PostComment[] = response.data.comments ?? [];
+      setComments((prev) => {
+        if (isInitial) {
+          return fetchedComments;
+        }
+        const existingIds = new Set(prev.map((comment) => comment.id));
+        const filtered = fetchedComments.filter((comment) => !existingIds.has(comment.id));
+        return [...prev, ...filtered];
+      });
+
+      const pagination = response.data.pagination;
+      if (pagination) {
+        setCommentsPagination({
+          total: pagination.total ?? fetchedComments.length,
+          page: pagination.page ?? safePage,
+          totalPages: pagination.totalPages ?? Math.max(1, Math.ceil((pagination.total ?? fetchedComments.length) / (pagination.limit ?? limit))),
+          limit: pagination.limit ?? limit,
+          offset: pagination.offset ?? offset,
+        });
+
+        if (typeof pagination.total === 'number') {
+          setCommentsCount(pagination.total);
+        } else {
+          setCommentsCount((prev) => (isInitial ? fetchedComments.length : prev + fetchedComments.length));
+        }
+      } else {
+        setCommentsPagination((prev) => {
+          const newTotal = isInitial ? fetchedComments.length : prev.total + fetchedComments.length;
+          return {
+            total: newTotal,
+            page: safePage,
+            totalPages: Math.max(1, Math.ceil(newTotal / limit)),
+            limit,
+            offset,
+          };
+        });
+        setCommentsCount((prev) => (isInitial ? fetchedComments.length : prev + fetchedComments.length));
+      }
+    } catch (err) {
+      handleError(err, 'Failed to load comments');
+    } finally {
+      if (isInitial) {
+        setCommentsLoading(false);
+      } else {
+        setCommentsLoadingMore(false);
+      }
+    }
+  }, [publicationId, handleError]);
+
+  useEffect(() => {
+     if (!publicationId || !publication) {
+       return;
+     }
+ 
+     setLikesCount(publication.likesCount ?? publication.likes ?? 0);
+     setIsLiked(Boolean(publication.isLiked));
+     setCommentsCount(publication.commentsCount ?? publication.comments ?? 0);
+     setComments([]);
+     setCommentsPagination({
+       total: 0,
+       page: 1,
+       totalPages: 1,
+       limit: COMMENTS_PAGE_SIZE,
+       offset: 0,
+     });
+     setCommentContent('');
+     setGuestName('');
+     setGuestEmail('');
+ 
+     loadComments(1, true);
+  }, [
+    publicationId,
+    publication?.likesCount,
+    publication?.commentsCount,
+    publication?.likes,
+    publication?.comments,
+    publication?.isLiked,
+    loadComments,
+  ]);
+
   // Load first attachment as blob for preview (similar to FilePreviewModal)
   useEffect(() => {
-    if (!currentPublication?.attachments || currentPublication.attachments.length === 0) {
+    if (!publication?.attachments || publication.attachments.length === 0) {
       // Clean up if no attachments
       if (mediaBlobUrlRef.current) {
         URL.revokeObjectURL(mediaBlobUrlRef.current);
@@ -56,7 +209,7 @@ function PublicationDetailsContent() {
     }
 
     // Get first attachment for preview
-    const firstAttachment = currentPublication.attachments[0];
+    const firstAttachment = publication.attachments[0];
     if (!firstAttachment) {
       return;
     }
@@ -106,7 +259,7 @@ function PublicationDetailsContent() {
       }
       setMediaBlobUrl(null);
     };
-  }, [currentPublication?.id, currentPublication?.attachments]);
+  }, [publication?.id, publication?.attachments]);
 
   // Close share menu when clicking outside
   useEffect(() => {
@@ -122,15 +275,127 @@ function PublicationDetailsContent() {
     }
   }, [showShareMenu]);
 
+  const handleToggleLike = async () => {
+    if (!publication) {
+      return;
+    }
+
+    if (!user) {
+      showWarning('Please sign in to like this publication.');
+      if (typeof window !== 'undefined') {
+        const redirectUrl = `${window.location.pathname}${window.location.search}`;
+        router.push(`/login?redirect=${encodeURIComponent(redirectUrl)}`);
+      } else {
+        router.push('/login');
+      }
+      return;
+    }
+
+    if (likeLoading) {
+      return;
+    }
+
+    setLikeLoading(true);
+    try {
+      const response = isLiked
+        ? await apiClient.unlikePost(publication.id)
+        : await apiClient.likePost(publication.id);
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to update like status');
+      }
+
+      setIsLiked(response.data.liked);
+      setLikesCount(response.data.likes ?? 0);
+    } catch (err) {
+      handleError(err, 'Failed to update like status');
+    } finally {
+      setLikeLoading(false);
+    }
+  };
+
+  const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+ 
+    if (!publication) {
+      return;
+    }
+ 
+    const trimmedContent = commentContent.trim();
+    if (!trimmedContent) {
+      showWarning('Please enter a comment.');
+      return;
+    }
+ 
+    let finalAuthorName: string | undefined;
+    let finalAuthorEmail: string | undefined;
+
+    if (user) {
+      finalAuthorName = undefined;
+      finalAuthorEmail = undefined;
+    } else {
+      const trimmedName = guestName.trim();
+      const trimmedEmail = guestEmail.trim();
+      if (!trimmedName) {
+        showWarning('Please enter your name.');
+        return;
+      }
+      if (!trimmedEmail) {
+        showWarning('Please enter your email.');
+        return;
+      }
+      finalAuthorName = trimmedName;
+      finalAuthorEmail = trimmedEmail;
+    }
+ 
+    setCommentSubmitting(true);
+    try {
+      const response = await apiClient.addPostComment(publication.id, {
+        content: trimmedContent,
+        authorName: finalAuthorName,
+        authorEmail: finalAuthorEmail,
+      });
+ 
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to add comment');
+      }
+ 
+      showSuccess('Comment added successfully.');
+      setCommentContent('');
+      if (!user) {
+        setGuestName('');
+        setGuestEmail('');
+      }
+      setCommentsCount((prev) => response.data.commentsCount ?? prev + 1);
+      await loadComments(1, true);
+    } catch (err) {
+      handleError(err, 'Failed to add comment');
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  const handleLoadMoreComments = async () => {
+    const hasMore = commentsPagination.page < commentsPagination.totalPages;
+    if (commentsLoading || commentsLoadingMore || !hasMore) {
+      return;
+    }
+    await loadComments(commentsPagination.page + 1);
+  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     });
+  };
+
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
   const formatFileSize = (bytes: number) => {
@@ -150,7 +415,6 @@ function PublicationDetailsContent() {
 
   const handleDownload = async (fileId: string, fileName: string) => {
     try {
-      const { apiClient } = await import('@/utils/apiClient');
       const blob = await apiClient.downloadFile(fileId);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -264,11 +528,11 @@ function PublicationDetailsContent() {
     );
   }
 
-  const publication = currentPublication;
   const firstAttachment = publication.attachments?.[0];
   const firstAttachmentMime = firstAttachment?.mimeType || '';
   const isFirstAttachmentVideo = firstAttachmentMime.startsWith('video/');
   const hideCoverImage = Boolean(firstAttachment?.mimeType?.startsWith('video/'));
+  const hasMoreComments = commentsPagination.page < commentsPagination.totalPages;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -420,7 +684,7 @@ function PublicationDetailsContent() {
                 {publication.hasComments && (
                   <div className="flex items-center gap-2">
                     <MessageCircle className="h-4 w-4" />
-                    <span>{publication.comments || 0} comments</span>
+                    <span>{commentsCount} comments</span>
                   </div>
                 )}
               </div>
@@ -471,86 +735,190 @@ function PublicationDetailsContent() {
                     </div>
                   )}
                 </div>
-                <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm">
-                  <Heart className="h-4 w-4" />
-                  Like ({publication.likes || 0})
+                <button
+                  onClick={handleToggleLike}
+                  disabled={likeLoading}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
+                    isLiked ? 'bg-au-corporate-green text-white hover:bg-au-corporate-green/90' : 'bg-gray-100 text-au-grey-text hover:bg-gray-200'
+                  } ${likeLoading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                >
+                  <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} />
+                  {isLiked ? 'Liked' : 'Like'} ({likesCount})
                 </button>
               </div>
-            </div>
 
-            {/* Subcategories */}
-            {publication.subcategories && publication.subcategories.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-au-grey-text mb-2">Subcategories:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {publication.subcategories.map((subcategory) => (
-                    <Link
-                      key={subcategory.id}
-                      href={`/category/${publication.category?.slug}/${subcategory.slug}`}
-                      className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm text-au-grey-text transition-colors"
-                    >
-                      {subcategory.name}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Description */}
-            {publication.description && (
-              <div className="mb-8">
-                <div
-                  className="prose max-w-none text-au-grey-text"
-                  dangerouslySetInnerHTML={{ __html: publication.description }}
-                />
-              </div>
-            )}
-
-            {/* Attachments */}
-            {publication.attachments && publication.attachments.length > 0 && (
-              <div className="border-t border-gray-200 pt-8">
-                <h2 className="text-xl font-bold text-au-grey-text mb-4">Attachments</h2>
-                <div className="space-y-3">
-                  {publication.attachments.map((attachment) => {
-                    const FileIcon = getFileIcon(attachment.mimeType);
-                    return (
-                      <div
-                        key={attachment.id}
-                        className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+              {/* Subcategories */}
+              {publication.subcategories && publication.subcategories.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-au-grey-text mb-2">Subcategories:</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {publication.subcategories.map((subcategory) => (
+                      <Link
+                        key={subcategory.id}
+                        href={`/category/${publication.category?.slug}/${subcategory.slug}`}
+                        className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm text-au-grey-text transition-colors"
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <FileIcon className="h-5 w-5 text-au-grey-text/70 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-au-grey-text truncate">
-                              {attachment.originalName}
-                            </p>
-                            <p className="text-xs text-au-grey-text/70">
-                              {formatFileSize(attachment.size)}
-                            </p>
+                        {subcategory.name}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              {publication.description && (
+                <div className="mb-8">
+                  <div
+                    className="prose max-w-none text-au-grey-text"
+                    dangerouslySetInnerHTML={{ __html: publication.description }}
+                  />
+                </div>
+              )}
+
+              {/* Attachments */}
+              {publication.attachments && publication.attachments.length > 0 && (
+                <div className="border-t border-gray-200 pt-8">
+                  <h2 className="text-xl font-bold text-au-grey-text mb-4">Attachments</h2>
+                  <div className="space-y-3">
+                    {publication.attachments.map((attachment) => {
+                      const FileIcon = getFileIcon(attachment.mimeType);
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <FileIcon className="h-5 w-5 text-au-grey-text/70 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-au-grey-text truncate">
+                                {attachment.originalName}
+                              </p>
+                              <p className="text-xs text-au-grey-text/70">
+                                {formatFileSize(attachment.size)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handlePreview(attachment)}
+                              className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                              Preview
+                            </button>
+                            <button
+                              onClick={() => handleDownload(attachment.id, attachment.originalName)}
+                              className="flex items-center gap-2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors text-sm"
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handlePreview(attachment)}
-                            className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm"
-                          >
-                            <EyeIcon className="h-4 w-4" />
-                            Preview
-                          </button>
-                          <button
-                            onClick={() => handleDownload(attachment.id, attachment.originalName)}
-                            className="flex items-center gap-2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors text-sm"
-                          >
-                            <Download className="h-4 w-4" />
-                            Download
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
+
+              {/* Comments Section */}
+               <div className="border-t border-gray-200 pt-8 mt-8">
+                {publication.hasComments ? (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                      <h2 className="text-xl font-bold text-au-grey-text">Comments ({commentsCount})</h2>
+                      {commentsCount > 0 && (
+                        <span className="text-sm text-au-grey-text/70">Showing {comments.length} of {commentsCount}</span>
+                      )}
+                    </div>
+
+                    <form onSubmit={handleCommentSubmit} className="mb-6 space-y-4">
+                      {!user && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-au-grey-text mb-1">Name *</label>
+                            <input
+                              type="text"
+                              value={guestName}
+                              onChange={(e) => setGuestName(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
+                              placeholder="Your name"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-au-grey-text mb-1">Email *</label>
+                            <input
+                              type="email"
+                              value={guestEmail}
+                              onChange={(e) => setGuestEmail(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
+                              placeholder="your@email.com"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-au-grey-text mb-1">Comment *</label>
+                        <textarea
+                          value={commentContent}
+                          onChange={(e) => setCommentContent(e.target.value)}
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
+                          placeholder="Share your thoughts..."
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={commentSubmitting}
+                          className="px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                          {commentSubmitting ? 'Submitting...' : 'Post Comment'}
+                        </button>
+                      </div>
+                    </form>
+
+                    {commentsLoading && comments.length === 0 ? (
+                      <div className="space-y-4">
+                        <div className="h-20 bg-gray-100 rounded-lg animate-pulse"></div>
+                        <div className="h-20 bg-gray-100 rounded-lg animate-pulse"></div>
+                      </div>
+                    ) : comments.length === 0 ? (
+                      <p className="text-sm text-au-grey-text/70">No comments yet. Be the first to share your thoughts.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {comments.map((comment) => (
+                          <div key={comment.id} className="p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-sm font-medium text-au-grey-text">
+                                {comment.authorName || comment.author?.firstName || comment.author?.username || 'Anonymous'}
+                              </div>
+                              <div className="text-xs text-au-grey-text/60">
+                                {formatDateTime(comment.createdAt)}
+                              </div>
+                            </div>
+                            <p className="text-sm text-au-grey-text leading-relaxed whitespace-pre-line">{comment.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {hasMoreComments && (
+                      <div className="flex justify-center mt-4">
+                        <button
+                          onClick={handleLoadMoreComments}
+                          disabled={commentsLoadingMore}
+                          className="px-4 py-2 bg-gray-100 text-au-grey-text rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                          {commentsLoadingMore ? 'Loading...' : 'Load more comments'}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-au-grey-text/70">Comments are disabled for this publication.</p>
+                )}
               </div>
-            )}
 
             {/* Authors */}
             {publication.authors && publication.authors.length > 0 && (

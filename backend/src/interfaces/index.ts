@@ -314,6 +314,8 @@ export interface PublicationEntity {
   uniqueHits: number;
   isFeatured: boolean;
   isLeaderboard: boolean;
+  likesCount: number;
+  commentsCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -326,6 +328,7 @@ export interface PublicationWithRelations extends PublicationEntity {
   attachments?: FileEntity[];
   authors?: UserEntity[];
   tags?: TagEntity[];
+  isLiked?: boolean;
 }
 
 export interface TagEntity {
@@ -599,6 +602,7 @@ export interface IPublicationRepository {
   addAuthor(publicationId: string, authorId: string): Promise<boolean>;
   removeAuthor(publicationId: string, authorId: string): Promise<boolean>;
   getWithRelations(id: string): Promise<PublicationWithRelations | null>;
+  updateCounts(id: string, counts: { likesCount?: number; commentsCount?: number }): Promise<void>;
 }
 
 export interface IFileShareRepository {
@@ -613,11 +617,45 @@ export interface IFileShareRepository {
   checkAccess(fileId: string, userId?: string): Promise<boolean>;
 }
 
+export interface PostLikeEntity {
+  id: string;
+  postId: string;
+  userId: string;
+  createdAt: Date;
+}
+
+export interface PostCommentAuthor {
+  id?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  avatar?: string;
+}
+
+export interface PostCommentEntity {
+  id: string;
+  postId: string;
+  userId?: string | null;
+  authorName?: string | null;
+  authorEmail?: string | null;
+  content: string;
+  createdAt: Date;
+  author?: PostCommentAuthor;
+}
+
+export interface CreatePostCommentData {
+  postId: string;
+  userId?: string;
+  authorName?: string;
+  authorEmail?: string;
+  content: string;
+}
+
 // Service Interfaces
 export interface IPublicationService {
   createPublication(publicationData: CreatePublicationData): Promise<PublicationEntity>;
-  getPublication(id: string): Promise<PublicationWithRelations | null>;
-  getPublicationBySlug(slug: string): Promise<PublicationWithRelations | null>;
+  getPublication(id: string, userId?: string): Promise<PublicationWithRelations | null>;
+  getPublicationBySlug(slug: string, userId?: string): Promise<PublicationWithRelations | null>;
   getFeaturedPublications(limit?: number): Promise<PublicationWithRelations[]>;
   getLeaderboardPublications(limit?: number): Promise<PublicationWithRelations[]>;
   getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
@@ -636,6 +674,10 @@ export interface IPublicationService {
   rejectPublication(id: string, approverId: string): Promise<PublicationEntity>;
   trackView(id: string, userId?: string, ipAddress?: string, userAgent?: string): Promise<void>;
   searchPublications(query: string, limit?: number, offset?: number): Promise<PublicationWithRelations[]>;
+  likePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;
+  unlikePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;
+  getComments(id: string, options?: { limit?: number; offset?: number }): Promise<{ comments: PostCommentEntity[]; total: number; limit: number; offset: number; page: number; totalPages: number }>;
+  addComment(id: string, data: CreatePostCommentData): Promise<{ comment: PostCommentEntity; commentsCount: number }>;
 }
 
 export interface ICategoryService {
@@ -690,4 +732,17 @@ export interface ISettingsService {
   getSetting(key: string): Promise<any>;
   updateSettings(settings: Record<string, any>): Promise<void>;
   updateSetting(key: string, value: any, description?: string): Promise<void>;
+}
+
+export interface IPostLikeRepository {
+  addLike(postId: string, userId: string): Promise<void>;
+  removeLike(postId: string, userId: string): Promise<void>;
+  hasUserLiked(postId: string, userId: string): Promise<boolean>;
+  countByPost(postId: string): Promise<number>;
+}
+
+export interface IPostCommentRepository {
+  create(commentData: CreatePostCommentData): Promise<PostCommentEntity>;
+  findByPost(postId: string, limit: number, offset: number): Promise<PostCommentEntity[]>;
+  countByPost(postId: string): Promise<number>;
 }

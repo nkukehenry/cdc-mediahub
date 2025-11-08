@@ -16,6 +16,8 @@ import { CategoryRepository } from './repositories/CategoryRepository';
 import { SubcategoryRepository } from './repositories/SubcategoryRepository';
 import { NavLinkRepository } from './repositories/NavLinkRepository';
 import { PostRepository } from './repositories/PostRepository';
+import { PostLikeRepository } from './repositories/PostLikeRepository';
+import { PostCommentRepository } from './repositories/PostCommentRepository';
 import { FileShareRepository } from './repositories/FileShareRepository';
 import { FolderShareRepository } from './repositories/FolderShareRepository';
 import { SettingsRepository } from './repositories/SettingsRepository';
@@ -66,6 +68,8 @@ export class FileManagerServer {
   private subcategoryRepository!: SubcategoryRepository;
   private navLinkRepository!: NavLinkRepository;
   private postRepository!: PostRepository;
+  private postLikeRepository!: PostLikeRepository;
+  private postCommentRepository!: PostCommentRepository;
   private fileShareRepository!: FileShareRepository;
   private folderShareRepository!: FolderShareRepository;
   private settingsRepository!: SettingsRepository;
@@ -171,6 +175,8 @@ export class FileManagerServer {
     this.subcategoryRepository = new SubcategoryRepository();
     this.navLinkRepository = new NavLinkRepository();
     this.postRepository = new PostRepository();
+    this.postLikeRepository = new PostLikeRepository();
+    this.postCommentRepository = new PostCommentRepository();
     this.fileShareRepository = new FileShareRepository();
     this.folderShareRepository = new FolderShareRepository();
     this.settingsRepository = new SettingsRepository();
@@ -200,7 +206,9 @@ export class FileManagerServer {
       this.categoryRepository,
       this.userRepository,
       this.fileRepository,
-      this.tagRepository
+      this.tagRepository,
+      this.postLikeRepository,
+      this.postCommentRepository
     );
     this.categoryService = new CategoryService(this.categoryRepository);
     this.subcategoryService = new SubcategoryService(this.subcategoryRepository);
@@ -1823,6 +1831,34 @@ export class FileManagerServer {
       this.authMiddleware.optionalAuthenticate,
       (req, res) => {
         this.postController.getBySlug(req, res);
+      }
+    );
+
+    this.app.post('/api/public/posts/:id/like',
+      this.authMiddleware.authenticate,
+      (req, res) => {
+        this.postController.like(req, res);
+      }
+    );
+
+    this.app.delete('/api/public/posts/:id/like',
+      this.authMiddleware.authenticate,
+      (req, res) => {
+        this.postController.unlike(req, res);
+      }
+    );
+
+    this.app.get('/api/public/posts/:id/comments',
+      this.authMiddleware.optionalAuthenticate,
+      (req, res) => {
+        this.postController.getComments(req, res);
+      }
+    );
+
+    this.app.post('/api/public/posts/:id/comments',
+      this.authMiddleware.optionalAuthenticate,
+      (req, res) => {
+        this.postController.createComment(req, res);
       }
     );
 

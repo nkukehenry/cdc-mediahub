@@ -1,4 +1,4 @@
-import { IPublicationService, IPublicationRepository, ICategoryRepository, IUserRepository, IFileRepository, PublicationWithRelations, CreatePublicationData, UpdatePublicationData, PublicationEntity, PublicationStatus, PublicationFilters, ITagRepository, TagEntity } from '../interfaces';
+import { IPublicationService, IPublicationRepository, ICategoryRepository, IUserRepository, IFileRepository, PublicationWithRelations, CreatePublicationData, UpdatePublicationData, PublicationEntity, PublicationStatus, PublicationFilters, ITagRepository, TagEntity, IPostLikeRepository, IPostCommentRepository, PostCommentEntity, CreatePostCommentData } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 
@@ -11,7 +11,9 @@ export class PostService implements IPublicationService {
     private categoryRepository: ICategoryRepository,
     private userRepository: IUserRepository,
     private fileRepository: IFileRepository,
-    private tagRepository: ITagRepository
+    private tagRepository: ITagRepository,
+    private postLikeRepository: IPostLikeRepository,
+    private postCommentRepository: IPostCommentRepository
   ) {}
 
   async createPublication(postData: CreatePublicationData): Promise<PublicationEntity> {
@@ -107,22 +109,30 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async getPublication(id: string): Promise<PublicationWithRelations | null> {
+  async getPublication(id: string, userId?: string): Promise<PublicationWithRelations | null> {
     try {
-      return await this.postRepository.getWithRelations(id);
+      const post = await this.postRepository.getWithRelations(id);
+      if (!post) {
+        return null;
+      }
+      return this.enrichPublicationWithUserState(post, userId);
     } catch (error) {
       this.logger.error('Failed to get post', error as Error, { postId: id });
       throw error;
     }
   }
 
-  async getPublicationBySlug(slug: string): Promise<PublicationWithRelations | null> {
+  async getPublicationBySlug(slug: string, userId?: string): Promise<PublicationWithRelations | null> {
     try {
       const post = await this.postRepository.findBySlug(slug);
       if (!post) {
         return null;
       }
-      return await this.postRepository.getWithRelations(post.id);
+      const withRelations = await this.postRepository.getWithRelations(post.id);
+      if (!withRelations) {
+        return null;
+      }
+      return this.enrichPublicationWithUserState(withRelations, userId);
     } catch (error) {
       this.logger.error('Failed to get post by slug', error as Error, { slug });
       throw error;
@@ -151,6 +161,123 @@ export class PostService implements IPublicationService {
       return postsWithRelations.filter((p): p is PublicationWithRelations => p !== null);
     } catch (error) {
       this.logger.error('Failed to get leaderboard posts', error as Error);
+      throw error;
+    }
+  }
+
+  async likePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }> {
+    try {
+      const post = await this.postRepository.findById(id);
+      if (!post) {
+        throw this.errorHandler.createValidationError('Post not found', 'id');
+      }
+
+      const alreadyLiked = await this.postLikeRepository.hasUserLiked(id, userId);
+      if (!alreadyLiked) {
+        await this.postLikeRepository.addLike(id, userId);
+      }
+
+      const likes = await this.refreshLikeCount(id);
+      return { liked: true, likes };
+    } catch (error) {
+      this.logger.error('Failed to like post', error as Error, { postId: id, userId });
+      throw error;
+    }
+  }
+
+  async unlikePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }> {
+    try {
+      const post = await this.postRepository.findById(id);
+      if (!post) {
+        throw this.errorHandler.createValidationError('Post not found', 'id');
+      }
+
+      const alreadyLiked = await this.postLikeRepository.hasUserLiked(id, userId);
+      if (alreadyLiked) {
+        await this.postLikeRepository.removeLike(id, userId);
+      }
+
+      const likes = await this.refreshLikeCount(id);
+      return { liked: false, likes };
+    } catch (error) {
+      this.logger.error('Failed to unlike post', error as Error, { postId: id, userId });
+      throw error;
+    }
+  }
+
+  async getComments(id: string, options?: { limit?: number; offset?: number }): Promise<{ comments: PostCommentEntity[]; total: number; limit: number; offset: number; page: number; totalPages: number }> {
+    try {
+      const post = await this.postRepository.findById(id);
+      if (!post) {
+        throw this.errorHandler.createValidationError('Post not found', 'id');
+      }
+
+      const limit = options?.limit !== undefined ? options.limit : 20;
+      const offset = options?.offset !== undefined ? options.offset : 0;
+      const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+      const safeOffset = Math.max(0, Math.floor(offset));
+
+      const comments = await this.postCommentRepository.findByPost(id, safeLimit, safeOffset);
+      const total = await this.postCommentRepository.countByPost(id);
+
+      const enrichedComments = await Promise.all(
+        comments.map(async (comment) => this.enrichCommentAuthor(comment))
+      );
+
+      const page = Math.floor(safeOffset / safeLimit) + 1;
+      const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+
+      return {
+        comments: enrichedComments,
+        total,
+        limit: safeLimit,
+        offset: safeOffset,
+        page,
+        totalPages,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get comments', error as Error, { postId: id, options });
+      throw error;
+    }
+  }
+
+  async addComment(id: string, data: CreatePostCommentData): Promise<{ comment: PostCommentEntity; commentsCount: number }> {
+    try {
+      const post = await this.postRepository.findById(id);
+      if (!post) {
+        throw this.errorHandler.createValidationError('Post not found', 'id');
+      }
+
+      if (!post.hasComments) {
+        throw this.errorHandler.createValidationError('Comments are disabled for this publication');
+      }
+
+      const content = data.content?.trim();
+      if (!content) {
+        throw this.errorHandler.createValidationError('Comment content is required', 'content');
+      }
+
+      const commentPayload: CreatePostCommentData = {
+        postId: id,
+        userId: data.userId,
+        authorName: data.userId ? data.authorName : data.authorName?.trim(),
+        authorEmail: data.userId ? undefined : data.authorEmail?.trim(),
+        content,
+      };
+
+      if (commentPayload.userId) {
+        const user = await this.userRepository.findById(commentPayload.userId);
+        if (user) {
+          commentPayload.authorName = user.firstName || user.lastName || user.username || user.email;
+        }
+      }
+
+      const comment = await this.postCommentRepository.create(commentPayload);
+      const enriched = await this.enrichCommentAuthor(comment);
+      const commentsCount = await this.refreshCommentCount(id);
+      return { comment: enriched, commentsCount };
+    } catch (error) {
+      this.logger.error('Failed to add comment', error as Error, { postId: id, data });
       throw error;
     }
   }
@@ -480,6 +607,76 @@ export class PostService implements IPublicationService {
       this.logger.error('Failed to search posts', error as Error, { query });
       throw error;
     }
+  }
+
+  private async enrichPublicationWithUserState(post: PublicationWithRelations, userId?: string): Promise<PublicationWithRelations> {
+    if (!post) {
+      return post;
+    }
+
+    if (!userId) {
+      return { ...post, isLiked: false };
+    }
+
+    try {
+      const liked = await this.postLikeRepository.hasUserLiked(post.id, userId);
+      return { ...post, isLiked: liked };
+    } catch (error) {
+      const context = userId ? { postId: post.id, userId } : { postId: post.id };
+      const meta = {
+        ...context,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        } : error,
+      };
+      this.logger.warn('Failed to resolve like status', meta);
+      return { ...post, isLiked: false };
+    }
+  }
+
+  private async refreshLikeCount(postId: string): Promise<number> {
+    const likes = await this.postLikeRepository.countByPost(postId);
+    await this.postRepository.updateCounts(postId, { likesCount: likes });
+    return likes;
+  }
+
+  private async refreshCommentCount(postId: string): Promise<number> {
+    const total = await this.postCommentRepository.countByPost(postId);
+    await this.postRepository.updateCounts(postId, { commentsCount: total });
+    return total;
+  }
+
+  private async enrichCommentAuthor(comment: PostCommentEntity): Promise<PostCommentEntity> {
+    const enriched: PostCommentEntity = { ...comment };
+
+    if (enriched.userId) {
+      if (!enriched.author) {
+        const user = await this.userRepository.findById(enriched.userId);
+        if (user) {
+          enriched.author = {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            avatar: user.avatar,
+          };
+          if (!enriched.authorName) {
+            enriched.authorName = user.firstName || user.username || user.email;
+          }
+        }
+      } else if (!enriched.authorName) {
+        const author = enriched.author;
+        enriched.authorName = author.firstName || author.username || author.id;
+      }
+    }
+
+    if (!enriched.authorName) {
+      enriched.authorName = 'Anonymous';
+    }
+
+    return enriched;
   }
 }
 
