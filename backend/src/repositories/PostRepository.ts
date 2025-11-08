@@ -321,6 +321,13 @@ export class PostRepository implements IPublicationRepository {
       }
 
       const posts = await DatabaseUtils.findMany<any>(query, params);
+      this.logger.debug('findAll query executed', {
+        filters,
+        tagSlugs,
+        limit,
+        offset,
+        resultCount: posts.length,
+      });
       return posts.map(post => this.mapToPublicationEntity(post));
     } catch (error) {
       this.logger.error('Failed to find all posts', error as Error);
@@ -406,6 +413,11 @@ export class PostRepository implements IPublicationRepository {
       }
 
       const result = await DatabaseUtils.findOne<{ count: number }>(query, params);
+      this.logger.debug('countAll query executed', {
+        filters,
+        tagSlugs,
+        count: result?.count || 0,
+      });
       return result?.count || 0;
     } catch (error) {
       this.logger.error('Failed to count posts', error as Error);
@@ -498,6 +510,14 @@ export class PostRepository implements IPublicationRepository {
       }
 
       const posts = await DatabaseUtils.findMany<any>(query, params);
+      this.logger.debug('findPublished query executed', {
+        categoryId,
+        subcategoryId,
+        tags: tagSlugs,
+        limit,
+        offset,
+        resultCount: posts.length,
+      });
       return posts.map(post => this.mapToPublicationEntity(post));
     } catch (error) {
       this.logger.error('Failed to find published posts', error as Error);
@@ -544,6 +564,12 @@ export class PostRepository implements IPublicationRepository {
       query += ` WHERE ${conditions.join(' AND ')}`;
       
       const result = await DatabaseUtils.findOne<any>(query, params);
+      this.logger.debug('countPublished query executed', {
+        categoryId,
+        subcategoryId,
+        tags: tagSlugs,
+        count: result?.count || 0,
+      });
       return result?.count || 0;
     } catch (error) {
       this.logger.error('Failed to count published posts', error as Error);
