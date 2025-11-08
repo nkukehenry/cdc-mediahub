@@ -282,7 +282,7 @@ export class FileManagerServer {
         standardHeaders: true,
         legacyHeaders: false,
       });
-      this.app.use(limiter);
+      //this.app.use(limiter);
       this.logger.info('Rate limiting enabled', {
         windowMs: serverConfig.rateLimit.windowMs,
         max: serverConfig.rateLimit.max,
