@@ -441,10 +441,10 @@ export class PostRepository implements IPublicationRepository {
     try {
       let query = 'SELECT * FROM posts WHERE is_featured = 1 AND status = ? ORDER BY created_at DESC';
       const params: any[] = ['approved'];
-      
+
       if (limit !== undefined) {
-        query += ' LIMIT ?';
-        params.push(limit);
+        const safeLimit = Math.max(0, Math.floor(limit));
+        query += ` LIMIT ${safeLimit}`;
       }
 
       const posts = await DatabaseUtils.findMany<any>(query, params);
@@ -459,10 +459,10 @@ export class PostRepository implements IPublicationRepository {
     try {
       let query = 'SELECT * FROM posts WHERE is_leaderboard = 1 AND status = ? ORDER BY created_at DESC';
       const params: any[] = ['approved'];
-      
+
       if (limit !== undefined) {
-        query += ' LIMIT ?';
-        params.push(limit);
+        const safeLimit = Math.max(0, Math.floor(limit));
+        query += ` LIMIT ${safeLimit}`;
       }
 
       const posts = await DatabaseUtils.findMany<any>(query, params);
@@ -512,12 +512,14 @@ export class PostRepository implements IPublicationRepository {
       query += ` WHERE ${conditions.join(' AND ')}`;
       query += ' ORDER BY p.publication_date DESC, p.created_at DESC';
       
+      let safeLimit: number | undefined;
+      let safeOffset: number | undefined;
       if (limit !== undefined) {
-        query += ' LIMIT ?';
-        params.push(limit);
+        safeLimit = Math.max(0, Math.floor(limit));
+        query += ` LIMIT ${safeLimit}`;
         if (offset !== undefined) {
-          query += ' OFFSET ?';
-          params.push(offset);
+          safeOffset = Math.max(0, Math.floor(offset));
+          query += ` OFFSET ${safeOffset}`;
         }
       }
 
@@ -526,8 +528,8 @@ export class PostRepository implements IPublicationRepository {
         categoryId,
         subcategoryId,
         tags: tagSlugs,
-        limit,
-        offset,
+        limit: safeLimit ?? limit,
+        offset: safeOffset ?? offset,
         resultCount: posts.length,
       });
       return posts.map(post => this.mapToPublicationEntity(post));

@@ -12,7 +12,13 @@ export class PostController {
   // Public endpoints
   async getFeatured(req: Request, res: Response): Promise<void> {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        const parsed = parseInt(req.query.limit as string, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          limit = parsed;
+        }
+      }
       const posts = await this.postService.getFeaturedPublications(limit);
       res.json({
         success: true,
@@ -26,7 +32,13 @@ export class PostController {
 
   async getLeaderboard(req: Request, res: Response): Promise<void> {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        const parsed = parseInt(req.query.limit as string, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          limit = parsed;
+        }
+      }
       const posts = await this.postService.getLeaderboardPublications(limit);
       res.json({
         success: true,
@@ -42,8 +54,20 @@ export class PostController {
     try {
       const categoryId = req.query.categoryId as string | undefined;
       const subcategoryId = req.query.subcategoryId as string | undefined;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        const parsedLimit = parseInt(req.query.limit as string, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = parsedLimit;
+        }
+      }
+      let offset: number | undefined;
+      if (req.query.offset !== undefined) {
+        const parsedOffset = parseInt(req.query.offset as string, 10);
+        if (Number.isFinite(parsedOffset) && parsedOffset >= 0) {
+          offset = parsedOffset;
+        }
+      }
       let tags: string[] | undefined;
 
       if (req.query.tags) {
@@ -127,8 +151,20 @@ export class PostController {
         return;
       }
 
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        const parsedLimit = parseInt(req.query.limit as string, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = parsedLimit;
+        }
+      }
+      let offset: number | undefined;
+      if (req.query.offset !== undefined) {
+        const parsedOffset = parseInt(req.query.offset as string, 10);
+        if (Number.isFinite(parsedOffset) && parsedOffset >= 0) {
+          offset = parsedOffset;
+        }
+      }
       const posts = await this.postService.searchPublications(q, limit, offset);
 
       res.json({
