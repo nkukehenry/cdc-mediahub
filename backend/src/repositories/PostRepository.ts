@@ -599,12 +599,15 @@ export class PostRepository implements IPublicationRepository {
                  ORDER BY created_at DESC`;
       const params: any[] = [searchTerm, searchTerm, searchTerm, searchTerm];
       
+      let safeLimit: number | undefined;
+      let safeOffset: number | undefined;
+
       if (limit !== undefined) {
-        sql += ' LIMIT ?';
-        params.push(limit);
+        safeLimit = Math.max(0, Math.floor(limit));
+        sql += ` LIMIT ${safeLimit}`;
         if (offset !== undefined) {
-          sql += ' OFFSET ?';
-          params.push(offset);
+          safeOffset = Math.max(0, Math.floor(offset));
+          sql += ` OFFSET ${safeOffset}`;
         }
       }
 

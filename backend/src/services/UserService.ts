@@ -1,4 +1,4 @@
-import { IUserRepository, IRoleRepository, UserEntity, CreateUserData } from '../interfaces';
+import { IUserRepository, IRoleRepository, UserEntity, CreateUserData, RoleEntity } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 import { EmailService, IEmailService } from './EmailService';
@@ -25,7 +25,58 @@ export class UserService implements IUserService {
     private emailService?: IEmailService
   ) {}
 
-  async createUser(userData: CreateUserData): Promise<UserEntity> {
+  private sanitizeRoleIds(roleIds: string[] = []): string[] {
+    return Array.from(
+      new Set(
+        roleIds
+          .filter((roleId): roleId is string => typeof roleId === 'string')
+          .map(roleId => roleId.trim())
+          .filter(roleId => roleId.length > 0)
+      )
+    );
+  }
+
+  private async syncUserRoles(userId: string, roleIds?: string[]): Promise<void> {
+    if (roleIds === undefined) {
+      return;
+    }
+
+    const sanitizedRoleIds = this.sanitizeRoleIds(roleIds);
+    const existingRoles = await this.roleRepository.getUserRoles(userId);
+    const existingRoleIds = new Set(existingRoles.map(role => role.id));
+    const targetRoleIds = new Set(sanitizedRoleIds);
+
+    for (const roleId of targetRoleIds) {
+      if (!existingRoleIds.has(roleId)) {
+        await this.roleRepository.assignToUser(userId, roleId);
+      }
+    }
+
+    for (const role of existingRoles) {
+      if (!targetRoleIds.has(role.id)) {
+        await this.roleRepository.removeFromUser(userId, role.id);
+      }
+    }
+
+    if (targetRoleIds.size === 0) {
+      const defaultRole = await this.roleRepository.findBySlug('author');
+      if (defaultRole) {
+        await this.roleRepository.assignToUser(userId, defaultRole.id);
+      }
+    }
+  }
+
+  private async buildUserResponse(user: UserEntity): Promise<Omit<UserEntity, 'password'> & { roles: RoleEntity[]; roleIds: string[] }> {
+    const roles = await this.roleRepository.getUserRoles(user.id);
+    const { password, ...userWithoutPassword } = user;
+    return {
+      ...userWithoutPassword,
+      roles,
+      roleIds: roles.map(role => role.id),
+    };
+  }
+
+  async createUser(userData: CreateUserData): Promise<any> {
     try {
       // Validate required fields
       if (!userData.username || !userData.email || !userData.password) {
@@ -55,22 +106,8 @@ export class UserService implements IUserService {
       // Create user
       const user = await this.userRepository.create(userData);
 
-      // Assign roles if provided
-      if (userData.roleIds && userData.roleIds.length > 0) {
-        for (const roleId of userData.roleIds) {
-          try {
-            await this.roleRepository.assignToUser(user.id, roleId);
-          } catch (error) {
-            this.logger.warn('Failed to assign role to user', { userId: user.id, roleId, error });
-          }
-        }
-      } else {
-        // Assign default 'author' role if no roles specified
-        const defaultRole = await this.roleRepository.findBySlug('author');
-        if (defaultRole) {
-          await this.roleRepository.assignToUser(user.id, defaultRole.id);
-        }
-      }
+      // Assign roles (defaults handled in syncUserRoles)
+      await this.syncUserRoles(user.id, userData.roleIds ?? []);
 
       this.logger.info('User created successfully', { userId: user.id });
       
@@ -88,44 +125,38 @@ export class UserService implements IUserService {
         }
       }
       
-      // Return user without password
-      const { password, ...userWithoutPassword } = user;
-      return user as UserEntity;
+      return this.buildUserResponse(user);
     } catch (error) {
       this.logger.error('Failed to create user', error as Error);
       throw error;
     }
   }
 
-  async getAllUsers(includeInactive: boolean = true): Promise<UserEntity[]> {
+  async getAllUsers(includeInactive: boolean = true): Promise<any[]> {
     try {
       const users = await this.userRepository.findAll(includeInactive);
-      
-      // Remove passwords from all users
-      return users.map(({ password, ...user }) => user as UserEntity);
+      return Promise.all(users.map(user => this.buildUserResponse(user)));
     } catch (error) {
       this.logger.error('Failed to get all users', error as Error);
       throw this.errorHandler.createDatabaseError('Failed to get all users', 'select', 'users');
     }
   }
 
-  async getUserById(id: string): Promise<UserEntity | null> {
+  async getUserById(id: string): Promise<any | null> {
     try {
       const user = await this.userRepository.findById(id);
       if (!user) {
         return null;
       }
       
-      // Remove password
-      const { password, ...userWithoutPassword } = user;
-      return userWithoutPassword as UserEntity;
+      return this.buildUserResponse(user);
     } catch (error) {
       this.logger.error('Failed to get user by id', error as Error, { userId: id });
       throw this.errorHandler.createDatabaseError('Failed to get user by id', 'select', 'users');
     }
   }
 
-  async updateUser(id: string, data: Partial<UserEntity>): Promise<UserEntity> {
+  async updateUser(id: string, data: Partial<UserEntity>, roleIds?: string[]): Promise<any> {
     try {
       const user = await this.userRepository.findById(id);
       if (!user) {
@@ -136,17 +167,17 @@ export class UserService implements IUserService {
       const { password, ...updateData } = data;
 
       const updatedUser = await this.userRepository.update(id, updateData);
+
+      await this.syncUserRoles(id, roleIds);
       
-      // Remove password from response
-      const { password: _, ...userWithoutPassword } = updatedUser;
-      return userWithoutPassword as UserEntity;
+      return this.buildUserResponse(updatedUser);
     } catch (error) {
       this.logger.error('Failed to update user', error as Error, { userId: id });
       throw error;
     }
   }
 
-  async blockUser(id: string): Promise<UserEntity> {
+  async blockUser(id: string): Promise<any> {
     try {
       const user = await this.userRepository.findById(id);
       if (!user) {
@@ -154,6 +185,7 @@ export class UserService implements IUserService {
       }
 
       const updatedUser = await this.userRepository.update(id, { isActive: false });
+      const response = await this.buildUserResponse(updatedUser);
       this.logger.info('User blocked', { userId: id });
       
       // Send account blocked email
@@ -168,15 +200,14 @@ export class UserService implements IUserService {
         }
       }
       
-      const { password, ...userWithoutPassword } = updatedUser;
-      return userWithoutPassword as UserEntity;
+      return response;
     } catch (error) {
       this.logger.error('Failed to block user', error as Error, { userId: id });
       throw error;
     }
   }
 
-  async unblockUser(id: string): Promise<UserEntity> {
+  async unblockUser(id: string): Promise<any> {
     try {
       const user = await this.userRepository.findById(id);
       if (!user) {
@@ -184,6 +215,7 @@ export class UserService implements IUserService {
       }
 
       const updatedUser = await this.userRepository.update(id, { isActive: true });
+      const response = await this.buildUserResponse(updatedUser);
       this.logger.info('User unblocked', { userId: id });
       
       // Send account unblocked email
@@ -198,15 +230,14 @@ export class UserService implements IUserService {
         }
       }
       
-      const { password, ...userWithoutPassword } = updatedUser;
-      return userWithoutPassword as UserEntity;
+      return response;
     } catch (error) {
       this.logger.error('Failed to unblock user', error as Error, { userId: id });
       throw error;
     }
   }
 
-  async resetPassword(id: string, newPassword?: string): Promise<UserEntity> {
+  async resetPassword(id: string, newPassword?: string): Promise<any> {
     try {
       const user = await this.userRepository.findById(id);
       if (!user) {
@@ -238,8 +269,8 @@ export class UserService implements IUserService {
         }
       }
       
-      const { password: _, ...userWithoutPassword } = updatedUser;
-      return { ...userWithoutPassword, tempPassword: password } as any;
+      const response = await this.buildUserResponse(updatedUser);
+      return { ...response, tempPassword: password } as any;
     } catch (error) {
       this.logger.error('Failed to reset password', error as Error, { userId: id });
       throw error;
