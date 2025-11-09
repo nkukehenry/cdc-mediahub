@@ -23,7 +23,7 @@ export class SettingsService implements ISettingsService {
         }
       }
 
-      return result;
+      return await this.applyDefaults(result);
     } catch (error) {
       this.logger.error('Failed to get settings', error as Error);
       throw this.errorHandler.createError(ErrorType.INTERNAL_ERROR, 'Failed to get settings');
@@ -71,6 +71,26 @@ export class SettingsService implements ISettingsService {
       this.logger.error('Failed to update setting', error as Error);
       throw this.errorHandler.createError(ErrorType.INTERNAL_ERROR, 'Failed to update setting');
     }
+  }
+
+  private async applyDefaults(settings: Record<string, any>): Promise<Record<string, any>> {
+    try {
+      if (settings.showLiveEventsOnHome === undefined) {
+        await this.settingsRepository.upsert(
+          'showLiveEventsOnHome',
+          JSON.stringify(false),
+          'Show Live Events Carousel on Home Page'
+        );
+        settings.showLiveEventsOnHome = false;
+      } else {
+        settings.showLiveEventsOnHome = Boolean(settings.showLiveEventsOnHome);
+      }
+    } catch (error) {
+      this.logger.error('Failed to enforce default setting for showLiveEventsOnHome', error as Error);
+      settings.showLiveEventsOnHome = Boolean(settings.showLiveEventsOnHome);
+    }
+
+    return settings;
   }
 }
 

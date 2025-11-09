@@ -9,7 +9,7 @@ import FilePickerModal from '@/components/FilePickerModal';
 import { FileWithUrls } from '@/types/fileManager';
 import { getImageUrl, PLACEHOLDER_IMAGE_PATH } from '@/utils/fileUtils';
 
-interface SettingsData {
+interface SettingsData extends Record<string, any> {
   site?: {
     name?: string;
     description?: string;
@@ -38,6 +38,7 @@ interface SettingsData {
   };
   logo?: string;
   favicon?: string;
+  showLiveEventsOnHome?: boolean;
 }
 
 export default function SettingsPage() {
@@ -66,8 +67,12 @@ export default function SettingsPage() {
       setLoading(true);
       const response = await apiClient.getAllSettings();
       if (response.success && response.data) {
-        const loadedSettings = response.data.settings || {};
-        setSettings(loadedSettings);
+        const loadedSettings = (response.data.settings || {}) as SettingsData;
+        const showLiveEventsOnHome = Boolean(loadedSettings.showLiveEventsOnHome ?? false);
+        setSettings({
+          ...loadedSettings,
+          showLiveEventsOnHome,
+        });
         
         // Store existing logo and favicon paths if they exist
         if (loadedSettings.logo) {
@@ -146,6 +151,13 @@ export default function SettingsPage() {
         },
       };
     });
+  };
+
+  const handleToggleShowLiveEvents = (checked: boolean) => {
+    setSettings(prev => ({
+      ...prev,
+      showLiveEventsOnHome: checked,
+    }));
   };
 
   const handleLogoSelect = (files: FileWithUrls[]) => {
@@ -459,6 +471,28 @@ export default function SettingsPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-corporate-green focus:border-transparent"
               />
             </div>
+          </div>
+        </div>
+
+        {/* Feature Toggles */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-au-grey-text mb-4">{t('settings.featureToggles')}</h2>
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-sm font-medium text-gray-700">{t('settings.showLiveEventsOnHome')}</p>
+            </div>
+            <label className="inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={Boolean(settings.showLiveEventsOnHome)}
+                onChange={(e) => handleToggleShowLiveEvents(e.target.checked)}
+                disabled={saving}
+              />
+              <div className="relative w-11 h-6 bg-gray-200 rounded-full transition-colors peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-au-corporate-green peer-checked:bg-au-corporate-green">
+                <span className="absolute top-0.5 left-0.5 h-5 w-5 bg-white rounded-full shadow transition-transform duration-200 peer-checked:translate-x-5" />
+              </div>
+            </label>
           </div>
         </div>
 

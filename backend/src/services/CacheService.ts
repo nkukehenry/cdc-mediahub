@@ -291,7 +291,9 @@ export class FileManagerCacheStrategy implements ICacheStrategy {
     'folder': 3600,    // 1 hour
     'files': 300,      // 5 minutes (for file lists)
     'folders': 300,    // 5 minutes (for folder lists)
-    'thumbnail': 86400 // 24 hours
+    'thumbnail': 86400, // 24 hours
+    'categories': 900,        // 15 minutes
+    'public-posts': 180       // 3 minutes
   };
 
   getCacheKey(entity: string, id: string, userId?: string): string {
@@ -316,15 +318,18 @@ export class FileManagerCacheStrategy implements ICacheStrategy {
 // Cache factory for creating cache services
 export class CacheFactory {
   static createCacheService(config: ICacheConfig): ICacheService {
-    const redisService = new RedisCacheService(config);
-    
-    // If Redis is not available, fall back to memory cache
-    if (!redisService.isConnected()) {
-      const logger = getLogger('CacheFactory');
-      logger.warn('Redis not available, falling back to memory cache');
+    const logger = getLogger('CacheFactory');
+
+    if (!config?.host) {
+      logger.warn('Cache host not configured, using in-memory cache only');
       return new MemoryCacheService();
     }
-    
-    return redisService;
+
+    try {
+      return new RedisCacheService(config);
+    } catch (error) {
+      logger.error('Failed to create Redis cache service, falling back to memory cache', error as Error);
+      return new MemoryCacheService();
+    }
   }
 }

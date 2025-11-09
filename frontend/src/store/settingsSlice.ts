@@ -31,6 +31,7 @@ export interface PublicSettings {
   };
   logo?: string;
   favicon?: string;
+  showLiveEventsOnHome?: boolean;
 }
 
 interface SettingsState {
@@ -38,6 +39,12 @@ interface SettingsState {
   loading: boolean;
   error: string | null;
 }
+
+const normalizePublicSettings = (settings?: PublicSettings | null): PublicSettings => {
+  const normalized = { ...(settings ?? {}) } as PublicSettings;
+  normalized.showLiveEventsOnHome = Boolean(settings?.showLiveEventsOnHome);
+  return normalized;
+};
 
 const initialState: SettingsState = {
   settings: null,
@@ -58,12 +65,13 @@ export const fetchPublicSettings = createAsyncThunk(
         apiClient.getPublicSettings()
           .then(response => {
             if (response.success && response.data?.settings) {
-              setCachedData(CACHE_KEYS.PUBLIC_SETTINGS, response.data.settings as PublicSettings);
+              const normalized = normalizePublicSettings(response.data.settings as PublicSettings);
+              setCachedData(CACHE_KEYS.PUBLIC_SETTINGS, normalized);
             }
           })
           .catch(error => console.error('Background fetch failed:', error));
       }, 0);
-      return cachedData;
+      return normalizePublicSettings(cachedData);
     }
 
     // No cache or expired, fetch fresh data
@@ -72,8 +80,9 @@ export const fetchPublicSettings = createAsyncThunk(
       return rejectWithValue(response.error?.message || 'Failed to fetch settings');
     }
     const settings = response.data.settings as PublicSettings;
-    setCachedData(CACHE_KEYS.PUBLIC_SETTINGS, settings);
-    return settings;
+    const normalized = normalizePublicSettings(settings);
+    setCachedData(CACHE_KEYS.PUBLIC_SETTINGS, normalized);
+    return normalized;
   }
 );
 

@@ -520,7 +520,7 @@ export class PostRepository implements IPublicationRepository {
       }
       
       query += ` WHERE ${conditions.join(' AND ')}`;
-      query += ' ORDER BY p.publication_date DESC, p.created_at DESC';
+      query += ' ORDER BY p.created_at DESC';
       
       let safeLimit: number | undefined;
       let safeOffset: number | undefined;

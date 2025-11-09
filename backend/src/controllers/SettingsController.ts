@@ -24,7 +24,8 @@ export class SettingsController {
         'contact',
         'social',
         'logo',
-        'favicon'
+        'favicon',
+        'showLiveEventsOnHome',
       ];
 
       for (const key of publicKeys) {
@@ -32,6 +33,10 @@ export class SettingsController {
           publicSettings[key] = allSettings[key];
         }
       }
+
+      publicSettings.showLiveEventsOnHome = Boolean(
+        publicSettings.showLiveEventsOnHome ?? false
+      );
 
       res.json({
         success: true,

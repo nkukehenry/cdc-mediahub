@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { createHash } from 'crypto';
 import { DatabaseConnection } from './database/DatabaseConnection';
 import { DatabaseUtils } from './utils/DatabaseUtils';
 import { FileRepository } from './repositories/FileRepository';
@@ -154,6 +155,16 @@ export class FileManagerServer {
     } catch {
       // ignore
     }
+  }
+
+  private buildCacheId(prefix: string, payload: Record<string, unknown>): string {
+    const sortedKeys = Object.keys(payload).sort();
+    const normalized = sortedKeys.reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = payload[key];
+      return acc;
+    }, {});
+    const hash = createHash('sha1').update(JSON.stringify(normalized)).digest('hex');
+    return `${prefix}:${hash}`;
   }
 
   private async setupServices(): Promise<void> {
@@ -1692,8 +1703,29 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/posts/featured',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.getFeatured(req, res);
+      async (req, res) => {
+        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+        const cacheNamespace = 'public-posts';
+        const cacheId = this.buildCacheId('featured', {
+          limit: limit ?? null,
+          userId: req.user?.userId ?? null,
+        });
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.getFeatured(req, res);
       }
     );
 
@@ -1726,8 +1758,29 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/posts/leaderboard',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.getLeaderboard(req, res);
+      async (req, res) => {
+        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+        const cacheNamespace = 'public-posts';
+        const cacheId = this.buildCacheId('leaderboard', {
+          limit: limit ?? null,
+          userId: req.user?.userId ?? null,
+        });
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.getLeaderboard(req, res);
       }
     );
 
@@ -1761,8 +1814,52 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/posts',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.getPublished(req, res);
+      async (req, res) => {
+        const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : undefined;
+        const subcategoryId = typeof req.query.subcategoryId === 'string' ? req.query.subcategoryId : undefined;
+
+        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+
+        const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
+        const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
+        const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
+
+        const tagsParam = req.query.tags;
+        const tags = (Array.isArray(tagsParam) ? tagsParam : tagsParam ? [tagsParam] : [])
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0)
+          .sort();
+
+        const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+
+        const cacheNamespace = 'public-posts';
+        const cacheId = this.buildCacheId('published', {
+          categoryId: categoryId ?? null,
+          subcategoryId: subcategoryId ?? null,
+          limit: limit ?? null,
+          offset: offset ?? null,
+          tags,
+          search: searchQuery ?? null,
+          userId: req.user?.userId ?? null,
+        });
+
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.getPublished(req, res);
       }
     );
 
@@ -1797,8 +1894,44 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/posts/search',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.search(req, res);
+      async (req, res) => {
+        const queryParam = Array.isArray(req.query.q) ? req.query.q[0] : req.query.q;
+        const searchTerm = typeof queryParam === 'string' ? queryParam.trim() : undefined;
+
+        if (!searchTerm) {
+          return this.postController.search(req, res);
+        }
+
+        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+
+        const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
+        const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
+        const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
+
+        const cacheNamespace = 'public-posts';
+        const cacheId = this.buildCacheId('search', {
+          q: searchTerm,
+          limit: limit ?? null,
+          offset: offset ?? null,
+          userId: req.user?.userId ?? null,
+        });
+
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.search(req, res);
       }
     );
 
@@ -1911,8 +2044,16 @@ export class FileManagerServer {
     this.app.post('/api/admin/posts',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      (req, res) => {
-        this.postController.create(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('public-posts');
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.create(req, res);
       }
     );
 
@@ -1935,32 +2076,64 @@ export class FileManagerServer {
     this.app.put('/api/admin/posts/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      (req, res) => {
-        this.postController.update(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('public-posts');
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.update(req, res);
       }
     );
 
     this.app.delete('/api/admin/posts/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      (req, res) => {
-        this.postController.delete(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('public-posts');
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.delete(req, res);
       }
     );
 
     this.app.post('/api/admin/posts/:id/approve',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.postController.approve(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('public-posts');
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.approve(req, res);
       }
     );
 
     this.app.post('/api/admin/posts/:id/reject',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.postController.reject(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('public-posts');
+          }
+          return originalJson(body);
+        };
+
+        await this.postController.reject(req, res);
       }
     );
 
@@ -1994,8 +2167,23 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/categories',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.categoryController.getAll(req, res);
+      async (req, res) => {
+        const cacheNamespace = 'categories';
+        const cacheId = 'all';
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body);
+          }
+          return originalJson(body);
+        };
+
+        await this.categoryController.getAll(req, res);
       }
     );
 
@@ -2028,8 +2216,24 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/categories/:id',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.categoryController.getById(req, res);
+      async (req, res) => {
+        const cacheNamespace = 'categories';
+        const categoryId = req.params.id;
+        const cacheId = categoryId || 'unknown';
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body);
+          }
+          return originalJson(body);
+        };
+
+        await this.categoryController.getById(req, res);
       }
     );
 
@@ -2089,8 +2293,16 @@ export class FileManagerServer {
     this.app.post('/api/admin/categories',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.categoryController.create(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.categoryController.create(req, res);
       }
     );
 
@@ -2148,8 +2360,16 @@ export class FileManagerServer {
     this.app.put('/api/admin/categories/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.categoryController.update(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.categoryController.update(req, res);
       }
     );
 
@@ -2190,8 +2410,16 @@ export class FileManagerServer {
     this.app.delete('/api/admin/categories/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.categoryController.delete(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.categoryController.delete(req, res);
       }
     );
 
@@ -2218,24 +2446,48 @@ export class FileManagerServer {
     this.app.post('/api/admin/subcategories',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.subcategoryController.create(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.subcategoryController.create(req, res);
       }
     );
 
     this.app.put('/api/admin/subcategories/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.subcategoryController.update(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.subcategoryController.update(req, res);
       }
     );
 
     this.app.delete('/api/admin/subcategories/:id',
       this.authMiddleware.authenticate,
       this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.subcategoryController.delete(req, res);
+      async (req, res) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheDelPattern('categories');
+          }
+          return originalJson(body);
+        };
+
+        await this.subcategoryController.delete(req, res);
       }
     );
 

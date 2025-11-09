@@ -454,6 +454,8 @@ export default {
     seoSettings: 'Paramètres SEO',
     contactInformation: 'Informations de contact',
     socialLinks: 'Liens sociaux',
+    featureToggles: 'Feature Toggles',
+    showLiveEventsOnHome: 'Show Live Events Carousel on Home Page',
     logoAndFavicon: 'Logo et Favicon',
     siteName: 'Nom du site',
     siteDescription: 'Description du site',

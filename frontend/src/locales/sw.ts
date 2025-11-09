@@ -492,6 +492,8 @@ export default {
     seoSettings: 'Mipangilio ya SEO',
     contactInformation: 'Taarifa za Mawasiliano',
     socialLinks: 'Viungo vya Kijamii',
+    featureToggles: 'Feature Toggles',
+    showLiveEventsOnHome: 'Show Live Events Carousel on Home Page',
     logoAndFavicon: 'Nembo na Favicon',
     siteName: 'Jina la Tovuti',
     siteDescription: 'Maelezo ya Tovuti',

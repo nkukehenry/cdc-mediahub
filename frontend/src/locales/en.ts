@@ -514,6 +514,8 @@ export default {
     seoSettings: 'SEO Settings',
     contactInformation: 'Contact Information',
     socialLinks: 'Social Links',
+    featureToggles: 'Feature Toggles',
+    showLiveEventsOnHome: 'Show Live Events Carousel on Home Page',
     logoAndFavicon: 'Logo & Favicon',
     siteName: 'Site Name',
     siteDescription: 'Site Description',
