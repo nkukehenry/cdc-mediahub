@@ -1725,7 +1725,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.postController.getFeatured(req, res);
+        return this.postController.getFeatured(req, res);
       }
     );
 
@@ -1780,7 +1780,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.postController.getLeaderboard(req, res);
+        return this.postController.getLeaderboard(req, res);
       }
     );
 
@@ -1859,7 +1859,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.postController.getPublished(req, res);
+        return this.postController.getPublished(req, res);
       }
     );
 
@@ -1931,7 +1931,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.postController.search(req, res);
+        return this.postController.search(req, res);
       }
     );
 
@@ -2183,7 +2183,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.categoryController.getAll(req, res);
+        return this.categoryController.getAll(req, res);
       }
     );
 
@@ -2233,7 +2233,7 @@ export class FileManagerServer {
           return originalJson(body);
         };
 
-        await this.categoryController.getById(req, res);
+        return this.categoryController.getById(req, res);
       }
     );
 
