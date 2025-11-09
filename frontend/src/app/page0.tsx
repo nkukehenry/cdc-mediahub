@@ -15,14 +15,14 @@ export default function Home0() {
         <PublicNav />
         
         {/* Search Section */}
-        <div className="bg-white border-b border-gray-200 py-6 px-12 md:px-16 lg:px-24 xl:px-32">
+        <div className="bg-white border-b border-gray-200 py-6 px-6 md:px-16 lg:px-24 xl:px-32">
           <div className="container mx-auto">
             <SearchBar />
           </div>
         </div>
 
         {/* Unified 3D Slider */}
-        <div className="py-8 px-12 md:px-16 lg:px-24 xl:px-32">
+        <div className="py-8 px-6 md:px-16 lg:px-24 xl:px-32">
           <div className="container mx-auto">
             <UnifiedSlider limit={20} />
           </div>

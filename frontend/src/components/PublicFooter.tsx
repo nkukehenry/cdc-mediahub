@@ -75,7 +75,7 @@ export default function PublicFooter() {
   );
 
   return (
-    <footer className="bg-gray-800 text-white py-12 px-12 md:px-16 lg:px-24 xl:px-32 border-t-4 border-au-red">
+    <footer className="bg-gray-800 text-white py-12 px-6 md:px-16 lg:px-24 xl:px-32 border-t-4 border-au-red">
       <div className="container mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
           {/* Left Column - Logo and Description */}

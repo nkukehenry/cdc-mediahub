@@ -487,7 +487,7 @@ function PublicationDetailsContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <PublicNav />
-        <div className="container mx-auto px-12 md:px-16 lg:px-24 xl:px-32 py-12">
+        <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-12">
           <div className="bg-white rounded-lg shadow-md p-8">
             <div className="animate-pulse">
               <div className="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -510,7 +510,7 @@ function PublicationDetailsContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <PublicNav />
-        <div className="container mx-auto px-12 md:px-16 lg:px-24 xl:px-32 py-12">
+        <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-12">
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <h1 className="text-2xl font-bold text-au-grey-text mb-4">Publication Not Found</h1>
             <p className="text-au-grey-text/70 mb-6">{error || 'The publication you are looking for does not exist.'}</p>
@@ -538,7 +538,7 @@ function PublicationDetailsContent() {
     <div className="min-h-screen bg-gray-50">
       <PublicNav />
 
-      <div className="container mx-auto px-12 md:px-16 lg:px-24 xl:px-32 py-8 md:py-12">
+      <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-8 md:py-12">
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-au-grey-text hover:text-au-corporate-green transition-colors mb-6"

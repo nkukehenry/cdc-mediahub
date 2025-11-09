@@ -282,16 +282,16 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
+  async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
     try {
       const finalLimit = limit || 20;
       const finalOffset = offset || 0;
       
       // Get total count for pagination
-      const total = await this.postRepository.countPublished(categoryId, subcategoryId, tags);
+      const total = await this.postRepository.countPublished(categoryId, subcategoryId, tags, search);
       
       // Get publications with pagination
-      const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset, tags);
+      const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset, tags, search);
       const postsWithRelations = await Promise.all(
         posts.map((post: PublicationEntity) => this.postRepository.getWithRelations(post.id))
       );

@@ -588,8 +588,8 @@ export interface IPublicationRepository {
   countAll(filters?: PublicationFilters): Promise<number>;
   findFeatured(limit?: number): Promise<PublicationEntity[]>;
   findLeaderboard(limit?: number): Promise<PublicationEntity[]>;
-  findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<PublicationEntity[]>;
-  countPublished(categoryId?: string, subcategoryId?: string, tags?: string[]): Promise<number>;
+  findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<PublicationEntity[]>;
+  countPublished(categoryId?: string, subcategoryId?: string, tags?: string[], search?: string): Promise<number>;
   search(query: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   update(id: string, data: UpdatePublicationData): Promise<PublicationEntity>;
   delete(id: string): Promise<boolean>;
@@ -658,7 +658,7 @@ export interface IPublicationService {
   getPublicationBySlug(slug: string, userId?: string): Promise<PublicationWithRelations | null>;
   getFeaturedPublications(limit?: number): Promise<PublicationWithRelations[]>;
   getLeaderboardPublications(limit?: number): Promise<PublicationWithRelations[]>;
-  getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
+  getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
   getPublications(filters?: PublicationFilters, userId?: string, limit?: number, offset?: number): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }>;
   updatePublication(
     id: string,

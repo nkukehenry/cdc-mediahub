@@ -98,7 +98,7 @@ export default function YouTubeLiveEvents({ limit, showViewAll = true }: YouTube
           return null;
         }
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-au-corporate-green text-white">
             Recent
           </span>
         );
@@ -109,7 +109,7 @@ export default function YouTubeLiveEvents({ limit, showViewAll = true }: YouTube
 
   if (loading && liveEvents.length === 0) {
     return (
-      <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
+      <div className="bg-white py-8 px-6 md:px-16 lg:px-24 xl:px-32">
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-6">
             <Skeleton className="h-7 w-64 rounded-md" />
@@ -153,7 +153,7 @@ export default function YouTubeLiveEvents({ limit, showViewAll = true }: YouTube
   const displayEvents = limit ? filteredEvents.slice(0, limit) : filteredEvents;
 
   return (
-    <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
+    <div className="bg-white py-8 px-6 md:px-16 lg:px-24 xl:px-32">
       <div className="container mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

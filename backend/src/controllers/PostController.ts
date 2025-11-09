@@ -70,6 +70,7 @@ export class PostController {
         }
       }
       let tags: string[] | undefined;
+      const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
 
       if (req.query.tags) {
         const tagsParam = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
@@ -82,7 +83,7 @@ export class PostController {
         }
       }
 
-      const result = await this.postService.getPublishedPublications(categoryId, subcategoryId, limit, offset, tags);
+      const result = await this.postService.getPublishedPublications(categoryId, subcategoryId, limit, offset, tags, searchQuery?.length ? searchQuery : undefined);
       
       res.json({
         success: true,

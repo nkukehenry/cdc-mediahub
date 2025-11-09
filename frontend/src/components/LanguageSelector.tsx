@@ -241,35 +241,64 @@ export default function LanguageSelector() {
     };
   }, [isOpen]);
 
+  const setGoogleTranslateCookie = (googleLangCode: string) => {
+    const cookieValue = `/en/${googleLangCode}`;
+    const domain = window.location.hostname;
+
+    document.cookie = `googtrans=${cookieValue}; path=/; max-age=31536000`;
+
+    if (domain && domain !== 'localhost') {
+      document.cookie = `googtrans=${cookieValue}; path=/; domain=${domain}; max-age=31536000`;
+    }
+  };
+
   const handleLanguageChange = async (lang: LanguageCode) => {
     if (isPublicPage) {
       // For public pages, trigger Google Translate
       try {
         const googleLangCode = googleTranslateCodes[lang];
         
-        // Update current language state immediately for UI feedback (before reload)
+        // Update current language state immediately for UI feedback
         setCurrentLang(lang);
+        setIsOpen(false);
         
-        // Set the Google Translate cookie
-        const cookieValue = `/en/${googleLangCode}`;
-        const domain = window.location.hostname;
-        
-        // Set cookie with domain
-        document.cookie = `googtrans=${cookieValue}; path=/; domain=${domain}; max-age=31536000`;
-        // Also set without domain (for localhost and subdomains)
-        document.cookie = `googtrans=${cookieValue}; path=/; max-age=31536000`;
-        
-        console.log('Set Google Translate cookie:', cookieValue);
-        console.log('Reloading page to apply translation...');
-        
-        // Reload page to apply Google Translate translation
-        // This is the standard and reliable way Google Translate works
-        window.location.reload();
-        
+        const applyLanguage = () => {
+          const select = document.querySelector<HTMLSelectElement>('.goog-te-combo');
+          if (!select) {
+            return false;
+          }
+
+          if (select.value !== googleLangCode) {
+            select.value = googleLangCode;
+          }
+
+          select.dispatchEvent(new Event('change'));
+          return true;
+        };
+
+        if (applyLanguage()) {
+          setGoogleTranslateCookie(googleLangCode);
+          return;
+        }
+
+        let attempts = 0;
+        const maxAttempts = 15;
+        const interval = setInterval(() => {
+          attempts += 1;
+          if (applyLanguage()) {
+            clearInterval(interval);
+            setGoogleTranslateCookie(googleLangCode);
+            setIsOpen(false);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            setGoogleTranslateCookie(googleLangCode);
+            window.location.reload();
+          }
+        }, 150);
+
       } catch (error) {
         console.error('Error changing Google Translate language:', error);
       }
-      setIsOpen(false);
     } else {
       // For admin pages, use the regular translation system
       const success = await setLanguage(lang);
@@ -290,6 +319,10 @@ export default function LanguageSelector() {
       .goog-te-menu-value,
       .goog-te-menu-frame {
         display: none !important;
+      }
+      body {
+        top: 0px !important;
+        position: static !important;
       }
       .goog-te-combo {
         position: absolute !important;

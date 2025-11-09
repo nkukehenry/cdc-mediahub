@@ -75,7 +75,7 @@ function LiveEventsPageContent() {
     <div className="min-h-screen bg-gray-50">
       <PublicNav />
       
-      <div className="container mx-auto px-12 md:px-16 lg:px-24 xl:px-32 py-8">
+      <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-8">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-bold text-au-corporate-green mb-2">

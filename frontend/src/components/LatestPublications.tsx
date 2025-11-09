@@ -20,7 +20,7 @@ export default function LatestPublications() {
 
   if (loading) {
     return (
-      <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
+      <div className="bg-white py-8 px-6 md:px-16 lg:px-24 xl:px-32">
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-6 border-b-2 border-au-red pb-2">
             <Skeleton className="h-6 w-48 rounded-md" />
@@ -41,7 +41,7 @@ export default function LatestPublications() {
   }
 
   return (
-    <div className="bg-white py-8 px-12 md:px-16 lg:px-24 xl:px-32">
+    <div className="bg-white py-8 px-6 md:px-16 lg:px-24 xl:px-32">
       <div className="container mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6 border-b-2 border-au-red pb-2">

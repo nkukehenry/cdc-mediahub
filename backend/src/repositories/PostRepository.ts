@@ -477,7 +477,7 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[]): Promise<PublicationEntity[]> {
+  async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<PublicationEntity[]> {
     try {
       const now = new Date().toISOString();
       let query = `SELECT DISTINCT p.* FROM posts p`;
@@ -512,6 +512,12 @@ export class PostRepository implements IPublicationRepository {
         conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
         params.push(...tagSlugs);
       }
+
+      if (search && search.trim().length > 0) {
+        const likeTerm = `%${search.trim()}%`;
+        conditions.push('(p.title LIKE ? OR p.description LIKE ? OR p.meta_title LIKE ? OR p.meta_description LIKE ?)');
+        params.push(likeTerm, likeTerm, likeTerm, likeTerm);
+      }
       
       query += ` WHERE ${conditions.join(' AND ')}`;
       query += ' ORDER BY p.publication_date DESC, p.created_at DESC';
@@ -532,6 +538,7 @@ export class PostRepository implements IPublicationRepository {
         categoryId,
         subcategoryId,
         tags: tagSlugs,
+        search,
         limit: safeLimit ?? limit,
         offset: safeOffset ?? offset,
         resultCount: posts.length,
@@ -543,7 +550,7 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
-  async countPublished(categoryId?: string, subcategoryId?: string, tags?: string[]): Promise<number> {
+  async countPublished(categoryId?: string, subcategoryId?: string, tags?: string[], search?: string): Promise<number> {
     try {
       const now = new Date().toISOString();
       let query = `SELECT COUNT(DISTINCT p.id) as count FROM posts p`;
@@ -578,6 +585,12 @@ export class PostRepository implements IPublicationRepository {
         conditions.push(`tg.slug IN (${tagSlugs.map(() => '?').join(', ')})`);
         params.push(...tagSlugs);
       }
+
+      if (search && search.trim().length > 0) {
+        const likeTerm = `%${search.trim()}%`;
+        conditions.push('(p.title LIKE ? OR p.description LIKE ? OR p.meta_title LIKE ? OR p.meta_description LIKE ?)');
+        params.push(likeTerm, likeTerm, likeTerm, likeTerm);
+      }
  
       query += ` WHERE ${conditions.join(' AND ')}`;
       
@@ -586,6 +599,7 @@ export class PostRepository implements IPublicationRepository {
         categoryId,
         subcategoryId,
         tags: tagSlugs,
+        search,
         count: result?.count || 0,
       });
       return result?.count || 0;

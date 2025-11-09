@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
-import { Provider } from 'react-redux';
-import { store, RootState } from '@/store';
+import { Search, X, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { RootState } from '@/store';
 import { fetchPublications } from '@/store/publicationsSlice';
 import PublicNav from '@/components/PublicNav';
 import PublicFooter from '@/components/PublicFooter';
 import PublicationCard from '@/components/PublicationCard';
-import { Search, X, ChevronLeft, ChevronRight, Calendar, Filter } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { cn } from '@/utils/fileUtils';
 import PublicationCardSkeleton from '@/components/PublicationCardSkeleton';
@@ -26,18 +25,37 @@ interface Category {
   }>;
 }
 
-function CategoryPageInner() {
+interface PublicationsExplorerProps {
+  basePath?: string;
+  searchParamKeys?: string[];
+  pageTitle?: string;
+}
+
+const DEFAULT_SEARCH_PARAMS = ['search'];
+
+const getPrimarySearchValue = (searchParams: ReturnType<typeof useSearchParams>, keys: string[]) => {
+  for (const key of keys) {
+    const value = searchParams.get(key);
+    if (value && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return '';
+};
+
+export default function PublicationsExplorer({
+  basePath = '/publications',
+  searchParamKeys = DEFAULT_SEARCH_PARAMS,
+  pageTitle = 'Publications',
+}: PublicationsExplorerProps) {
   const router = useRouter();
-  const params = useParams();
   const searchParams = useSearchParams();
   const dispatch = useDispatch();
-  
+
   const { publications, loading, pagination } = useSelector((state: RootState) => state.publications);
-  
-  const categorySlug = params?.slug as string;
-  
-  const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
-  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+
+  const [searchQuery, setSearchQuery] = useState(getPrimarySearchValue(searchParams, searchParamKeys));
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedSubcategories, setSelectedSubcategories] = useState<Set<string>>(new Set());
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [author, setAuthor] = useState('');
@@ -47,19 +65,20 @@ function CategoryPageInner() {
   const [publicationDate, setPublicationDate] = useState('');
   const [source, setSource] = useState('');
   const [division, setDivision] = useState('');
-  
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasLoadedAtLeastOnce, setHasLoadedAtLeastOnce] = useState(false);
 
   const currentPage = parseInt(searchParams.get('page') || '1');
   const limit = 12;
 
   useEffect(() => {
-    loadCategory();
     loadCategories();
     loadTags();
-  }, [categorySlug]);
+  }, []);
 
   useEffect(() => {
     const tagParams = searchParams.getAll('tags');
@@ -71,30 +90,9 @@ function CategoryPageInner() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (currentCategory) {
-      loadPublications();
-    }
-  }, [currentPage, searchQuery, selectedSubcategories, selectedTags, currentCategory]);
-
-  const loadCategory = async () => {
-    try {
-      const response = await apiClient.getCategories();
-      if (response.success && response.data?.categories) {
-        const category = response.data.categories.find((cat: Category) => cat.slug === categorySlug);
-        if (category) {
-          const subRes = await apiClient.getCategorySubcategories(category.id);
-          setCurrentCategory({
-            ...category,
-            subcategories: subRes.success && subRes.data?.subcategories
-              ? subRes.data.subcategories
-              : []
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load category:', error);
-    }
-  };
+    const paramsSearch = getPrimarySearchValue(searchParams, searchParamKeys);
+    setSearchQuery((prev) => (prev === paramsSearch ? prev : paramsSearch));
+  }, [searchParams, searchParamKeys]);
 
   const loadCategories = async () => {
     try {
@@ -136,14 +134,12 @@ function CategoryPageInner() {
     }
   };
 
-  const loadPublications = async () => {
-    if (!currentCategory) return;
-    
-    const filters: any = {
-      categoryId: currentCategory.id
-    };
-    
+  const loadPublications = useCallback(async () => {
+    const filters: any = {};
     if (searchQuery.trim()) filters.search = searchQuery.trim();
+    if (selectedCategories.size > 0) {
+      filters.categoryId = Array.from(selectedCategories)[0];
+    }
     if (selectedSubcategories.size > 0) {
       filters.subcategoryId = Array.from(selectedSubcategories)[0];
     }
@@ -151,14 +147,30 @@ function CategoryPageInner() {
       filters.tags = Array.from(selectedTags);
     }
 
-    dispatch(fetchPublications({ filters, page: currentPage, limit }) as any);
-  };
+    setIsSearching(true);
+
+    try {
+      await dispatch(fetchPublications({ filters, page: currentPage, limit }) as any);
+    } catch (error) {
+      console.error('Failed to load publications:', error);
+    } finally {
+      setHasLoadedAtLeastOnce(true);
+      setIsSearching(false);
+    }
+  }, [dispatch, searchQuery, selectedCategories, selectedSubcategories, selectedTags, currentPage, limit]);
+
+  useEffect(() => {
+    void loadPublications();
+  }, [loadPublications]);
 
   const handleApplyFilters = () => {
-    if (!currentCategory) return;
-    
     const params = new URLSearchParams();
-    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    const primarySearchKey = searchParamKeys[0] || 'search';
+
+    if (searchQuery.trim()) params.set(primarySearchKey, searchQuery.trim());
+    if (selectedCategories.size > 0) {
+      Array.from(selectedCategories).forEach(catId => params.append('categoryId', catId));
+    }
     if (selectedSubcategories.size > 0) {
       Array.from(selectedSubcategories).forEach(subId => params.append('subcategoryId', subId));
     }
@@ -173,9 +185,21 @@ function CategoryPageInner() {
     if (source.trim()) params.set('source', source.trim());
     if (division.trim()) params.set('division', division.trim());
     params.set('page', '1');
-    
-    router.push(`/category/${categorySlug}?${params.toString()}`);
-    loadPublications();
+
+    router.push(`${basePath}?${params.toString()}`);
+    void loadPublications();
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setSelectedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryId)) {
+        newSet.delete(categoryId);
+      } else {
+        newSet.add(categoryId);
+      }
+      return newSet;
+    });
   };
 
   const toggleSubcategory = (subcategoryId: string) => {
@@ -204,6 +228,7 @@ function CategoryPageInner() {
 
   const clearFilters = () => {
     setSearchQuery('');
+    setSelectedCategories(new Set());
     setSelectedSubcategories(new Set());
     setSelectedTags(new Set());
     setAuthor('');
@@ -213,35 +238,26 @@ function CategoryPageInner() {
     setPublicationDate('');
     setSource('');
     setDivision('');
-    router.push(`/category/${categorySlug}`);
+    router.push(basePath);
   };
 
   const goToPage = (page: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('page', page.toString());
-    router.push(`/category/${categorySlug}?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   const totalPages = pagination?.totalPages || 1;
-
-  if (!currentCategory && !loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <PublicNav />
-        <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-8">
-          <div className="text-center py-12">
-            <p className="text-au-grey-text/70 text-lg">Category not found</p>
-          </div>
-        </div>
-        <PublicFooter />
-      </div>
-    );
-  }
+  const hasActiveSearch = Boolean(
+    (searchQuery || '').trim() ||
+    searchParamKeys.some((key) => Boolean(searchParams.get(key)))
+  );
+  const shouldShowSkeleton = loading || isSearching || (!hasLoadedAtLeastOnce && hasActiveSearch);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <PublicNav />
-      
+
       <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Mobile Filter Toggle Button */}
@@ -257,21 +273,21 @@ function CategoryPageInner() {
 
           {/* Left Sidebar - Filters */}
           <aside className={cn(
-            "w-full lg:w-80 flex-shrink-0",
-            !isMobileFiltersOpen && "hidden lg:block"
+            'w-full lg:w-80 flex-shrink-0',
+            !isMobileFiltersOpen && 'hidden lg:block'
           )}>
             <div className="bg-white rounded-lg shadow-md p-6 lg:sticky lg:top-24 space-y-6">
               {/* Search */}
               <div>
                 <label className="block text-sm font-semibold text-au-grey-text mb-2">Search</label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-black" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search publications..."
-                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-au-corporate-green focus:border-transparent text-sm"
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-au-corporate-green focus:border-transparent text-sm text-black"
                   />
                   {searchQuery && (
                     <button
@@ -285,12 +301,30 @@ function CategoryPageInner() {
                 </div>
               </div>
 
+              {/* Categories */}
+              <div>
+                <h3 className="text-sm font-semibold text-au-grey-text mb-3 uppercase tracking-wide">Categories</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {categories.map((category) => (
+                    <label key={category.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedCategories.has(category.id)}
+                        onChange={() => toggleCategory(category.id)}
+                        className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-corporate-green"
+                      />
+                      <span className="text-sm text-au-grey-text">{category.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               {/* Subcategories */}
-              {currentCategory?.subcategories && currentCategory.subcategories.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-au-grey-text mb-3 uppercase tracking-wide">Sub-Categories</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {currentCategory.subcategories.map(subcat => (
+              <div>
+                <h3 className="text-sm font-semibold text-au-grey-text mb-3 uppercase tracking-wide">Sub-Categories</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {categories.flatMap(cat =>
+                    cat.subcategories?.map(subcat => (
                       <label key={subcat.id} className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -300,10 +334,10 @@ function CategoryPageInner() {
                         />
                         <span className="text-sm text-au-grey-text">{subcat.name}</span>
                       </label>
-                    ))}
-                  </div>
+                    ))
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* Tags */}
               <div>
@@ -314,10 +348,10 @@ function CategoryPageInner() {
                       key={tag}
                       onClick={() => toggleTag(tag)}
                       className={cn(
-                        "px-3 py-1.5 rounded text-xs font-medium transition-colors",
+                        'px-3 py-1.5 rounded text-xs font-medium transition-colors',
                         selectedTags.has(tag)
-                          ? "bg-au-corporate-green text-white"
-                          : "bg-au-corporate-green/10 text-au-corporate-green hover:bg-au-corporate-green/20"
+                          ? 'bg-au-corporate-green text-white'
+                          : 'bg-au-corporate-green/10 text-au-corporate-green hover:bg-au-corporate-green/20'
                       )}
                     >
                       {tag}
@@ -399,7 +433,6 @@ function CategoryPageInner() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-au-corporate-green focus:border-transparent text-sm"
                     >
                       <option value="">Select Division</option>
-                      {/* TODO: Load divisions from API */}
                     </select>
                   </div>
                 </div>
@@ -415,7 +448,7 @@ function CategoryPageInner() {
               </button>
 
               {/* Clear Filters */}
-              {(searchQuery || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
+              {(searchQuery || selectedCategories.size > 0 || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
                 <button
                   onClick={clearFilters}
                   className="w-full text-sm text-au-grey-text/70 hover:text-au-corporate-green transition-colors underline"
@@ -431,7 +464,7 @@ function CategoryPageInner() {
             {/* Header */}
             <div className="mb-6">
               <h1 className="text-2xl md:text-3xl font-bold text-au-corporate-green mb-2">
-                {currentCategory?.name || 'Category'}
+                {pageTitle}
               </h1>
               {loading ? (
                 <Skeleton className="h-4 w-48 rounded-md" />
@@ -443,29 +476,23 @@ function CategoryPageInner() {
             </div>
 
             {/* Loading State */}
-            {loading && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {Array.from({ length: 9 }).map((_, i) => (
-                  <PublicationCardSkeleton key={i} />
-                ))}
+            {shouldShowSkeleton && (
+              <div className="space-y-6">
+                <div className="h-5 w-60 rounded-md bg-gray-200 animate-pulse" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <PublicationCardSkeleton key={i} />
+                  ))}
+                </div>
               </div>
             )}
 
             {/* Publications Grid */}
-            {!loading && publications.length > 0 && (
+            {!shouldShowSkeleton && publications.length > 0 && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4 mb-8">
-                  {publications.map((publication, index) => (
-                    <div
-                      key={publication.id}
-                      className="animate-fade-in"
-                      style={{
-                        animationDelay: `${index * 0.05}s`,
-                        animationFillMode: 'both'
-                      }}
-                    >
-                      <PublicationCard publication={publication} />
-                    </div>
+                  {publications.map((publication) => (
+                    <PublicationCard key={publication.id} publication={publication} />
                   ))}
                 </div>
 
@@ -476,15 +503,15 @@ function CategoryPageInner() {
                       onClick={() => goToPage(currentPage - 1)}
                       disabled={currentPage === 1}
                       className={cn(
-                        "p-2 rounded-lg transition-colors",
+                        'p-2 rounded-lg transition-colors',
                         currentPage === 1
-                          ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                          : "bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200"
+                          ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                          : 'bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200'
                       )}
                     >
                       <ChevronLeft className="h-5 w-5" />
                     </button>
-                    
+
                     <div className="flex items-center gap-1">
                       {[...Array(Math.min(totalPages, 5))].map((_, i) => {
                         const page = i + 1;
@@ -493,10 +520,10 @@ function CategoryPageInner() {
                             key={page}
                             onClick={() => goToPage(page)}
                             className={cn(
-                              "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                              'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                               currentPage === page
-                                ? "bg-au-corporate-green text-white"
-                                : "bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200"
+                                ? 'bg-au-corporate-green text-white'
+                                : 'bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200'
                             )}
                           >
                             {page}
@@ -520,10 +547,10 @@ function CategoryPageInner() {
                       onClick={() => goToPage(currentPage + 1)}
                       disabled={currentPage === totalPages}
                       className={cn(
-                        "p-2 rounded-lg transition-colors",
+                        'p-2 rounded-lg transition-colors',
                         currentPage === totalPages
-                          ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                          : "bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200"
+                          ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                          : 'bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200'
                       )}
                     >
                       <ChevronRight className="h-5 w-5" />
@@ -533,10 +560,10 @@ function CategoryPageInner() {
                         onClick={() => goToPage(totalPages)}
                         disabled={currentPage === totalPages}
                         className={cn(
-                          "p-2 rounded-lg transition-colors ml-2",
+                          'p-2 rounded-lg transition-colors ml-2',
                           currentPage === totalPages
-                            ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                            : "bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200"
+                            ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                            : 'bg-white text-au-grey-text hover:bg-gray-100 border border-gray-200'
                         )}
                       >
                         <ChevronRight className="h-5 w-5" />
@@ -549,10 +576,10 @@ function CategoryPageInner() {
             )}
 
             {/* Empty State */}
-            {!loading && publications.length === 0 && (
+            {!shouldShowSkeleton && publications.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-au-grey-text/70 text-lg mb-4">No publications found in this category</p>
-                {(searchQuery || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
+                <p className="text-au-grey-text/70 text-lg mb-4">No publications found</p>
+                {(searchQuery || selectedCategories.size > 0 || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
                   <button
                     onClick={clearFilters}
                     className="text-au-corporate-green hover:underline"
@@ -567,22 +594,6 @@ function CategoryPageInner() {
       </div>
       <PublicFooter />
     </div>
-  );
-}
-
-function CategoryPageContent() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-au-gold border-t-transparent rounded-full animate-spin" /></div>}>
-      <CategoryPageInner />
-    </Suspense>
-  );
-}
-
-export default function CategoryPage() {
-  return (
-    <Provider store={store}>
-      <CategoryPageContent />
-    </Provider>
   );
 }
 
