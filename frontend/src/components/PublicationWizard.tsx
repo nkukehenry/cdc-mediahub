@@ -88,6 +88,66 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const [isFeatured, setIsFeatured] = useState(false);
   const [isLeaderboard, setIsLeaderboard] = useState(false);
   const [existingCoverImage, setExistingCoverImage] = useState<string | null>(null);
+  const [schedulePublication, setSchedulePublication] = useState(false);
+  const isVideoMimeType = (mimeType?: string) => Boolean(mimeType && mimeType.startsWith('video/'));
+  const isImageMimeType = (mimeType?: string) => Boolean(mimeType && mimeType.startsWith('image/'));
+  const isVideoPath = (filePath?: string | null) => {
+    if (!filePath) return false;
+    const normalizedPath = (filePath.split('?')[0] || '').toLowerCase();
+    return /\.(mp4|mov|mpe?g|avi|wmv|webm|ogg|ogv)$/.test(normalizedPath);
+  };
+
+  const padNumber = (value: number, length: number = 2) => String(value).padStart(length, '0');
+
+  const formatDateTimeForInput = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}T${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}`;
+  };
+
+  const formatDateTimeForApi = (value?: string) => {
+    if (!value) return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+
+    const milliseconds = padNumber(date.getMilliseconds(), 3);
+
+    return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${milliseconds}`;
+  };
+
+  const coverIsVideo = useMemo(() => {
+    if (coverFile) {
+      return isVideoMimeType(coverFile.mimeType);
+    }
+    return isVideoPath(existingCoverImage);
+  }, [coverFile, existingCoverImage]);
+
+  const coverPreviewSource = useMemo(() => {
+    if (coverFile) {
+      if (coverIsVideo) {
+        return (
+          coverFile.downloadUrl ||
+          (coverFile.filePath ? getImageUrl(coverFile.filePath) : undefined) ||
+          coverFile.thumbnailUrl ||
+          ''
+        );
+      }
+      return (
+        (coverFile.filePath ? getImageUrl(coverFile.filePath) : undefined) ||
+        coverFile.downloadUrl ||
+        coverFile.thumbnailUrl ||
+        getImageUrl(PLACEHOLDER_IMAGE_PATH)
+      );
+    }
+    if (existingCoverImage) {
+      return getImageUrl(existingCoverImage);
+    }
+    return getImageUrl(PLACEHOLDER_IMAGE_PATH);
+  }, [coverFile, coverIsVideo, existingCoverImage]);
+
+  const coverPreviewMime = coverFile?.mimeType || (coverIsVideo ? 'video/mp4' : 'image/jpeg');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -304,7 +364,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         setMetaDescription(publication.metaDescription || '');
         setStatus(publication.status || 'draft');
         setSaveAsDraft((publication.status || 'draft') === 'draft');
-        setPublicationDate(publication.publicationDate ? publication.publicationDate.split('T')[0] : '');
+        const formattedDate = formatDateTimeForInput(publication.publicationDate);
+        setPublicationDate(formattedDate);
+        setSchedulePublication(Boolean(formattedDate));
         setHasComments(publication.hasComments ?? true);
         setIsFeatured(publication.isFeatured ?? false);
         setIsLeaderboard(publication.isLeaderboard ?? false);
@@ -420,9 +482,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const handleCoverFileSelect = (files: FileWithUrls[]) => {
     if (files.length > 0) {
       const selectedFile = files[0];
-      // Only allow images for cover
-      if (!selectedFile.mimeType.startsWith('image/')) {
-        showError(t('publications.pleaseSelectImageFile'));
+      const mimeType = selectedFile.mimeType || '';
+      const isImage = isImageMimeType(mimeType);
+      const isVideo = isVideoMimeType(mimeType);
+
+      if (!isImage && !isVideo) {
+        showError(t('publications.pleaseSelectImageOrVideo'));
         return;
       }
       console.log('Cover file selected:', selectedFile);
@@ -439,6 +504,23 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         delete updated.cover;
         return updated;
       });
+
+      if (isVideo) {
+        setAttachmentFiles(prev => {
+          if (prev.some(file => file.id === selectedFile.id)) {
+            setAttachmentFileIds(prev.map(file => file.id));
+            return prev;
+          }
+          const updated = [selectedFile, ...prev];
+          setAttachmentFileIds(updated.map(file => file.id));
+          return updated;
+        });
+        setErrors(prev => {
+          const updated = { ...prev };
+          delete updated.attachments;
+          return updated;
+        });
+      }
     } else {
       setCoverFile(null);
     }
@@ -746,6 +828,8 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         coverImageUrl = existingCoverImage;
       }
 
+      const formattedPublicationDate = schedulePublication ? formatDateTimeForApi(publicationDate) : undefined;
+
       if (isEditMode && publicationId) {
         // Update existing publication
         const submissionStatus = saveAsDraft ? 'draft' : 'pending';
@@ -762,7 +846,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
           status: submissionStatus,
-          publicationDate: publicationDate || undefined,
+          publicationDate: formattedPublicationDate,
           hasComments,
           isFeatured,
           isLeaderboard,
@@ -800,7 +884,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
           status: submissionStatus,
-          publicationDate: publicationDate || undefined,
+          publicationDate: formattedPublicationDate,
           hasComments,
           isFeatured,
           isLeaderboard,
@@ -1140,33 +1224,35 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                 </label>
                 {coverFile || existingCoverImage ? (
                   <div className="relative">
-                    <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
-                      <img
-                        key={coverFile?.id || existingCoverImage || 'cover-preview'}
-                        src={coverFile 
-                          ? (coverFile.filePath 
-                              ? getImageUrl(coverFile.filePath) 
-                              : (coverFile.downloadUrl && !coverFile.downloadUrl.includes('unsplash') 
-                                  ? coverFile.downloadUrl 
-                                  : (coverFile.thumbnailUrl && !coverFile.thumbnailUrl.includes('unsplash')
-                                      ? coverFile.thumbnailUrl 
-                                      : getImageUrl(PLACEHOLDER_IMAGE_PATH)))
-                            )
-                          : (existingCoverImage ? getImageUrl(existingCoverImage) : getImageUrl(PLACEHOLDER_IMAGE_PATH))
-                        }
-                        alt={t('publications.coverImagePreview')}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          // Always fallback to placeholder image
-                          if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
-                            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
-                          }
-                        }}
-                        onLoad={() => {
-                          console.log('Image loaded successfully');
-                        }}
-                      />
+                    <div className={`w-full ${coverIsVideo ? 'h-96 md:h-[28rem]' : 'h-64'} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center transition-all duration-300`}>
+                      {coverIsVideo ? (
+                        coverPreviewSource ? (
+                          <video
+                            key={coverFile?.id || existingCoverImage || 'cover-preview-video'}
+                            className="w-full h-full object-cover"
+                            controls
+                            preload="metadata"
+                          >
+                            <source src={coverPreviewSource} type={coverPreviewMime} />
+                            {t('publications.videoPreviewNotSupported') || 'Video preview not supported.'}
+                          </video>
+                        ) : (
+                          <div className="text-sm text-gray-500">{t('publications.videoPreviewNotAvailable') || 'Video preview not available.'}</div>
+                        )
+                      ) : (
+                        <img
+                          key={coverFile?.id || existingCoverImage || 'cover-preview'}
+                          src={coverPreviewSource}
+                          alt={t('publications.coverImagePreview')}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
+                              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1489,16 +1575,36 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-au-grey-text mb-1">
-                  {t('publications.publicationDate')}
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={schedulePublication}
+                    onChange={(e) => {
+                      setSchedulePublication(e.target.checked);
+                      if (!e.target.checked) {
+                        setPublicationDate('');
+                      } else if (!publicationDate) {
+                        setPublicationDate(formatDateTimeForInput(new Date().toISOString()));
+                      }
+                    }}
+                    className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-gold"
+                    disabled={isLoading}
+                  />
+                  <span className="text-sm font-medium text-au-grey-text">{t('publications.schedulePublication') || 'Schedule Publication'}</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  value={publicationDate}
-                  onChange={(e) => setPublicationDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
-                  disabled={isLoading}
-                />
+                <div className={cn(schedulePublication ? 'mt-2' : 'hidden')}>
+                  <label className="block text-sm font-medium text-au-grey-text mb-1">
+                    {t('publications.publicationDate')}
+                  </label>
+                  <input
+                    type="datetime-local"
+                    step="1"
+                    value={publicationDate}
+                    onChange={(e) => setPublicationDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
+                    disabled={isLoading}
+                  />
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -1612,7 +1718,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         onSelectFiles={handleCoverFileSelect}
         selectedFiles={coverFile ? [coverFile] : []}
         multiple={false}
-        filterMimeTypes={['image/*']}
+        filterMimeTypes={['image/*', 'video/*']}
         title={t('publications.coverImage')}
         description={t('publications.selectImageOrVideo')}
       />

@@ -114,15 +114,15 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
       <div className="relative w-full h-[250px] md:h-[400px] overflow-hidden rounded-2xl">
         <Skeleton className="w-full h-full rounded-2xl" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 md:p-7">
-          <div className="flex items-end justify-between gap-4">
-            <div className="space-y-3 flex-1 max-w-xl">
+          <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+            <div className="space-y-3 flex-1 w-full">
               <Skeleton className="h-5 w-24 rounded-full" />
               <Skeleton className="h-10 w-11/12 rounded-lg" />
               <Skeleton className="h-4 w-2/3 rounded-md" />
             </div>
-            <div className="flex gap-2">
+            <div className="hidden sm:flex gap-2">
               <Skeleton className="w-20 h-16 rounded-lg" />
-              <Skeleton className="hidden sm:block w-20 h-16 rounded-lg" />
+              <Skeleton className="w-20 h-16 rounded-lg" />
             </div>
           </div>
         </div>
@@ -162,9 +162,9 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
         {/* Text Overlay - Bottom with Preview Cards on Right */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 text-white flex items-end justify-between">
+        <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 text-white flex flex-col lg:flex-row lg:items-end lg:justify-between">
           {/* Left side - Text content */}
-          <div className="flex-1">
+          <div className="flex-1 w-full mb-4 lg:mb-0">
             {/* Red Category Tag */}
             <div className="mb-3">
               <span className="inline-block bg-au-red text-white text-xs font-semibold tracking-wider uppercase px-3 py-1">
@@ -188,7 +188,7 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
 
           {/* Right side - Next Two Slides Preview */}
           {publications.length > 1 && (
-            <div className="flex flex-row gap-2 ml-4 z-10">
+            <div className="hidden sm:flex flex-row gap-2 ml-0 lg:ml-4 z-10">
               {/* Next Slide 1 */}
               {nextSlide1 && (
                 <button

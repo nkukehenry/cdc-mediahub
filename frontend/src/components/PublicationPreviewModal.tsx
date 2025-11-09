@@ -11,6 +11,12 @@ import { FileWithUrls } from '@/types/fileManager';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+const isVideoPath = (filePath?: string | null) => {
+  if (!filePath) return false;
+  const normalizedPath = (filePath.split('?')[0] || '').toLowerCase();
+  return /\.(mp4|mov|mpe?g|avi|wmv|webm|ogg|ogv|m4v)$/.test(normalizedPath);
+};
+
 interface FileEntity {
   id: string;
   filename: string;
@@ -84,6 +90,27 @@ export default function PublicationPreviewModal({
   const [publicationDate, setPublicationDate] = useState('');
   const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [schedulePublication, setSchedulePublication] = useState(false);
+
+  const padNumber = (value: number, length: number = 2) => String(value).padStart(length, '0');
+
+  const formatDateTimeForInput = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}T${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}`;
+  };
+
+  const formatDateTimeForApi = (value?: string) => {
+    if (!value) return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+
+    const milliseconds = padNumber(date.getMilliseconds(), 3);
+
+    return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${milliseconds}`;
+  };
 
   // Helper function to get file icon based on mime type
   const getAttachmentIcon = (mimeType: string) => {
@@ -146,7 +173,9 @@ export default function PublicationPreviewModal({
         setIsFeatured(pub.isFeatured || false);
         setIsLeaderboard(pub.isLeaderboard || false);
         setHasComments(pub.hasComments ?? true);
-        setPublicationDate(pub.publicationDate ? new Date(pub.publicationDate).toISOString().slice(0, 16) : '');
+        const formattedDate = formatDateTimeForInput(pub.publicationDate);
+        setPublicationDate(formattedDate);
+        setSchedulePublication(Boolean(formattedDate));
         setIsEditing(false);
       }
     } catch (error) {
@@ -171,7 +200,7 @@ export default function PublicationPreviewModal({
         isFeatured,
         isLeaderboard,
         hasComments,
-        publicationDate: publicationDate || undefined,
+        publicationDate: schedulePublication ? formatDateTimeForApi(publicationDate) : undefined,
       });
 
       if (response.success) {
@@ -333,15 +362,24 @@ export default function PublicationPreviewModal({
               {/* Cover Image */}
               {publication?.coverImage && (
                 <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
-                  <img
-                    src={getImageUrl(publication.coverImage)}
-                    alt={title || 'Cover'}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
-                  />
+                  {isVideoPath(publication.coverImage) ? (
+                    <video
+                      key={publication.coverImage}
+                      src={getImageUrl(publication.coverImage)}
+                      controls
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={getImageUrl(publication.coverImage)}
+                      alt={title || 'Cover'}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                  )}
                 </div>
               )}
 
@@ -460,6 +498,56 @@ export default function PublicationPreviewModal({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Publication Date */}
+              <div className="pt-4">
+                {isEditing ? (
+                  <>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={schedulePublication}
+                        onChange={(e) => {
+                          setSchedulePublication(e.target.checked);
+                          if (!e.target.checked) {
+                            setPublicationDate('');
+                          } else if (!publicationDate) {
+                            setPublicationDate(formatDateTimeForInput(new Date().toISOString()));
+                          }
+                        }}
+                        className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-gold"
+                        disabled={saving}
+                      />
+                      <span className="text-sm font-medium text-au-grey-text">
+                        {t('publications.schedulePublication') || 'Schedule Publication'}
+                      </span>
+                    </label>
+                    <div className={cn(schedulePublication ? 'mt-2' : 'hidden')}>
+                      <input
+                        type="datetime-local"
+                        step="1"
+                        value={publicationDate}
+                        onChange={(e) => setPublicationDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none text-sm transition-colors"
+                        disabled={saving}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-sm font-medium text-au-grey-text mb-1">
+                      {t('publications.publicationDate')}
+                    </label>
+                    <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">
+                      <span className="text-sm text-au-grey-text">
+                        {publication?.publicationDate
+                          ? new Date(publication.publicationDate).toLocaleString()
+                          : t('publications.notScheduled') || 'Not scheduled'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Settings */}

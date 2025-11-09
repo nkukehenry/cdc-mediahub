@@ -178,9 +178,9 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
         </div>
 
         {/* Text Overlay - Bottom with Preview Cards on Right */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 text-white flex items-end justify-between">
+        <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 text-white flex flex-col lg:flex-row lg:items-end lg:justify-between">
           {/* Left side - Text content */}
-          <div className="flex-1">
+          <div className="flex-1 w-full mb-4 lg:mb-0">
 
             {/* Title */}
             <Link href={`/publication/${currentPublication.slug}`}>
@@ -198,7 +198,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
 
           {/* Right side - Next Two Slides Preview */}
           {publications.length > 1 && (
-            <div className="flex flex-row gap-2 ml-4 z-10">
+            <div className="hidden sm:flex flex-row gap-2 ml-0 lg:ml-4 z-10">
               {/* Next Slide 1 */}
               {nextSlide1 && (
                 <button

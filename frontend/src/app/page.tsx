@@ -25,7 +25,7 @@ export default function Home() {
         </div>
 
         {/* Featured and Leadership Sliders */}
-        <div className="py-8 px-6 md:px-16 lg:px-24 xl:px-32">
+        <div className="py-8 px-4 md:px-16 lg:px-24 xl:px-32">
           <div className="container mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Featured Slider */}

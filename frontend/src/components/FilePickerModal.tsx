@@ -194,7 +194,7 @@ function FilePickerModalContent({
       />
       
       {/* Modal */}
-      <div className="relative bg-white md:rounded-lg shadow-xl w-full h-full md:h-auto md:max-w-6xl md:mx-4 md:max-h-[90vh] flex flex-col">
+      <div className="relative bg-white  md:rounded-lg shadow-xl w-full h-full md:h-auto md:max-w-6xl md:mx-4 md:max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex-1 min-w-0">
@@ -250,14 +250,16 @@ function FilePickerModalContent({
         )}
 
         {/* File Manager */}
-        <div className="flex-1 overflow-hidden min-h-0">
-          <FileManager
-            onFileSelect={handleFileSelect}
-            mode="picker"
-            className="w-full h-full"
-            allowedMimeTypes={filterMimeTypes}
-            selectionLimit={multiple ? undefined : 1}
-          />
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="h-full min-h-0 overflow-auto">
+            <FileManager
+              onFileSelect={handleFileSelect}
+              mode="picker"
+              className="w-full h-full min-h-0 overflow-y-auto"
+              allowedMimeTypes={filterMimeTypes}
+              selectionLimit={multiple ? undefined : 1}
+            />
+          </div>
         </div>
 
         {/* Footer */}

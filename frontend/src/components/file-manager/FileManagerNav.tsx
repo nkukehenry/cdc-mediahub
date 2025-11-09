@@ -48,13 +48,13 @@ export default function FileManagerNav({
 
       {/* Sidebar */}
       <div className={cn(
-        "fixed lg:static inset-y-0 left-0 z-40 lg:z-auto bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out",
+        "fixed lg:static inset-y-0 left-0 z-40 lg:z-auto bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out overflow-y-auto",
         "w-80",
         isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       )}>
         {/* Title */}
-        <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-au-grey-text">{title}</h2>
+        <div className="px-4 md:px-6  border-gray-200 flex items-center justify-between">
+          {/* <h2 className="text-base font-semibold text-au-grey-text">{title}</h2> */}
           <button
             onClick={() => setIsMobileOpen(false)}
             className="lg:hidden p-1 hover:bg-gray-100 rounded"

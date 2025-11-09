@@ -136,6 +136,7 @@ export default {
     metaDescription: 'Meta description (SEO)',
     status: 'Statut',
     publicationDate: 'Date de publication',
+    schedulePublication: 'Programmer la publication',
     hasComments: 'Activer les commentaires',
     isFeatured: 'En vedette',
     isLeaderboard: 'Classement',

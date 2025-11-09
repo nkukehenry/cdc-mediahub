@@ -790,7 +790,7 @@ export default function FileManager({
   }
 
   return (
-    <div className={cn('flex h-full bg-white w-full', className)}>
+    <div className={cn('flex h-full min-h-0 bg-white w-full overflow-hidden', className)}>
       {/* Left Sidebar */}
       <FileManagerNav
         currentFolder={currentFolder}
@@ -808,9 +808,9 @@ export default function FileManager({
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col lg:ml-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden lg:ml-0">
         {/* Content Area */}
-        <div className="flex-1 p-3 md:p-4 lg:p-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-6 bg-gray-50">
           {/* Breadcrumb Navigation */}
           <div className="mb-4">
             <nav className="flex items-center space-x-2 text-sm">
@@ -832,9 +832,9 @@ export default function FileManager({
           </div>
 
           {/* Action Buttons and View Options */}
+          {mode !== 'picker' && (
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
             {/* Action Buttons - Hidden in picker mode */}
-            {mode !== 'picker' && (
               <div className="flex flex-wrap items-center gap-2">
                 <button 
                   onClick={() => setIsUploadModalOpen(true)}
@@ -890,8 +890,6 @@ export default function FileManager({
                   <span className="hidden sm:inline">{t('fileManager.delete')}</span>
                 </button>
               </div>
-            )}
-
             {/* View and Sort Options */}
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <div className="flex items-center gap-2">
@@ -943,9 +941,10 @@ export default function FileManager({
               </button>
             </div>
           </div>
+          )}
 
           {/* Recent Files Section */}
-          {recentFiles.length > 0 && (
+          {mode !== 'picker' && recentFiles.length > 0 && (
           <div className="mb-6 md:mb-8">
             <h2 className="text-base md:text-lg font-semibold text-au-grey-text mb-3 md:mb-4">Recent Files</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
@@ -1076,7 +1075,7 @@ export default function FileManager({
               </div>
 
               {/* Table Body - Scrollable */}
-              <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+              <div className="max-h-96 min-h-[40vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
                 <div className="divide-y divide-gray-200">
                   {itemsSorted.map((item) => (
                     <FileListRow

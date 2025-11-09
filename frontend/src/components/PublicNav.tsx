@@ -278,7 +278,7 @@ export default function PublicNav() {
 
   return (
     <>
-      <nav className="bg-white sticky top-0 z-50 shadow-md border-b border-gray-200">
+      <nav className="bg-white sticky top-0 z-[60] shadow-md border-b border-gray-200">
         {/* Top Utility Bar */}
         <div className="bg-au-corporate-green">
           <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32">
@@ -733,8 +733,8 @@ export default function PublicNav() {
           />
           
           {/* Mobile Menu */}
-          <div className={cn(
-            "fixed top-[6.5rem] left-0 right-0 bg-white z-40 lg:hidden transform transition-transform duration-300 ease-in-out overflow-y-auto max-h-[calc(100vh-6.5rem)]",
+        <div className={cn(
+          "fixed top-[6.5rem] left-0 right-0 bg-white z-[55] lg:hidden transform transition-transform duration-300 ease-in-out overflow-y-auto max-h-[calc(100vh-6.5rem)]",
             isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
           )}>
             <div className="p-4">

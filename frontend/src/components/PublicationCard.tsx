@@ -8,8 +8,53 @@ import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileU
 interface PublicationCardProps {
   publication: Publication;
 }
+const getMediaDetails = (publication: Publication) => {
+    const coverImage = publication.coverImage;
+    if (coverImage) {
+      const lower = coverImage.toLowerCase();
+      const isVideo =
+        lower.includes('.mp4') ||
+        lower.includes('.mov') ||
+        lower.includes('.webm') ||
+        lower.includes('.mpe') ||
+        lower.includes('.mpeg') ||
+        lower.includes('.avi') ||
+        lower.includes('.wmv') ||
+        lower.includes('.ogv') ||
+        lower.includes('.ogg');
+
+      return {
+        isVideo,
+        url: getImageUrl(coverImage),
+        mimeType: publication.attachments?.[0]?.mimeType,
+        attachment: undefined,
+      };
+    }
+
+    const firstAttachment = publication.attachments?.[0];
+    if (firstAttachment && firstAttachment.mimeType?.startsWith('video/')) {
+      const attachmentUrl =
+        firstAttachment.downloadUrl ||
+        (firstAttachment.filePath ? getImageUrl(firstAttachment.filePath) : undefined);
+      return {
+        isVideo: true,
+        url: attachmentUrl || '',
+        mimeType: firstAttachment.mimeType,
+        attachment: firstAttachment,
+      };
+    }
+
+    return {
+      isVideo: false,
+      url: getImageUrl(PLACEHOLDER_IMAGE_PATH),
+      mimeType: undefined,
+      attachment: undefined,
+    };
+  };
 
 export default function PublicationCard({ publication }: PublicationCardProps) {
+  const mediaDetails = getMediaDetails(publication);
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -76,15 +121,25 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
     >
       {/* Cover Image */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
-        <img
-          src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
-          alt={publication.title}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
-          }}
-        />
+        {mediaDetails.isVideo && mediaDetails.url ? (
+          <video
+            src={mediaDetails.url}
+            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+            controls={true}
+            muted
+            playsInline
+          />
+        ) : (
+          <img
+            src={mediaDetails.url || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
+            alt={publication.title}
+            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+            }}
+          />
+        )}
         
         {/* Translucent Overlay */}
         <div className="absolute inset-0" />
