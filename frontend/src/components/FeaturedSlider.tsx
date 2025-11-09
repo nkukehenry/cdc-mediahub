@@ -151,7 +151,7 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
         <img
           src={getImageUrl(currentPublication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
           alt={currentPublication.title}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
@@ -159,7 +159,7 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
         />
 
         {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-black/20 to-transparent" />
 
         {/* Text Overlay - Bottom with Preview Cards on Right */}
         <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 text-white flex flex-col lg:flex-row lg:items-end lg:justify-between">
@@ -198,7 +198,7 @@ export default function FeaturedSlider({ limit = 10 }: FeaturedSliderProps) {
                   <img
                     src={getImageUrl(nextSlide1.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                     alt={nextSlide1.title}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);

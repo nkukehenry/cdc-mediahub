@@ -160,7 +160,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
         <img
           src={getImageUrl(currentPublication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
           alt={currentPublication.title}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
@@ -168,7 +168,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
         />
 
         {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-black/20 to-transparent" />
 
         {/* Red Category Tag - Top */}
         <div className="absolute top-4 left-4 z-20">
