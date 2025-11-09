@@ -181,7 +181,7 @@ export default function CategoriesSection() {
                   />
                   
                   {/* Dark Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/50 to-black/60" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-black/10 to-black/15" />
                   
                   {/* Content Overlay */}
                   <div className="absolute inset-0 flex flex-col p-2.5 md:p-3">

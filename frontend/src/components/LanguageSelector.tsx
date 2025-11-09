@@ -243,23 +243,34 @@ export default function LanguageSelector() {
 
   const setGoogleTranslateCookie = (googleLangCode: string) => {
     const cookieValue = `/en/${googleLangCode}`;
-    const domain = window.location.hostname;
+    const hostname = window.location.hostname;
+    const hostParts = hostname.split('.');
     const expiresPast = 'expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    const paths = ['/', '/en'];
 
-    // Clear existing cookies
-    document.cookie = `googtrans=; path=/; ${expiresPast}`;
-    if (domain && domain !== 'localhost') {
-      document.cookie = `googtrans=; path=/; domain=${domain}; ${expiresPast}`;
-      document.cookie = `googtrans=; path=/; domain=.${domain}; ${expiresPast}`;
+    const domains: (string | null)[] = [''];
+    for (let i = 0; i < hostParts.length; i++) {
+      const domain = hostParts.slice(i).join('.');
+      if (domain && domain !== 'localhost') {
+        domains.push(domain);
+        domains.push(`.${domain}`);
+      }
     }
+
+    const clearCookie = (domain: string | null, path: string) => {
+      const domainPart = domain ? `; domain=${domain}` : '';
+      document.cookie = `googtrans=; path=${path}${domainPart}; ${expiresPast}`;
+    };
+
+    domains.forEach((domain) => paths.forEach((path) => clearCookie(domain, path)));
 
     const maxAge = 'max-age=31536000';
-    document.cookie = `googtrans=${cookieValue}; path=/; ${maxAge}`;
+    const setCookie = (domain: string | null, path: string) => {
+      const domainPart = domain ? `; domain=${domain}` : '';
+      document.cookie = `googtrans=${cookieValue}; path=${path}${domainPart}; ${maxAge}`;
+    };
 
-    if (domain && domain !== 'localhost') {
-      document.cookie = `googtrans=${cookieValue}; path=/; domain=${domain}; ${maxAge}`;
-      document.cookie = `googtrans=${cookieValue}; path=/; domain=.${domain}; ${maxAge}`;
-    }
+    domains.forEach((domain) => setCookie(domain, '/'));
   };
 
   const handleLanguageChange = async (lang: LanguageCode) => {
