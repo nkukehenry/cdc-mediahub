@@ -73,10 +73,20 @@ export default function SiteMetadata() {
 
       if (existingShortcutIcon) {
         existingShortcutIcon.setAttribute('href', faviconUrl);
+      } else {
+        const shortcutLink = document.createElement('link');
+        shortcutLink.rel = 'shortcut icon';
+        shortcutLink.href = faviconUrl;
+        document.head.appendChild(shortcutLink);
       }
 
       if (existingAppleIcon) {
         existingAppleIcon.setAttribute('href', faviconUrl);
+      } else {
+        const appleLink = document.createElement('link');
+        appleLink.rel = 'apple-touch-icon';
+        appleLink.href = faviconUrl;
+        document.head.appendChild(appleLink);
       }
     }
   }, [settings]);
