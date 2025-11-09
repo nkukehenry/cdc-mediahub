@@ -137,8 +137,6 @@ export default {
     status: 'Estado',
     publicationDate: 'Fecha de publicación',
     schedulePublication: 'Programar publicación',
-    schedulePublication: 'Programar publicación',
-    schedulePublication: 'Programar publicación',
     hasComments: 'Habilitar comentarios',
     isFeatured: 'Destacado',
     isLeaderboard: 'Clasificación',

@@ -136,7 +136,6 @@ export default {
     status: 'Hali',
     publicationDate: 'Tarehe ya Uchapishaji',
     schedulePublication: 'Panga kuchapishwa',
-    schedulePublication: 'Ratibu Uchapishaji',
     hasComments: 'Washa Maoni',
     isFeatured: 'Maalum',
     isLeaderboard: 'Orodha ya Watazamaji',
