@@ -244,11 +244,21 @@ export default function LanguageSelector() {
   const setGoogleTranslateCookie = (googleLangCode: string) => {
     const cookieValue = `/en/${googleLangCode}`;
     const domain = window.location.hostname;
+    const expiresPast = 'expires=Thu, 01 Jan 1970 00:00:00 GMT';
 
-    document.cookie = `googtrans=${cookieValue}; path=/; max-age=31536000`;
+    // Clear existing cookies
+    document.cookie = `googtrans=; path=/; ${expiresPast}`;
+    if (domain && domain !== 'localhost') {
+      document.cookie = `googtrans=; path=/; domain=${domain}; ${expiresPast}`;
+      document.cookie = `googtrans=; path=/; domain=.${domain}; ${expiresPast}`;
+    }
+
+    const maxAge = 'max-age=31536000';
+    document.cookie = `googtrans=${cookieValue}; path=/; ${maxAge}`;
 
     if (domain && domain !== 'localhost') {
-      document.cookie = `googtrans=${cookieValue}; path=/; domain=${domain}; max-age=31536000`;
+      document.cookie = `googtrans=${cookieValue}; path=/; domain=${domain}; ${maxAge}`;
+      document.cookie = `googtrans=${cookieValue}; path=/; domain=.${domain}; ${maxAge}`;
     }
   };
 
