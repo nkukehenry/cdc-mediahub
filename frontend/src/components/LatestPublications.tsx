@@ -15,7 +15,7 @@ export default function LatestPublications() {
   const { latestPublications, loading } = useSelector((state: RootState) => state.publications);
 
   useEffect(() => {
-    dispatch(fetchLatestPublications(12) as any);
+    dispatch(fetchLatestPublications(6) as any);
   }, [dispatch]);
 
   if (loading) {
@@ -27,7 +27,7 @@ export default function LatestPublications() {
             <Skeleton className="h-4 w-32 rounded-md" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: 6 }).map((_, i) => (
               <PublicationCardSkeleton key={i} />
             ))}
           </div>
@@ -58,7 +58,7 @@ export default function LatestPublications() {
 
         {/* Publications Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 mb-8">
-          {latestPublications.slice(0, 12).map((publication, index) => (
+          {latestPublications.slice(0, 6).map((publication, index) => (
             <div
               key={publication.id}
               className="animate-fade-in"
