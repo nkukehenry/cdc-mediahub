@@ -208,7 +208,7 @@ export default function LeadershipSlider({ limit = 10 }: LeadershipSliderProps) 
                   <img
                     src={getImageUrl(nextSlide1.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                     alt={nextSlide1.title}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);

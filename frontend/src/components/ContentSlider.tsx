@@ -235,7 +235,7 @@ export default function ContentSlider({ publications, title, badgeLabel, classNa
                       <img
                         src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
                         alt={publication.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
