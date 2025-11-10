@@ -93,7 +93,10 @@ export default function SubcategoriesPage() {
 
   const handleCreate = async (data: { name: string; slug: string; description?: string }) => {
     try {
-      const response = await apiClient.createSubcategory(data);
+      const response = await apiClient.createSubcategory({
+        ...data,
+        description: data.description && data.description.trim().length > 0 ? data.description : data.name,
+      });
       
       if (response.success && response.data?.subcategory) {
         await loadSubcategories();
@@ -110,7 +113,10 @@ export default function SubcategoriesPage() {
     if (!selectedSubcategory) return;
 
     try {
-      const response = await apiClient.updateSubcategory(selectedSubcategory.id, data);
+      const response = await apiClient.updateSubcategory(selectedSubcategory.id, {
+        ...data,
+        description: data.description && data.description.trim().length > 0 ? data.description : data.name,
+      });
       
       if (response.success && response.data?.subcategory) {
         await loadSubcategories();

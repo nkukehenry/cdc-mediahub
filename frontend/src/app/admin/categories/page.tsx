@@ -97,7 +97,10 @@ export default function CategoriesPage() {
 
   const handleCreate = async (data: { name: string; slug: string; description?: string; coverImage?: string; showOnMenu?: boolean; menuOrder?: number; subcategoryIds?: string[] }) => {
     try {
-      const response = await apiClient.createCategory(data);
+      const response = await apiClient.createCategory({
+        ...data,
+        description: data.description && data.description.trim().length > 0 ? data.description : data.name,
+      });
       
       if (response.success && response.data?.category) {
         await loadCategories();
@@ -114,7 +117,10 @@ export default function CategoriesPage() {
     if (!selectedCategory) return;
 
     try {
-      const response = await apiClient.updateCategory(selectedCategory.id, data);
+      const response = await apiClient.updateCategory(selectedCategory.id, {
+        ...data,
+        description: data.description && data.description.trim().length > 0 ? data.description : data.name,
+      });
       
       if (response.success && response.data?.category) {
         await loadCategories();

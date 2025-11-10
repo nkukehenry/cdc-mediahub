@@ -297,6 +297,41 @@ export class PostController {
     }
   }
 
+  async deleteComment(req: Request, res: Response): Promise<void> {
+    try {
+      const { id, commentId } = req.params;
+      if (!commentId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            type: 'VALIDATION_ERROR',
+            message: 'Comment identifier is required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const result = await this.postService.deleteComment(commentId, id);
+
+      res.json({
+        success: true,
+        data: {
+          deleted: result.deleted,
+          commentsCount: result.commentsCount,
+          postId: result.postId,
+        },
+      });
+    } catch (error) {
+      if ((error as any)?.type === 'VALIDATION_ERROR') {
+        res.status(400).json(this.errorHandler.formatErrorResponse(error as Error));
+        return;
+      }
+      this.logger.error('Delete comment failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
   async search(req: Request, res: Response): Promise<void> {
     try {
       const { q } = req.query;

@@ -678,6 +678,7 @@ export interface IPublicationService {
   unlikePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;
   getComments(id: string, options?: { limit?: number; offset?: number }): Promise<{ comments: PostCommentEntity[]; total: number; limit: number; offset: number; page: number; totalPages: number }>;
   addComment(id: string, data: CreatePostCommentData): Promise<{ comment: PostCommentEntity; commentsCount: number }>;
+  deleteComment(commentId: string, expectedPostId?: string): Promise<{ deleted: boolean; postId: string; commentsCount: number }>;
 }
 
 export interface ICategoryService {
@@ -745,4 +746,6 @@ export interface IPostCommentRepository {
   create(commentData: CreatePostCommentData): Promise<PostCommentEntity>;
   findByPost(postId: string, limit: number, offset: number): Promise<PostCommentEntity[]>;
   countByPost(postId: string): Promise<number>;
+  findById(id: string): Promise<PostCommentEntity | null>;
+  delete(id: string): Promise<boolean>;
 }

@@ -43,6 +43,7 @@ export default {
     status: 'Status',
     publicationDate: 'Publication Date',
     schedulePublication: 'Schedule Publication',
+    notScheduled: 'Not scheduled',
     hasComments: 'Enable Comments',
     isFeatured: 'Featured',
     isLeaderboard: 'Leaderboard',

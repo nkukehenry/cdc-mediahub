@@ -17,7 +17,7 @@ function CachePageContent() {
   const { handleError, showSuccess } = useErrorHandler();
   const [keys, setKeys] = useState<CacheKey[]>([]);
   const [keysLoading, setKeysLoading] = useState(false);
-  const [searchPattern, setSearchPattern] = useState('mutindo:filemanager:*');
+  const [searchPattern, setSearchPattern] = useState('');
 
   useEffect(() => {
     loadKeys();
@@ -26,7 +26,8 @@ function CachePageContent() {
   const loadKeys = async (pattern?: string) => {
     try {
       setKeysLoading(true);
-      const response = await apiClient.getCacheKeys(pattern || searchPattern, 100);
+      const effectivePattern = pattern ?? (searchPattern.trim() ? searchPattern.trim() : '*');
+      const response = await apiClient.getCacheKeys(effectivePattern, 100);
       if (response.success && response.data) {
         setKeys(response.data.keys);
       }
@@ -38,7 +39,7 @@ function CachePageContent() {
   };
 
   const handleSearch = () => {
-    loadKeys(searchPattern);
+    loadKeys(searchPattern.trim() ? searchPattern.trim() : '*');
   };
 
   const handleDeleteKey = async (key: string) => {
@@ -62,7 +63,7 @@ function CachePageContent() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl md:text-2xl font-semibold text-au-grey-text">{t('nav.cache')}</h1>
         <button
-          onClick={() => loadKeys()}
+          onClick={() => loadKeys('*')}
           className="px-4 py-2 text-sm bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors flex items-center gap-2"
         >
           <RefreshCw className="h-4 w-4" />
@@ -80,7 +81,7 @@ function CachePageContent() {
               value={searchPattern}
               onChange={(e) => setSearchPattern(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="mutindo:filemanager:*"
+              placeholder="Enter cache pattern (e.g. mutindo:filemanager:*)"
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-corporate-green focus:border-transparent"
             />
           </div>

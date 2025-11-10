@@ -500,6 +500,12 @@ class ApiClient {
     });
   }
 
+  async deletePostComment(postId: string, commentId: string): Promise<ApiResponse<{ deleted: boolean; commentsCount: number; postId: string }>> {
+    return this.request<{ deleted: boolean; commentsCount: number; postId: string }>(`/api/admin/posts/${postId}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async searchPublications(query: string, limit?: number, offset?: number): Promise<ApiResponse<{ posts: Array<any> }>> {
     const params = new URLSearchParams();
     params.append('q', query);

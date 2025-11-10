@@ -137,6 +137,7 @@ export default {
     status: 'الحالة',
     publicationDate: 'تاريخ النشر',
     schedulePublication: 'جدولة النشر',
+    notScheduled: 'غير مجدول',
     hasComments: 'تفعيل التعليقات',
     isFeatured: 'مميز',
     isLeaderboard: 'لوحة المتصدرين',

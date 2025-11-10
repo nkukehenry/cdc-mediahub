@@ -15,56 +15,62 @@ export class CacheController {
   async getStats(req: Request, res: Response): Promise<void> {
     try {
       const isConnected = this.cacheService.isConnected();
-      
-      // Get cache info if Redis is available
-      let stats: any = {
-        connected: isConnected,
-        type: isConnected ? 'redis' : 'memory',
+      const supportsMemoryIntrospection = typeof (this.cacheService as any).getKeys === 'function';
+      const hasRedisAccessor = typeof (this.cacheService as any).getRedisInstance === 'function';
+      const redisInstance = hasRedisAccessor ? (this.cacheService as any).getRedisInstance() : null;
+      const isRedisService = !supportsMemoryIntrospection;
+
+      const stats: any = {
+        connected: isRedisService ? isConnected : true,
+        type: isRedisService ? 'redis' : 'memory',
         totalKeys: 0,
         memoryUsage: null,
         uptime: null
       };
 
-      // If using Redis, try to get more detailed stats
-      if (isConnected && 'getRedisInstance' in this.cacheService) {
+      if (isRedisService && isConnected && redisInstance) {
         try {
-          const redis = (this.cacheService as any).getRedisInstance();
-          if (redis) {
-            const info = await redis.info('stats');
-            const keyspace = await redis.info('keyspace');
-            const memory = await redis.info('memory');
-            
-            // Parse info strings
-            const parseInfo = (infoStr: string) => {
-              const result: Record<string, string> = {};
-              infoStr.split('\r\n').forEach(line => {
-                const [key, value] = line.split(':');
-                if (key && value) {
-                  result[key] = value;
-                }
-              });
-              return result;
-            };
+          const info = await redisInstance.info('stats');
+          const keyspace = await redisInstance.info('keyspace');
+          const memory = await redisInstance.info('memory');
 
-            const statsInfo = parseInfo(info);
-            const keyspaceInfo = parseInfo(keyspace);
-            const memoryInfo = parseInfo(memory);
-
-            // Count total keys
-            let totalKeys = 0;
-            Object.keys(keyspaceInfo).forEach(db => {
-              const match = keyspaceInfo[db].match(/keys=(\d+)/);
-              if (match) {
-                totalKeys += parseInt(match[1], 10);
+          const parseInfo = (infoStr: string) => {
+            const result: Record<string, string> = {};
+            infoStr.split('\r\n').forEach(line => {
+              const [key, value] = line.split(':');
+              if (key && value) {
+                result[key] = value;
               }
             });
+            return result;
+          };
 
-            stats.totalKeys = totalKeys;
-            stats.memoryUsage = memoryInfo.used_memory_human || null;
-            stats.uptime = statsInfo.uptime_in_seconds ? parseInt(statsInfo.uptime_in_seconds, 10) : null;
-          }
+          const statsInfo = parseInfo(info);
+          const keyspaceInfo = parseInfo(keyspace);
+          const memoryInfo = parseInfo(memory);
+
+          let totalKeys = 0;
+          Object.keys(keyspaceInfo).forEach(db => {
+            const match = keyspaceInfo[db].match(/keys=(\d+)/);
+            if (match) {
+              totalKeys += parseInt(match[1], 10);
+            }
+          });
+
+          stats.totalKeys = totalKeys;
+          stats.memoryUsage = memoryInfo.used_memory_human || null;
+          stats.uptime = statsInfo.uptime_in_seconds ? parseInt(statsInfo.uptime_in_seconds, 10) : null;
         } catch (error) {
           this.logger.warn('Could not fetch detailed Redis stats', error as Error);
+        }
+      } else if (!isRedisService && supportsMemoryIntrospection) {
+        try {
+          const keys = (this.cacheService as any).getKeys?.();
+          if (Array.isArray(keys)) {
+            stats.totalKeys = keys.length;
+          }
+        } catch (error) {
+          this.logger.warn('Could not fetch memory cache stats', error as Error);
         }
       }
 

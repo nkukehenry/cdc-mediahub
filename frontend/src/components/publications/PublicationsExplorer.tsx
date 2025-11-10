@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import { Search, X, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
@@ -202,6 +202,47 @@ export default function PublicationsExplorer({
     });
   };
 
+  const subcategoryOptions = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; parentIds: Set<string> }>();
+
+    categories.forEach((category) => {
+      category.subcategories?.forEach((subcat) => {
+        if (!subcat?.id) {
+          return;
+        }
+        if (!seen.has(subcat.id)) {
+          seen.set(subcat.id, {
+            id: subcat.id,
+            name: subcat.name,
+            parentIds: new Set(category.id ? [category.id] : []),
+          });
+        } else if (category.id) {
+          seen.get(subcat.id)?.parentIds.add(category.id);
+        }
+      });
+    });
+
+    const selectedIds = Array.from(selectedCategories);
+    const filtered = selectedIds.length === 0
+      ? Array.from(seen.values())
+      : Array.from(seen.values()).filter((entry) =>
+          entry.parentIds.size === 0 || selectedIds.some((catId) => entry.parentIds.has(catId))
+        );
+
+    return filtered.map(({ id, name }) => ({ id, name }));
+  }, [categories, selectedCategories]);
+
+  useEffect(() => {
+    setSelectedSubcategories((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+      const validIds = new Set(subcategoryOptions.map((option) => option.id));
+      const updated = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      return updated.size === prev.size ? prev : updated;
+    });
+  }, [subcategoryOptions]);
+
   const toggleSubcategory = (subcategoryId: string) => {
     setSelectedSubcategories(prev => {
       const newSet = new Set(prev);
@@ -323,19 +364,17 @@ export default function PublicationsExplorer({
               <div>
                 <h3 className="text-sm font-semibold text-au-grey-text mb-3 uppercase tracking-wide">Sub-Categories</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {categories.flatMap(cat =>
-                    cat.subcategories?.map(subcat => (
-                      <label key={subcat.id} className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedSubcategories.has(subcat.id)}
-                          onChange={() => toggleSubcategory(subcat.id)}
-                          className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-corporate-green"
-                        />
-                        <span className="text-sm text-au-grey-text">{subcat.name}</span>
-                      </label>
-                    ))
-                  )}
+                  {subcategoryOptions.map((subcat) => (
+                    <label key={subcat.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedSubcategories.has(subcat.id)}
+                        onChange={() => toggleSubcategory(subcat.id)}
+                        className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-corporate-green"
+                      />
+                      <span className="text-sm text-au-grey-text">{subcat.name}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 

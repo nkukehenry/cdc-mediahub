@@ -282,6 +282,30 @@ export class PostService implements IPublicationService {
     }
   }
 
+  async deleteComment(commentId: string, expectedPostId?: string): Promise<{ deleted: boolean; postId: string; commentsCount: number }> {
+    try {
+      const comment = await this.postCommentRepository.findById(commentId);
+      if (!comment) {
+        throw this.errorHandler.createValidationError('Comment not found', 'commentId');
+      }
+
+      if (expectedPostId && comment.postId !== expectedPostId) {
+        throw this.errorHandler.createValidationError('Comment does not belong to the specified publication', 'commentId');
+      }
+
+      await this.postCommentRepository.delete(commentId);
+      const commentsCount = await this.refreshCommentCount(comment.postId);
+      return {
+        deleted: true,
+        postId: comment.postId,
+        commentsCount,
+      };
+    } catch (error) {
+      this.logger.error('Failed to delete comment', error as Error, { commentId });
+      throw error;
+    }
+  }
+
   async getPublishedPublications(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<{ publications: PublicationWithRelations[]; total: number; page: number; limit: number; totalPages: number }> {
     try {
       const finalLimit = limit || 20;

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -165,6 +165,46 @@ export class FileManagerServer {
     }, {});
     const hash = createHash('sha1').update(JSON.stringify(normalized)).digest('hex');
     return `${prefix}:${hash}`;
+  }
+
+  private async refreshPublicationCache(postId: string, actorUserId?: string): Promise<void> {
+    if (!this.cacheService || !this.cacheStrategy?.shouldCache('public-posts')) {
+      return;
+    }
+
+    try {
+      await this.cacheDelPattern('public-posts');
+      if (actorUserId) {
+        await this.cacheDelPattern('public-posts', actorUserId);
+      }
+
+      const publicView = await this.postService.getPublication(postId);
+      if (!publicView) {
+        return;
+      }
+
+      const slug = publicView.slug;
+      if (!slug) {
+        return;
+      }
+      const publicPayload = { success: true, data: { post: publicView } };
+      const publicCacheId = this.buildCacheId('slug', { slug, userId: null });
+      await this.cacheSet('public-posts', publicCacheId, publicPayload);
+
+      if (actorUserId) {
+        const userScopedView = await this.postService.getPublication(postId, actorUserId);
+        if (userScopedView) {
+          const userPayload = { success: true, data: { post: userScopedView } };
+          const userCacheId = this.buildCacheId('slug', { slug, userId: actorUserId });
+          await this.cacheSet('public-posts', userCacheId, userPayload, actorUserId);
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Failed to refresh publication cache', {
+        postId,
+        error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error
+      });
+    }
   }
 
   private async setupServices(): Promise<void> {
@@ -1968,8 +2008,27 @@ export class FileManagerServer {
      */
     this.app.get('/api/public/posts/:slug',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.getBySlug(req, res);
+      async (req, res) => {
+        const slug = req.params.slug;
+        const cacheNamespace = 'public-posts';
+        const cacheId = this.buildCacheId('slug', {
+          slug,
+          userId: req.user?.userId ?? null,
+        });
+        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+        if (cached) {
+          return res.json(cached);
+        }
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          }
+          return originalJson(body);
+        };
+
+        return this.postController.getBySlug(req, res);
       }
     );
 
@@ -1996,14 +2055,44 @@ export class FileManagerServer {
 
     this.app.post('/api/public/posts/:id/comments',
       this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.createComment(req, res);
+      async (req, res) => {
+        const publicationId = req.params.id;
+        const actorUserId = req.user?.userId;
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success) {
+            void this.refreshPublicationCache(publicationId, actorUserId);
+          }
+          return originalJson(body);
+        };
+
+        return this.postController.createComment(req, res);
       }
     );
 
     // ========================================
     // Post Routes (Admin/Author - Protected)
     // ========================================
+    const ensureCanDeleteComments: RequestHandler = (req, res, next) => {
+      const roles: string[] = Array.isArray(req.user?.roles) ? (req.user?.roles as string[]) : [];
+      const permissions: string[] = Array.isArray(req.user?.permissions) ? (req.user?.permissions as string[]) : [];
+      const canDelete = roles.includes('admin') || permissions.includes('posts:delete') || permissions.includes('posts:manage');
+
+      if (!canDelete) {
+        res.status(403).json({
+          success: false,
+          error: {
+            type: 'FORBIDDEN',
+            message: 'You do not have permission to delete comments',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      next();
+    };
+
     /**
      * @swagger
      * /api/admin/posts:
@@ -2134,6 +2223,24 @@ export class FileManagerServer {
         };
 
         await this.postController.reject(req, res);
+      }
+    );
+
+    this.app.delete('/api/admin/posts/:id/comments/:commentId',
+      this.authMiddleware.authenticate,
+      ensureCanDeleteComments,
+      async (req, res) => {
+        const actorUserId = req.user?.userId;
+
+        const originalJson = res.json.bind(res);
+        res.json = (body: any) => {
+          if (body?.success && body?.data?.postId) {
+            void this.refreshPublicationCache(body.data.postId, actorUserId);
+          }
+          return originalJson(body);
+        };
+
+        return this.postController.deleteComment(req, res);
       }
     );
 

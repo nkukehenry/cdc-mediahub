@@ -90,4 +90,55 @@ export class PostCommentRepository implements IPostCommentRepository {
       throw this.errorHandler.createDatabaseError('Failed to count comments', 'select', 'post_comments');
     }
   }
+
+  async findById(id: string): Promise<PostCommentEntity | null> {
+    try {
+      const comment = await DatabaseUtils.findOne<any>(
+        `SELECT pc.*, u.username, u.first_name, u.last_name, u.avatar
+         FROM post_comments pc
+         LEFT JOIN users u ON pc.user_id = u.id
+         WHERE pc.id = ?`,
+        [id]
+      );
+
+      if (!comment) {
+        return null;
+      }
+
+      return {
+        id: comment.id,
+        postId: comment.post_id,
+        userId: comment.user_id ?? undefined,
+        authorName: comment.author_name ?? undefined,
+        authorEmail: comment.author_email ?? undefined,
+        content: comment.content,
+        createdAt: new Date(comment.created_at),
+        author: comment.user_id
+          ? {
+              id: comment.user_id,
+              username: comment.username ?? undefined,
+              firstName: comment.first_name ?? undefined,
+              lastName: comment.last_name ?? undefined,
+              avatar: comment.avatar ?? undefined,
+            }
+          : undefined,
+      };
+    } catch (error) {
+      this.logger.error('Failed to find comment by id', error as Error, { id });
+      throw this.errorHandler.createDatabaseError('Failed to find comment', 'select', 'post_comments');
+    }
+  }
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      const result = await DatabaseUtils.executeQuery(
+        `DELETE FROM post_comments WHERE id = ?`,
+        [id]
+      );
+      return (result as any)?.affectedRows ? (result as any).affectedRows > 0 : true;
+    } catch (error) {
+      this.logger.error('Failed to delete comment', error as Error, { id });
+      throw this.errorHandler.createDatabaseError('Failed to delete comment', 'delete', 'post_comments');
+    }
+  }
 }
