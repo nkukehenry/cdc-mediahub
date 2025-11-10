@@ -15,7 +15,7 @@ export default function LatestPublications() {
   const { latestPublications, loading } = useSelector((state: RootState) => state.publications);
 
   useEffect(() => {
-    dispatch(fetchLatestPublications(8) as any);
+    dispatch(fetchLatestPublications(6) as any);
   }, [dispatch]);
 
   if (loading) {
@@ -58,7 +58,7 @@ export default function LatestPublications() {
 
         {/* Publications Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 mb-8">
-          {latestPublications.slice(0, 8).map((publication, index) => (
+          {latestPublications.slice(0, 6).map((publication, index) => (
             <div
               key={publication.id}
               className="animate-fade-in"
