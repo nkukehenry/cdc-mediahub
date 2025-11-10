@@ -389,7 +389,7 @@ export default function SearchBar({ className, popularTags }: SearchBarProps) {
         </button>
       </div>
 
-      {/* Popular Tags */}
+      {/* Popular Tags 
       {tags.length > 0 && !showSuggestions && (
         <div className="mt-4 max-w-4xl mx-auto">
           <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
@@ -404,7 +404,7 @@ export default function SearchBar({ className, popularTags }: SearchBarProps) {
             ))}
           </div>
         </div>
-      )}
+      )}*/}
     </div>
   );
 }

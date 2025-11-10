@@ -425,7 +425,7 @@ export default function PublicationsExplorer({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-au-corporate-green focus:border-transparent text-sm"
                     />
                   </div>
-                  <div>
+                  {/* <div>
                     <label className="block text-xs text-au-grey-text/70 mb-1">Division</label>
                     <select
                       value={division}
@@ -434,7 +434,7 @@ export default function PublicationsExplorer({
                     >
                       <option value="">Select Division</option>
                     </select>
-                  </div>
+                  </div> */}
                 </div>
               </div>
 
