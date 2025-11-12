@@ -601,18 +601,6 @@ function PublicationDetailsContent() {
                           Your browser does not support the audio element.
                         </audio>
                       </div>
-                    ) : isImage ? (
-                      <div className="w-full rounded-lg shadow-md overflow-hidden">
-                        <img
-                          src={mediaBlobUrl}
-                          alt={firstAttachment.originalName}
-                          className="w-full h-auto max-h-[600px] object-contain"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                          }}
-                        />
-                      </div>
                     ) : isPdf ? (
                       <div className="w-full rounded-lg shadow-md overflow-hidden" style={{ height: '600px' }}>
                         <iframe
