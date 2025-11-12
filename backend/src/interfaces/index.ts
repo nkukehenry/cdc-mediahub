@@ -309,6 +309,7 @@ export interface PublicationEntity {
   approvedBy?: string;
   status: PublicationStatus;
   publicationDate?: Date;
+  rejectionReason?: string;
   hasComments: boolean;
   views: number;
   uniqueHits: number;
@@ -477,6 +478,7 @@ export interface UpdatePublicationData {
   authorIds?: string[];
   status?: PublicationStatus;
   publicationDate?: Date;
+  rejectionReason?: string;
   hasComments?: boolean;
   isFeatured?: boolean;
   isLeaderboard?: boolean;
@@ -671,7 +673,7 @@ export interface IPublicationService {
   ): Promise<PublicationEntity>;
   deletePublication(id: string, userId?: string): Promise<boolean>;
   approvePublication(id: string, approverId: string): Promise<PublicationEntity>;
-  rejectPublication(id: string, approverId: string): Promise<PublicationEntity>;
+  rejectPublication(id: string, approverId: string, rejectionReason?: string): Promise<PublicationEntity>;
   trackView(id: string, userId?: string, viewerToken?: string, ipAddress?: string, userAgent?: string): Promise<void>;
   searchPublications(query: string, limit?: number, offset?: number): Promise<PublicationWithRelations[]>;
   likePublication(id: string, userId: string): Promise<{ liked: boolean; likes: number }>;

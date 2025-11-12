@@ -559,7 +559,8 @@ export class PostService implements IPublicationService {
 
       const updatedPost = await this.postRepository.update(id, {
         status: 'approved',
-        approvedBy: approverId
+        approvedBy: approverId,
+        rejectionReason: undefined // Clear rejection reason when approving
       });
 
       this.logger.info('Post approved successfully', { postId: id, approverId });
@@ -570,7 +571,7 @@ export class PostService implements IPublicationService {
     }
   }
 
-  async rejectPublication(id: string, approverId: string): Promise<PublicationEntity> {
+  async rejectPublication(id: string, approverId: string, rejectionReason?: string): Promise<PublicationEntity> {
     try {
       const post = await this.postRepository.findById(id);
       if (!post) {
@@ -585,10 +586,11 @@ export class PostService implements IPublicationService {
 
       const updatedPost = await this.postRepository.update(id, {
         status: 'rejected',
-        approvedBy: approverId
+        approvedBy: approverId,
+        rejectionReason: rejectionReason?.trim() || undefined
       });
 
-      this.logger.info('Post rejected successfully', { postId: id, approverId });
+      this.logger.info('Post rejected successfully', { postId: id, approverId, hasReason: !!rejectionReason });
       return updatedPost;
     } catch (error) {
       this.logger.error('Failed to reject post', error as Error, { postId: id });

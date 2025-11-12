@@ -12,6 +12,18 @@ export class PostRepository implements IPublicationRepository {
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
       
+      // Convert publicationDate to Date object if it's a string (for entity)
+      let publicationDate: Date | undefined = undefined;
+      if (postData.publicationDate) {
+        if (typeof postData.publicationDate === 'string') {
+          publicationDate = new Date(postData.publicationDate);
+        } else if (postData.publicationDate instanceof Date) {
+          publicationDate = postData.publicationDate;
+        } else {
+          publicationDate = new Date(postData.publicationDate);
+        }
+      }
+
       const post: PublicationEntity = {
         id,
         title: postData.title,
@@ -23,7 +35,7 @@ export class PostRepository implements IPublicationRepository {
         categoryId: postData.categoryId,
         creatorId: postData.creatorId,
         status: postData.status || 'pending',
-        publicationDate: postData.publicationDate ? new Date(postData.publicationDate) : undefined,
+        publicationDate,
         hasComments: postData.hasComments ?? true,
         views: 0,
         uniqueHits: 0,
@@ -68,8 +80,12 @@ export class PostRepository implements IPublicationRepository {
         // Normalize path separators (Windows backslashes to forward slashes for consistency)
         insertData.cover_image = post.coverImage.replace(/\\/g, '/');
       }
-      if (post.publicationDate) {
-        insertData.publication_date = post.publicationDate.toISOString();
+      if (postData.publicationDate) {
+        // Format the date directly from the input (string or Date) to MySQL DATETIME format
+        // This preserves the original date string if it's already in MySQL format
+        insertData.publication_date = DatabaseUtils.formatDateTime(
+          typeof postData.publicationDate === 'string' ? postData.publicationDate : postData.publicationDate
+        );
       }
 
       const { columns, placeholders, values } = DatabaseUtils.buildInsertValues(insertData);
@@ -652,12 +668,21 @@ export class PostRepository implements IPublicationRepository {
       if (data.categoryId !== undefined) updateData.category_id = data.categoryId;
       if (data.status !== undefined) updateData.status = data.status;
       if (data.publicationDate !== undefined) {
-        updateData.publication_date = data.publicationDate ? new Date(data.publicationDate).toISOString() : null;
+        // Format the date directly from the input (string or Date) to MySQL DATETIME format
+        // This preserves the original date string if it's already in MySQL format
+        updateData.publication_date = data.publicationDate 
+          ? DatabaseUtils.formatDateTime(
+              typeof data.publicationDate === 'string' ? data.publicationDate : data.publicationDate
+            )
+          : null;
       }
       if (data.hasComments !== undefined) updateData.has_comments = data.hasComments ? 1 : 0;
       if (data.isFeatured !== undefined) updateData.is_featured = data.isFeatured ? 1 : 0;
       if (data.isLeaderboard !== undefined) updateData.is_leaderboard = data.isLeaderboard ? 1 : 0;
       if (data.approvedBy !== undefined) updateData.approved_by = data.approvedBy;
+      if (data.rejectionReason !== undefined) {
+        updateData.rejection_reason = data.rejectionReason ? String(data.rejectionReason).trim() : null;
+      }
 
       const { set, values } = DatabaseUtils.buildUpdateSet(updateData);
       const params = [...values, id];
@@ -1119,6 +1144,7 @@ export class PostRepository implements IPublicationRepository {
       approvedBy: dbPost.approved_by,
       status: dbPost.status,
       publicationDate: dbPost.publication_date ? new Date(dbPost.publication_date) : undefined,
+      rejectionReason: dbPost.rejection_reason ? String(dbPost.rejection_reason).trim() : undefined,
       hasComments: Boolean(dbPost.has_comments),
       views: dbPost.views || 0,
       uniqueHits: dbPost.unique_hits || 0,

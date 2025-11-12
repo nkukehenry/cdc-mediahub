@@ -499,6 +499,7 @@ export class DatabaseConnection {
           approved_by VARCHAR(36),
           status VARCHAR(20) DEFAULT 'pending',
           publication_date DATETIME,
+          rejection_reason TEXT,
           has_comments TINYINT(1) DEFAULT 1,
           views INT DEFAULT 0,
           unique_hits INT DEFAULT 0,
@@ -624,6 +625,12 @@ export class DatabaseConnection {
       const viewerTokenColumn = await DatabaseUtils.findMany<any>(`SHOW COLUMNS FROM post_views LIKE 'viewer_token'`);
       if (viewerTokenColumn.length === 0) {
         await DatabaseUtils.executeQuery(`ALTER TABLE post_views ADD COLUMN viewer_token VARCHAR(191)`);
+      }
+
+      // Add rejection_reason column to posts table if it doesn't exist
+      const rejectionReasonColumn = await DatabaseUtils.findMany<any>(`SHOW COLUMNS FROM posts LIKE 'rejection_reason'`);
+      if (rejectionReasonColumn.length === 0) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN rejection_reason TEXT`);
       }
 
       const postViewerIndex = await DatabaseUtils.findMany<any>(`SHOW INDEX FROM post_views WHERE Key_name = 'idx_post_viewer_token'`);

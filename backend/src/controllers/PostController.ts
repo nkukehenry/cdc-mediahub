@@ -601,7 +601,8 @@ export class PostController {
       }
 
       const { id } = req.params;
-      const post = await this.postService.rejectPublication(id, req.user.userId);
+      const { rejectionReason } = req.body;
+      const post = await this.postService.rejectPublication(id, req.user.userId, rejectionReason);
 
       res.json({
         success: true,

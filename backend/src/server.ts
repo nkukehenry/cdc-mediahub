@@ -3611,34 +3611,34 @@ export class FileManagerServer {
   private async handleFilePreview(req: express.Request, res: express.Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { token } = req.query;
       
-      // Validate token from query parameter
-      if (!token || typeof token !== 'string') {
-        res.status(401).json(this.errorHandler.formatErrorResponse(
-          this.errorHandler.createValidationError('Token required')
+      // Public endpoint - no authentication required
+      // Get file directly from repository without authentication checks
+      const file = await this.fileRepository.findById(id);
+      
+      if (!file) {
+        res.status(404).json(this.errorHandler.formatErrorResponse(
+          this.errorHandler.createValidationError('File not found')
         ));
         return;
       }
 
-      // Verify token and get userId
-      const decoded = await this.authService.verifyToken(token);
-      const userId = decoded?.userId;
-      
-      if (!userId) {
-        res.status(401).json(this.errorHandler.formatErrorResponse(
-          this.errorHandler.createValidationError('Invalid token')
+      // Check if file exists on disk
+      try {
+        await fs.promises.access(file.filePath);
+      } catch (error) {
+        this.logger.error('File not found on disk', error as Error, { fileId: id, filePath: file.filePath });
+        res.status(404).json(this.errorHandler.formatErrorResponse(
+          this.errorHandler.createValidationError('File not found')
         ));
         return;
       }
-      
-      const fileInfo = await this.fileService.download(id, userId);
 
-      res.setHeader('Content-Type', fileInfo.mimeType);
-      res.setHeader('Content-Disposition', `inline; filename="${fileInfo.fileName}"`);
+      res.setHeader('Content-Type', file.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
       
       // Ensure the file path is absolute
-      const absolutePath = path.resolve(fileInfo.filePath);
+      const absolutePath = path.resolve(file.filePath);
       res.sendFile(absolutePath);
     } catch (error) {
       this.logger.error('File preview failed', error as Error);
