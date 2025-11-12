@@ -600,9 +600,10 @@ class ApiClient {
     });
   }
 
-  async rejectPublication(id: string): Promise<ApiResponse<{ post: any }>> {
+  async rejectPublication(id: string, rejectionReason?: string): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>(`/api/admin/posts/${id}/reject`, {
       method: 'POST',
+      body: JSON.stringify({ rejectionReason }),
     });
   }
 

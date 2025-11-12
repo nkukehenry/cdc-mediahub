@@ -3,20 +3,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Loader2, Eye, Edit } from 'lucide-react';
+import { Plus, Loader2, Eye, Edit, Info } from 'lucide-react';
 import { apiClient } from '@/utils/apiClient';
 import { showError } from '@/utils/errorHandler';
 import { useAuth } from '@/hooks/useAuth';
 import PublicNav from '@/components/PublicNav';
 import PublicFooter from '@/components/PublicFooter';
+import PublicationDetailsModal from '@/components/PublicationDetailsModal';
 
 interface PublicationListItem {
   id: string;
   title: string;
   slug: string;
+  description?: string;
   status: 'draft' | 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
   createdAt: string;
   updatedAt: string;
+  publicationDate?: string;
   category?: {
     id: string;
     name: string;
@@ -54,6 +58,8 @@ export default function MyPublicationsPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPublication, setSelectedPublication] = useState<PublicationListItem | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -82,7 +88,8 @@ export default function MyPublicationsPage() {
         const response = await apiClient.getPublications(filters, page, PAGE_SIZE);
 
         if (response.success && response.data?.publications) {
-          setPublications(response.data.publications as PublicationListItem[]);
+          const pubs = response.data.publications as PublicationListItem[];
+          setPublications(pubs);
           if (response.data.pagination) {
             setPagination(response.data.pagination as PaginationState);
           } else {
@@ -129,6 +136,16 @@ export default function MyPublicationsPage() {
   const statusLabel = (status: PublicationListItem['status']) => {
     if (status === 'approved') return 'Published';
     return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const handleViewDetails = (publication: PublicationListItem) => {
+    setSelectedPublication(publication);
+    setIsDetailsModalOpen(true);
+  };
+
+  const handleCloseDetails = () => {
+    setIsDetailsModalOpen(false);
+    setSelectedPublication(null);
   };
 
   if (!user && !loading) {
@@ -251,9 +268,18 @@ export default function MyPublicationsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
                         <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => handleViewDetails(pub)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-au-grey-text bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                            title="View Details"
+                          >
+                            <Info size={14} />
+                            Details
+                          </button>
                           <Link
                             href={`/publication/${pub.slug}`}
                             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-au-grey-text bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                            title="View Publication"
                           >
                             <Eye size={14} />
                             View
@@ -261,6 +287,7 @@ export default function MyPublicationsPage() {
                           <Link
                             href={`/my/publications/${pub.id}/edit`}
                             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-au-green bg-au-green/10 rounded-lg hover:bg-au-green/20 transition-colors"
+                            title="Edit Publication"
                           >
                             <Edit size={14} />
                             Edit
@@ -302,6 +329,15 @@ export default function MyPublicationsPage() {
           </div>
         )}
       </div>
+
+      {/* Publication Details Modal */}
+      {selectedPublication && (
+        <PublicationDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={handleCloseDetails}
+          publication={selectedPublication}
+        />
+      )}
 
       <PublicFooter />
     </div>

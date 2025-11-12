@@ -1,13 +1,17 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Music, Eye, MessageCircle, Camera, Video, FileText, Image } from 'lucide-react';
+import { Music, Eye, MessageCircle, Camera, Video, FileText, Image, Calendar, User } from 'lucide-react';
 import { Publication } from '@/store/publicationsSlice';
 import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileUtils';
 
 interface PublicationCardProps {
   publication: Publication;
+  variant?: 'default' | 'small' | 'medium' | 'large';
+  onVariantDetected?: (variant: 'small' | 'medium' | 'large' | 'default') => void;
 }
+
 const getMediaDetails = (publication: Publication) => {
     const coverImage = publication.coverImage;
     if (coverImage) {
@@ -52,8 +56,82 @@ const getMediaDetails = (publication: Publication) => {
     };
   };
 
-export default function PublicationCard({ publication }: PublicationCardProps) {
+export default function PublicationCard({ publication, variant: propVariant, onVariantDetected }: PublicationCardProps) {
   const mediaDetails = getMediaDetails(publication);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [calculatedVariant, setCalculatedVariant] = useState<'small' | 'medium' | 'large' | 'default'>('default');
+  const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Use prop variant if explicitly provided (and not 'default'), otherwise use calculated variant from dimensions
+  // When propVariant is undefined or 'default', we auto-detect from dimensions
+  const shouldAutoDetect = propVariant === undefined || propVariant === 'default';
+  const variant = shouldAutoDetect ? calculatedVariant : propVariant;
+
+  useEffect(() => {
+    // Reset dimensions and variant when media URL changes
+    setDimensions(null);
+    setCalculatedVariant('default');
+  }, [mediaDetails.url]);
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    const naturalWidth = img.naturalWidth;
+    const naturalHeight = img.naturalHeight;
+    
+    if (naturalWidth > 0 && naturalHeight > 0) {
+      setDimensions({ width: naturalWidth, height: naturalHeight });
+      calculateVariantFromDimensions(naturalWidth, naturalHeight);
+    }
+  };
+
+  const handleVideoLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    
+    if (videoWidth > 0 && videoHeight > 0) {
+      setDimensions({ width: videoWidth, height: videoHeight });
+      calculateVariantFromDimensions(videoWidth, videoHeight);
+    }
+  };
+
+  const calculateVariantFromDimensions = (width: number, height: number) => {
+    if (width === 0 || height === 0) {
+      const newVariant = 'default';
+      setCalculatedVariant(newVariant);
+      // Only notify if auto-detecting (no explicit variant prop or it's 'default')
+      if ((propVariant === undefined || propVariant === 'default') && onVariantDetected) {
+        onVariantDetected(newVariant);
+      }
+      return;
+    }
+
+    const aspectRatio = width / height;
+    let newVariant: 'small' | 'medium' | 'large' | 'default';
+    
+    // Portrait (tall) images/videos -> large variant
+    // Aspect ratio < 0.8 means height is significantly larger than width
+    if (aspectRatio < 0.8) {
+      newVariant = 'large';
+    }
+    // Landscape (wide) images/videos -> small variant
+    // Aspect ratio > 1.5 means width is significantly larger than height
+    else if (aspectRatio > 1.5) {
+      newVariant = 'small';
+    }
+    // Square-ish or moderate aspect ratio -> medium variant
+    // Aspect ratio between 0.8 and 1.5
+    else {
+      newVariant = 'medium';
+    }
+    
+    setCalculatedVariant(newVariant);
+    // Only notify if auto-detecting (no explicit variant prop or it's 'default')
+    if ((propVariant === undefined || propVariant === 'default') && onVariantDetected) {
+      onVariantDetected(newVariant);
+    }
+  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -114,75 +192,149 @@ export default function PublicationCard({ publication }: PublicationCardProps) {
     return truncateText(composed, 25);
   };
 
+  // Variant-based height and row span for collage layout
+  // Base row size: 50px
+  // Small: 250px = 5 rows (250 / 50 = 5)
+  // Medium: 300px = 6 rows (300 / 50 = 6)
+  // Large: 500px = 10 rows (500 / 50 = 10)
+  // Default: 280px = 6 rows (280 / 50 = 5.6, rounded to 6)
+  const getVariantConfig = () => {
+    switch (variant) {
+      case 'small':
+        return { height: 'h-[250px]', rowSpan: 'row-span-5' };
+      case 'medium':
+        return { height: 'h-[300px]', rowSpan: 'row-span-6' };
+      case 'large':
+        return { height: 'h-[500px]', rowSpan: 'row-span-10' };
+      default:
+        return { height: 'h-[300px]', rowSpan: 'row-span-6' };
+    }
+  };
+
+  const variantConfig = getVariantConfig();
+
+  // Add smooth transition when variant changes
   return (
     <Link
       href={`/publication/${publication.slug}`}
-      className="group block h-full overflow-hidden border border-gray-200 bg-white shadow-md transition-shadow duration-300 hover:shadow-lg"
+      className={`group relative block w-full ${variantConfig.height} overflow-hidden rounded-lg bg-gray-100 transition-all duration-500 hover:shadow-2xl`}
+      style={{
+        // Smooth height transition when variant changes
+        transitionProperty: 'height, box-shadow',
+      }}
     >
-      {/* Cover Image */}
-      <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
+      {/* Full-bleed Image/Video */}
+      <div className="absolute inset-0">
         {mediaDetails.isVideo && mediaDetails.url ? (
           <video
+            ref={videoRef}
             src={mediaDetails.url}
-            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
-            controls={true}
+            className="h-full w-full object-cover"
             muted
             playsInline
+            loop
+            preload="metadata"
+            onLoadedMetadata={handleVideoLoadedMetadata}
+            onError={() => {
+              // Fallback to default variant if video fails to load
+              setCalculatedVariant('default');
+            }}
           />
         ) : (
           <img
+            ref={imgRef}
             src={mediaDetails.url || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
             alt={publication.title}
-            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+            className="h-full w-full object-cover"
+            onLoad={handleImageLoad}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+              // Reset to default variant on error
+              setCalculatedVariant('default');
+              setDimensions(null);
             }}
           />
         )}
-        
-        {/* Translucent Overlay */}
-        <div className="absolute inset-0" />
-
-        {/* Category Tag */}
-        <div className="absolute left-3 top-3 z-20">
-          <span className="rounded-full bg-au-green px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-colors duration-300 group-hover:bg-au-gold">
-            {getCategoryName(publication)}
-          </span>
-        </div>
-
-        {/* Category Icon */}
-        <div className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-transform duration-300 group-hover:scale-105">
-          <CategoryIcon className="h-4 w-4 text-white" />
-        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex flex-col gap-3 p-4">
-        <h3 className="line-clamp-2 text-lg font-semibold text-gray-500 transition-colors duration-300 group-hover:text-au-green">
-          {truncateText(publication.title, 32) || 'Untitled Publication'}
-        </h3>
+      {/* Gradient Overlay - Always visible but subtle */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-gray-700">{formatAuthorName()}</span>
+      {/* Category Badge - Top Left */}
+      <div className="absolute left-3 top-3 z-20">
+        <span className="rounded-full bg-black/60 backdrop-blur-sm px-3 py-1 text-xs font-semibold text-white shadow-lg transition-all duration-300 group-hover:bg-au-corporate-green group-hover:shadow-xl">
+          {getCategoryName(publication)}
+        </span>
+      </div>
+
+      {/* Category Icon - Top Right */}
+      <div className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-all duration-300 group-hover:bg-au-corporate-green">
+        <CategoryIcon className="h-4 w-4 text-white" />
+      </div>
+
+      {/* Hover Overlay - Shows metadata on hover */}
+      <div className="absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/80 to-black/40 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+        <div className="space-y-3 transform translate-y-4 transition-transform duration-300 group-hover:translate-y-0">
+          {/* Title */}
+          <h3 className="text-xl font-bold text-white line-clamp-2 drop-shadow-lg opacity-0 transform translate-y-2 transition-all duration-300 delay-75 group-hover:opacity-100 group-hover:translate-y-0">
+            {publication.title || 'Untitled Publication'}
+          </h3>
+
+          {/* Description */}
+          {publication.description && (
+            <p className="text-sm text-white/90 line-clamp-3 drop-shadow-md opacity-0 transform translate-y-2 transition-all duration-300 delay-100 group-hover:opacity-100 group-hover:translate-y-0">
+              {truncateText(publication.description, 120)}
+            </p>
+          )}
+
+          {/* Metadata */}
+          <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-white/20 opacity-0 transform translate-y-2 transition-all duration-300 delay-150 group-hover:opacity-100 group-hover:translate-y-0">
+            {/* Author 
+            <div className="flex items-center gap-2 text-sm text-white/90">
+              <User className="h-4 w-4" />
+              <span className="font-medium">{formatAuthorName()}</span>
+            </div>*/}
+
+            {/* Date */}
             {publication.publicationDate && (
-              <>
-                <span className="text-gray-300">•</span>
+              <div className="flex items-center gap-2 text-sm text-white/90">
+                <Calendar className="h-4 w-4" />
                 <span>{formatDate(publication.publicationDate)}</span>
-              </>
+              </div>
             )}
-          </div>
-          <div className="flex items-center gap-4 text-gray-600">
-            <div className="flex items-center gap-1">
-              <Eye className="h-3.5 w-3.5" />
+
+            {/* Views */}
+            <div className="flex items-center gap-2 text-sm text-white/90">
+              <Eye className="h-4 w-4" />
               <span>{publication.views || 0}</span>
             </div>
-            <div className="flex items-center gap-1">
-              <MessageCircle className="h-3.5 w-3.5" />
+
+            {/* Comments */}
+            <div className="flex items-center gap-2 text-sm text-white/90">
+              <MessageCircle className="h-4 w-4" />
               <span>{publication.commentsCount ?? publication.comments ?? 0}</span>
             </div>
           </div>
+
+          {/* Category 
+          <div className="flex flex-wrap gap-2 opacity-0 transform translate-y-2 transition-all duration-300 delay-200 group-hover:opacity-100 group-hover:translate-y-0">
+            {publication.category && (
+              <span className="rounded-full bg-au-corporate-green/90 px-3 py-1 text-xs font-medium text-white">
+                {publication.category.name}
+              </span>
+            )}
+            {publication.subcategories && publication.subcategories.length > 0 && (
+              publication.subcategories.slice(0, 2).map((subcat) => (
+                <span
+                  key={subcat.id}
+                  className="rounded-full bg-white/20 backdrop-blur-sm px-3 py-1 text-xs font-medium text-white"
+                >
+                  {subcat.name}
+                </span>
+              ))
+            )}
+          </div>*/}
         </div>
       </div>
     </Link>

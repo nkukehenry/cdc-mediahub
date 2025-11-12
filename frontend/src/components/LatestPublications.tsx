@@ -15,7 +15,7 @@ export default function LatestPublications() {
   const { latestPublications, loading } = useSelector((state: RootState) => state.publications);
 
   useEffect(() => {
-    dispatch(fetchLatestPublications(6) as any);
+    dispatch(fetchLatestPublications(10) as any);
   }, [dispatch]);
 
   if (loading) {
@@ -26,10 +26,34 @@ export default function LatestPublications() {
             <Skeleton className="h-6 w-48 rounded-md" />
             <Skeleton className="h-4 w-32 rounded-md" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <PublicationCardSkeleton key={i} />
-            ))}
+          <div 
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" 
+            style={{ 
+              gridAutoRows: '50px',
+              gridAutoFlow: 'row dense',
+              columnGap: '5px',
+              rowGap: '2px'
+            }}
+          >
+            {Array.from({ length: 12 }).map((_, i) => {
+              const variants: ('small' | 'medium' | 'large' | 'default')[] = [
+                'large', 'medium', 'small', 'medium', 'large', 'small',
+                'medium', 'large', 'small', 'medium', 'default', 'large'
+              ];
+              const variant = variants[i % variants.length] || 'default';
+              const rowSpans: Record<string, string> = {
+                'small': 'row-span-5',
+                'medium': 'row-span-6',
+                'large': 'row-span-10',
+                'default': 'row-span-6'
+              };
+              const rowSpan = rowSpans[variant] || 'row-span-6';
+              return (
+                <div key={i} className={rowSpan}>
+                  <PublicationCardSkeleton />
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -56,20 +80,47 @@ export default function LatestPublications() {
           </Link>
         </div>
 
-        {/* Publications Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 mb-8">
-          {latestPublications.slice(0, 6).map((publication, index) => (
-            <div
-              key={publication.id}
-              className="animate-fade-in"
-              style={{
-                animationDelay: `${index * 0.1}s`,
-                animationFillMode: 'both'
-              }}
-            >
-              <PublicationCard publication={publication} />
-            </div>
-          ))}
+        {/* Publications Grid - Collage Layout */}
+        <div 
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mb-[5px]" 
+          style={{ 
+            gridAutoRows: '50px',
+            gridAutoFlow: 'row dense',
+            columnGap: '5px',
+            rowGap: '2px'
+          }}
+        >
+          {latestPublications.map((publication, index) => {
+            // Create collage effect with varied sizes for latest publications
+            // Pattern: large, medium, small, medium, large, small, medium, large, small, medium, default, large
+            const variants: ('small' | 'medium' | 'large' | 'default')[] = [
+              'large', 'medium', 'small', 'medium', 'large', 'small',
+              'medium', 'large', 'small', 'medium', 'default', 'large'
+            ];
+            const variant = variants[index % variants.length] || 'default';
+            
+            // Map variant to row span for vertical alignment
+            const rowSpans: Record<string, string> = {
+              'small': 'row-span-5',
+              'medium': 'row-span-6',
+              'large': 'row-span-10',
+              'default': 'row-span-6'
+            };
+            const rowSpan = rowSpans[variant] || 'row-span-6';
+            
+            return (
+              <div
+                key={publication.id}
+                className={`${rowSpan} animate-fade-in`}
+                style={{
+                  animationDelay: `${index * 0.1}s`,
+                  animationFillMode: 'both'
+                }}
+              >
+                <PublicationCard publication={publication} variant={variant} />
+              </div>
+            );
+          })}
         </div>
 
         {/* View All Button */}

@@ -126,6 +126,7 @@ function DashboardContent() {
                 xAngle={-45}
                 height={220}
                 color="#4ECDC4"
+                layout="vertical"
               />
             </div>
             
@@ -274,7 +275,8 @@ function DashboardContent() {
             xKey="categoryName"
             height={380}
             color="#8884d8"
-            layout="horizontal"
+            layout="vertical"
+            xAngle={-45}
           />
         </ChartCard>
       </div>

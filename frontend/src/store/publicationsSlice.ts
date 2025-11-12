@@ -90,27 +90,67 @@ const initialState: PublicationsState = {
   pagination: null,
 };
 
+// Helper to create cache key for publications with filters
+function getPublicationsCacheKey(filters?: any, page?: number, limit?: number): string {
+  const keyParts = ['cache_publications'];
+  if (filters) {
+    if (filters.search) keyParts.push(`search:${encodeURIComponent(filters.search)}`);
+    if (filters.categoryId) keyParts.push(`cat:${filters.categoryId}`);
+    if (filters.subcategoryId) keyParts.push(`subcat:${filters.subcategoryId}`);
+    if (filters.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
+      keyParts.push(`tags:${[...filters.tags].sort().join(',')}`);
+    }
+    if (filters.author) keyParts.push(`author:${encodeURIComponent(filters.author)}`);
+    if (filters.creator) keyParts.push(`creator:${encodeURIComponent(filters.creator)}`);
+    if (filters.yearFrom) keyParts.push(`yearFrom:${filters.yearFrom}`);
+    if (filters.yearTo) keyParts.push(`yearTo:${filters.yearTo}`);
+    if (filters.publicationDate) keyParts.push(`date:${filters.publicationDate}`);
+    if (filters.source) keyParts.push(`source:${encodeURIComponent(filters.source)}`);
+  }
+  keyParts.push(`page:${page || 1}`);
+  keyParts.push(`limit:${limit || 12}`);
+  return keyParts.join('_');
+}
+
 // Async thunks
 export const fetchLatestPublications = createAsyncThunk(
   'publications/fetchLatestPublications',
-  async (limit: number = 6) => {
+  async (limit: number = 12, { dispatch }) => {
     // Try to get cached data first
     const cachedData = getCachedData<Publication[]>(CACHE_KEYS.LATEST_PUBLICATIONS);
-    if (cachedData && cachedData.length > 0) {
-      // Return cached data immediately, but still fetch fresh data in background
-      setTimeout(() => {
-        apiClient.getPublicPublications({ limit, offset: 0 })
-          .then(response => {
-            if (response.success && response.data) {
-              setCachedData(CACHE_KEYS.LATEST_PUBLICATIONS, response.data.posts as Publication[]);
-            }
-          })
-          .catch(error => console.error('Background fetch failed:', error));
-      }, 0);
+    const hasCache = cachedData && cachedData.length > 0;
+    
+    // Always fetch fresh data in the background (fire and forget)
+    const fetchFresh = async () => {
+      try {
+        const response = await apiClient.getPublicPublications({
+          limit,
+          offset: 0,
+        });
+        if (response.success && response.data) {
+          const publications = response.data.posts as Publication[];
+          // Update cache
+          setCachedData(CACHE_KEYS.LATEST_PUBLICATIONS, publications);
+          // Update Redux state with fresh data (silently, without loading state)
+          dispatch(updateLatestPublications(publications));
+        }
+      } catch (error) {
+        console.error('Background fetch failed:', error);
+        // Silently fail - we already have cached data displayed
+      }
+    };
+    
+    // If we have cache, return it immediately and fetch fresh in background
+    if (hasCache) {
+      // Set loading to false immediately since we have cached data
+      dispatch(setLoading(false));
+      // Start background fetch (fire and forget - don't await)
+      fetchFresh().catch(error => console.error('Background fetch error:', error));
       return cachedData;
     }
 
-    // No cache or expired, fetch fresh data
+    // No cache, fetch and return fresh data
+    dispatch(setLoading(true));
     const response = await apiClient.getPublicPublications({
       limit,
       offset: 0,
@@ -126,8 +166,69 @@ export const fetchLatestPublications = createAsyncThunk(
 
 export const fetchPublications = createAsyncThunk(
   'publications/fetchPublications',
-  async ({ filters, page, limit }: { filters?: any; page?: number; limit?: number }) => {
+  async ({ filters, page, limit }: { filters?: any; page?: number; limit?: number }, { dispatch }) => {
     const offset = page ? (page - 1) * (limit || 12) : 0;
+    const cacheKey = getPublicationsCacheKey(filters, page, limit);
+    
+    // Try to get cached data first
+    const cachedData = getCachedData<{ publications: Publication[]; pagination: PublicationsState['pagination'] }>(cacheKey);
+    const hasCache = cachedData && cachedData.publications && cachedData.publications.length > 0;
+    
+    // Always fetch fresh data in the background (fire and forget)
+    const fetchFresh = async () => {
+      try {
+        const response = await apiClient.getPublicPublications({
+          ...filters,
+          limit: limit || 12,
+          offset,
+        });
+        if (!response.success || !response.data) {
+          console.error('Background fetch failed:', response.error?.message);
+          return;
+        }
+        const publications = response.data.posts || [];
+        
+        // Use pagination from backend if available, otherwise calculate from current results
+        let pagination;
+        if (response.data.pagination) {
+          pagination = response.data.pagination;
+        } else {
+          const total = publications.length;
+          const totalPages = Math.ceil(total / (limit || 12));
+          pagination = {
+            total,
+            page: page || 1,
+            limit: limit || 12,
+            totalPages,
+          };
+        }
+        
+        const result = {
+          publications: publications as Publication[],
+          pagination,
+        };
+        
+        // Update cache
+        setCachedData(cacheKey, result);
+        // Update Redux state with fresh data (silently, without loading state)
+        dispatch(updatePublications(result));
+      } catch (error) {
+        console.error('Background fetch failed:', error);
+        // Silently fail - we already have cached data displayed
+      }
+    };
+    
+    // If we have cache, return it immediately and fetch fresh in background
+    if (hasCache) {
+      // Set loading to false immediately since we have cached data
+      dispatch(setLoading(false));
+      // Start background fetch (fire and forget - don't await)
+      fetchFresh().catch(error => console.error('Background fetch error:', error));
+      return cachedData;
+    }
+
+    // No cache, fetch and return fresh data
+    dispatch(setLoading(true));
     const response = await apiClient.getPublicPublications({
       ...filters,
       limit: limit || 12,
@@ -153,10 +254,14 @@ export const fetchPublications = createAsyncThunk(
       };
     }
     
-    return {
+    const result = {
       publications: publications as Publication[],
       pagination,
     };
+    
+    // Update cache
+    setCachedData(cacheKey, result);
+    return result;
   }
 );
 
@@ -195,13 +300,25 @@ const publicationsSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    updateLatestPublications: (state, action: PayloadAction<Publication[]>) => {
+      state.latestPublications = action.payload;
+      // Don't set loading to false here - it's a background update
+    },
+    updatePublications: (state, action: PayloadAction<{ publications: Publication[]; pagination: PublicationsState['pagination'] }>) => {
+      state.publications = action.payload.publications;
+      state.pagination = action.payload.pagination;
+      // Don't set loading to false here - it's a background update
+    },
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
       // Fetch latest publications
       .addCase(fetchLatestPublications.pending, (state) => {
-        state.loading = true;
         state.error = null;
+        // Loading will be set based on cache availability in the thunk
       })
       .addCase(fetchLatestPublications.fulfilled, (state, action) => {
         state.loading = false;
@@ -213,8 +330,8 @@ const publicationsSlice = createSlice({
       })
       // Fetch publications
       .addCase(fetchPublications.pending, (state) => {
-        state.loading = true;
         state.error = null;
+        // Loading will be set based on cache availability in the thunk
       })
       .addCase(fetchPublications.fulfilled, (state, action) => {
         state.loading = false;
@@ -253,6 +370,6 @@ const publicationsSlice = createSlice({
   },
 });
 
-export const { clearError } = publicationsSlice.actions;
+export const { clearError, updateLatestPublications, updatePublications, setLoading } = publicationsSlice.actions;
 export default publicationsSlice.reducer;
 

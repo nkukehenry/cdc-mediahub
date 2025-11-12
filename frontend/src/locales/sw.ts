@@ -44,6 +44,8 @@ export default {
     hide: 'Ficha',
     show: 'Onyesha',
     clear: 'Futa',
+    view: 'Angalia',
+    details: 'Maelezo',
     yes: 'Ndiyo',
     no: 'Hapana',
   },

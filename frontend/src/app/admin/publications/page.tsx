@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { Plus, Search, Edit, MoreVertical, X, Eye, Check, Send } from 'lucide-react';
+import { Plus, Search, Edit, MoreVertical, X, Eye, Check, Send, Info } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -11,6 +11,8 @@ import { showSuccess } from '@/utils/errorHandler';
 import { useAuth } from '@/hooks/useAuth';
 import { cn, getImageUrl } from '@/utils/fileUtils';
 import PublicationPreviewModal from '@/components/PublicationPreviewModal';
+import RejectionReasonModal from '@/components/RejectionReasonModal';
+import PublicationDetailsModal from '@/components/PublicationDetailsModal';
 
 interface Publication {
   id: string;
@@ -34,6 +36,7 @@ interface Publication {
   };
   status: 'pending' | 'draft' | 'approved' | 'rejected';
   publicationDate?: string;
+  rejectionReason?: string;
   hasComments: boolean;
   views: number;
   uniqueHits: number;
@@ -62,6 +65,11 @@ function PublicationsPageContent() {
   const menuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [selectedPublicationId, setSelectedPublicationId] = useState<string | null>(null);
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [publicationToReject, setPublicationToReject] = useState<Publication | null>(null);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedPublication, setSelectedPublication] = useState<Publication | null>(null);
 
   const canManagePublicationFlags = Boolean(
     user?.isAdmin ||
@@ -229,18 +237,30 @@ function PublicationsPageContent() {
     }
   };
 
-  const handleRejectPublication = async (publication: Publication) => {
+  const handleRejectPublication = (publication: Publication) => {
     setActionMenuOpen(null);
+    setPublicationToReject(publication);
+    setRejectionModalOpen(true);
+  };
+
+  const handleConfirmRejection = async (rejectionReason: string) => {
+    if (!publicationToReject) return;
+
+    setIsRejecting(true);
     try {
-      const response = await apiClient.rejectPublication(publication.id);
+      const response = await apiClient.rejectPublication(publicationToReject.id, rejectionReason);
       if (response.success) {
         showSuccess(t('publications.publicationRejected') || 'Publication rejected successfully');
+        setRejectionModalOpen(false);
+        setPublicationToReject(null);
         await loadPublications(currentPage);
       } else {
         throw new Error(response.error?.message || t('publications.failedToUpdatePublication'));
       }
     } catch (error) {
       handleError(error);
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -399,6 +419,17 @@ function PublicationsPageContent() {
                               >
                                 <button
                                   onClick={() => {
+                                    setSelectedPublication(publication);
+                                    setDetailsModalOpen(true);
+                                    setActionMenuOpen(null);
+                                  }}
+                                  className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-au-grey-text hover:bg-gray-100 flex items-center space-x-2"
+                                >
+                                  <Info size={14} />
+                                  <span>{t('common.details') || 'Details'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
                                     setSelectedPublicationId(publication.id);
                                     setPreviewModalOpen(true);
                                     setActionMenuOpen(null);
@@ -439,7 +470,7 @@ function PublicationsPageContent() {
                                       className="w-full text-left px-3 md:px-4 py-2 text-xs md:text-sm text-red-500 hover:bg-red-50 flex items-center space-x-2"
                                     >
                                       <X size={14} />
-                                      <span>{t('publications.reject')}</span>
+                                      <span>{t('publications.reject') || 'Reject'}</span>
                                     </button>
                                   </>
                                 )}
@@ -531,6 +562,30 @@ function PublicationsPageContent() {
           loadPublications(currentPage);
         }}
       />
+
+      {/* Rejection Reason Modal */}
+      <RejectionReasonModal
+        isOpen={rejectionModalOpen}
+        onClose={() => {
+          setRejectionModalOpen(false);
+          setPublicationToReject(null);
+        }}
+        onConfirm={handleConfirmRejection}
+        publicationTitle={publicationToReject?.title}
+        isLoading={isRejecting}
+      />
+
+      {/* Publication Details Modal */}
+      {selectedPublication && (
+        <PublicationDetailsModal
+          isOpen={detailsModalOpen}
+          onClose={() => {
+            setDetailsModalOpen(false);
+            setSelectedPublication(null);
+          }}
+          publication={selectedPublication}
+        />
+      )}
     </div>
   );
 }

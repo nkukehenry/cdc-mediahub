@@ -45,6 +45,8 @@ export default {
     hide: 'Ocultar',
     show: 'Mostrar',
     clear: 'Limpar',
+    view: 'Ver',
+    details: 'Detalhes',
     yes: 'Sim',
     no: 'Não',
   },

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import { Provider } from 'react-redux';
+import Link from 'next/link';
 import { store, RootState } from '@/store';
 import { fetchPublications } from '@/store/publicationsSlice';
 import { Search, X, ChevronLeft, ChevronRight, Filter, ChevronDown, ChevronUp } from 'lucide-react';
@@ -26,7 +27,7 @@ interface Category {
   }>;
 }
 
-function CategoryPageInner() {
+function SubcategoryPageInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -35,8 +36,10 @@ function CategoryPageInner() {
   const { publications, loading, pagination } = useSelector((state: RootState) => state.publications);
   
   const categorySlug = params?.slug as string;
+  const subcategorySlug = params?.subcategorySlug as string;
   
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
+  const [currentSubcategory, setCurrentSubcategory] = useState<{ id: string; name: string; slug: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [selectedSubcategories, setSelectedSubcategories] = useState<Set<string>>(new Set());
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -58,10 +61,10 @@ function CategoryPageInner() {
   const limit = 12;
 
   useEffect(() => {
-    loadCategory();
+    loadCategoryAndSubcategory();
     loadCategories();
     loadTags();
-  }, [categorySlug]);
+  }, [categorySlug, subcategorySlug]);
 
   useEffect(() => {
     const tagParams = searchParams.getAll('tags');
@@ -72,29 +75,35 @@ function CategoryPageInner() {
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (currentCategory) {
-      void loadPublications();
-    }
-  }, [currentPage, searchQuery, selectedSubcategories, selectedTags, currentCategory]);
-
-  const loadCategory = async () => {
+  const loadCategoryAndSubcategory = async () => {
     try {
       const response = await apiClient.getCategories();
       if (response.success && response.data?.categories) {
         const category = response.data.categories.find((cat: Category) => cat.slug === categorySlug);
         if (category) {
           const subRes = await apiClient.getCategorySubcategories(category.id);
+          const subcategories = subRes.success && subRes.data?.subcategories
+            ? subRes.data.subcategories
+            : [];
+          
+          const subcategory = subcategories.find((sub: { slug: string }) => sub.slug === subcategorySlug);
+          
           setCurrentCategory({
             ...category,
-            subcategories: subRes.success && subRes.data?.subcategories
-              ? subRes.data.subcategories
-              : []
+            subcategories
           });
+          
+          if (subcategory) {
+            setCurrentSubcategory({
+              id: subcategory.id,
+              name: subcategory.name,
+              slug: subcategory.slug
+            });
+          }
         }
       }
     } catch (error) {
-      console.error('Failed to load category:', error);
+      console.error('Failed to load category/subcategory:', error);
     }
   };
 
@@ -139,16 +148,14 @@ function CategoryPageInner() {
   };
 
   const loadPublications = useCallback(async () => {
-    if (!currentCategory) return;
+    if (!currentCategory || !currentSubcategory) return;
     
     const filters: any = {
-      categoryId: currentCategory.id
+      categoryId: currentCategory.id,
+      subcategoryId: currentSubcategory.id
     };
     
     if (searchQuery.trim()) filters.search = searchQuery.trim();
-    if (selectedSubcategories.size > 0) {
-      filters.subcategoryId = Array.from(selectedSubcategories)[0];
-    }
     if (selectedTags.size > 0) {
       filters.tags = Array.from(selectedTags);
     }
@@ -170,16 +177,26 @@ function CategoryPageInner() {
       setHasLoadedAtLeastOnce(true);
       setIsSearching(false);
     }
-  }, [dispatch, currentCategory, searchQuery, selectedSubcategories, selectedTags, author, creator, yearFrom, yearTo, publicationDate, source, division, currentPage, limit]);
+  }, [dispatch, currentCategory, currentSubcategory, searchQuery, selectedTags, author, creator, yearFrom, yearTo, publicationDate, source, division, currentPage, limit]);
+
+  useEffect(() => {
+    if (currentCategory && currentSubcategory) {
+      // Pre-select the current subcategory
+      setSelectedSubcategories(new Set([currentSubcategory.id]));
+    }
+  }, [currentCategory, currentSubcategory]);
+
+  useEffect(() => {
+    if (currentCategory && currentSubcategory) {
+      void loadPublications();
+    }
+  }, [loadPublications]);
 
   const handleApplyFilters = () => {
-    if (!currentCategory) return;
+    if (!currentCategory || !currentSubcategory) return;
     
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
-    if (selectedSubcategories.size > 0) {
-      Array.from(selectedSubcategories).forEach(subId => params.append('subcategoryId', subId));
-    }
     if (selectedTags.size > 0) {
       Array.from(selectedTags).forEach(tag => params.append('tags', tag));
     }
@@ -192,11 +209,14 @@ function CategoryPageInner() {
     if (division.trim()) params.set('division', division.trim());
     params.set('page', '1');
     
-    router.push(`/category/${categorySlug}?${params.toString()}`);
+    router.push(`/category/${categorySlug}/${subcategorySlug}?${params.toString()}`);
     void loadPublications();
   };
 
   const toggleSubcategory = (subcategoryId: string) => {
+    // Don't allow deselecting the current subcategory
+    if (subcategoryId === currentSubcategory?.id) return;
+    
     setSelectedSubcategories(prev => {
       const newSet = new Set(prev);
       if (newSet.has(subcategoryId)) {
@@ -222,7 +242,6 @@ function CategoryPageInner() {
 
   const clearFilters = () => {
     setSearchQuery('');
-    setSelectedSubcategories(new Set());
     setSelectedTags(new Set());
     setAuthor('');
     setCreator('');
@@ -231,13 +250,13 @@ function CategoryPageInner() {
     setPublicationDate('');
     setSource('');
     setDivision('');
-    router.push(`/category/${categorySlug}`);
+    router.push(`/category/${categorySlug}/${subcategorySlug}`);
   };
 
   const goToPage = (page: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('page', page.toString());
-    router.push(`/category/${categorySlug}?${params.toString()}`);
+    router.push(`/category/${categorySlug}/${subcategorySlug}?${params.toString()}`);
   };
 
   const totalPages = pagination?.totalPages || 1;
@@ -249,6 +268,7 @@ function CategoryPageInner() {
     return currentCategory.subcategories.map(subcat => ({
       id: subcat.id,
       name: subcat.name,
+      slug: subcat.slug,
     }));
   }, [currentCategory]);
 
@@ -266,6 +286,26 @@ function CategoryPageInner() {
     );
   }
 
+  if (!currentSubcategory && !loading && currentCategory) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PublicNav />
+        <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-4">
+          <div className="text-center py-12">
+            <p className="text-au-grey-text/70 text-lg">Subcategory not found</p>
+            <Link 
+              href={`/category/${categorySlug}`}
+              className="text-au-corporate-green hover:underline mt-2 inline-block"
+            >
+              Go back to {currentCategory.name}
+            </Link>
+          </div>
+        </div>
+        <PublicFooter />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PublicNav />
@@ -273,8 +313,19 @@ function CategoryPageInner() {
       <div className="container mx-auto px-6 md:px-16 lg:px-24 xl:px-32 py-4">
         {/* Header */}
         <div className="mb-3">
+          <div className="flex items-center gap-2 text-sm text-au-grey-text/70 mb-1">
+            <Link href="/publications" className="hover:text-au-corporate-green transition-colors">
+              Publications
+            </Link>
+            <span>/</span>
+            <Link href={`/category/${categorySlug}`} className="hover:text-au-corporate-green transition-colors">
+              {currentCategory?.name || 'Category'}
+            </Link>
+            <span>/</span>
+            <span className="text-au-corporate-green">{currentSubcategory?.name || 'Subcategory'}</span>
+          </div>
           <h1 className="text-2xl md:text-3xl font-bold text-au-corporate-green mb-1">
-            {currentCategory?.name || 'Category'}
+            {currentSubcategory?.name || 'Subcategory'}
           </h1>
           {loading ? (
             <Skeleton className="h-4 w-48 rounded-md" />
@@ -328,18 +379,18 @@ function CategoryPageInner() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs font-semibold text-au-grey-text uppercase whitespace-nowrap">Subcategories:</span>
                   {subcategoryOptions.slice(0, 6).map((subcat) => (
-                    <button
+                    <Link
                       key={subcat.id}
-                      onClick={() => toggleSubcategory(subcat.id)}
+                      href={`/category/${categorySlug}/${subcat.slug}`}
                       className={cn(
                         'px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap',
-                        selectedSubcategories.has(subcat.id)
+                        subcat.id === currentSubcategory?.id
                           ? 'bg-au-corporate-green text-white'
                           : 'bg-gray-100 text-au-grey-text hover:bg-gray-200'
                       )}
                     >
                       {subcat.name}
-                    </button>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -395,15 +446,22 @@ function CategoryPageInner() {
                     <h3 className="text-xs font-semibold text-au-grey-text mb-1.5 uppercase tracking-wide">Sub-Categories</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
                       {subcategoryOptions.map((subcat) => (
-                        <label key={subcat.id} className="flex items-center space-x-1.5 cursor-pointer">
+                        <Link
+                          key={subcat.id}
+                          href={`/category/${categorySlug}/${subcat.slug}`}
+                          className={cn(
+                            "flex items-center space-x-1.5 cursor-pointer p-1.5 rounded hover:bg-gray-50 transition-colors",
+                            subcat.id === currentSubcategory?.id && "bg-au-corporate-green/10"
+                          )}
+                        >
                           <input
                             type="checkbox"
-                            checked={selectedSubcategories.has(subcat.id)}
-                            onChange={() => toggleSubcategory(subcat.id)}
-                            className="w-3.5 h-3.5 text-au-corporate-green border-gray-300 rounded focus:ring-au-corporate-green"
+                            checked={subcat.id === currentSubcategory?.id}
+                            readOnly
+                            className="w-3.5 h-3.5 text-au-corporate-green border-gray-300 rounded focus:ring-au-corporate-green pointer-events-none"
                           />
                           <span className="text-xs text-au-grey-text">{subcat.name}</span>
-                        </label>
+                        </Link>
                       ))}
                     </div>
                   </div>
@@ -507,7 +565,7 @@ function CategoryPageInner() {
                     <Search className="h-3.5 w-3.5" />
                     Apply Filters
                   </button>
-                  {(searchQuery || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
+                  {(searchQuery || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
                     <button
                       onClick={clearFilters}
                       className="text-xs text-au-grey-text/70 hover:text-au-corporate-green transition-colors underline"
@@ -574,27 +632,14 @@ function CategoryPageInner() {
                   }}
                 >
                   {publications.map((publication, index) => {
-                    // Create collage effect with varied sizes
-                    // Pattern: large, medium, small, medium, default, large, small, medium
-                    const variants: ('small' | 'medium' | 'large' | 'default')[] = [
-                      'large', 'medium', 'small', 'medium', 
-                      'default', 'large', 'small', 'medium',
-                      'medium', 'small', 'large', 'default'
-                    ];
-                    const variant = variants[index % variants.length] || 'default';
-                    
-                    // Map variant to row span for vertical alignment
-                    const rowSpans: Record<string, string> = {
-                      'small': 'row-span-5',
-                      'medium': 'row-span-6',
-                      'large': 'row-span-10',
-                      'default': 'row-span-6'
-                    };
-                    const rowSpan = rowSpans[variant] || 'row-span-6';
-                    
+                    // Auto-detect variant from image/video dimensions
+                    // Card will calculate variant based on aspect ratio:
+                    // - Portrait (tall) -> large (500px, row-span-10)
+                    // - Landscape (wide) -> small (250px, row-span-5)
+                    // - Square/moderate -> medium (300px, row-span-6)
                     return (
-                      <div key={publication.id} className={rowSpan}>
-                        <PublicationCard publication={publication} variant={variant} />
+                      <div key={publication.id} className="row-span-6">
+                        <PublicationCard publication={publication} />
                       </div>
                     );
                   })}
@@ -682,8 +727,8 @@ function CategoryPageInner() {
             {/* Empty State */}
             {!shouldShowSkeleton && publications.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-au-grey-text/70 text-lg mb-4">No publications found in this category</p>
-                {(searchQuery || selectedSubcategories.size > 0 || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
+                <p className="text-au-grey-text/70 text-lg mb-4">No publications found in this subcategory</p>
+                {(searchQuery || selectedTags.size > 0 || author || creator || yearFrom || yearTo || publicationDate || source || division) && (
                   <button
                     onClick={clearFilters}
                     className="text-au-corporate-green hover:underline"
@@ -700,18 +745,19 @@ function CategoryPageInner() {
   );
 }
 
-function CategoryPageContent() {
+function SubcategoryPageContent() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-au-gold border-t-transparent rounded-full animate-spin" /></div>}>
-      <CategoryPageInner />
+      <SubcategoryPageInner />
     </Suspense>
   );
 }
 
-export default function CategoryPage() {
+export default function SubcategoryPage() {
   return (
     <Provider store={store}>
-      <CategoryPageContent />
+      <SubcategoryPageContent />
     </Provider>
   );
 }
+

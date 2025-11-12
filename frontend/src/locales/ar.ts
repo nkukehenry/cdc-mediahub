@@ -45,6 +45,8 @@ export default {
     hide: 'إخفاء',
     show: 'إظهار',
     clear: 'مسح',
+    view: 'عرض',
+    details: 'التفاصيل',
     yes: 'نعم',
     no: 'لا',
   },

@@ -8,6 +8,7 @@ import { showSuccess, showError } from '@/utils/errorHandler';
 import { cn, getImageUrl, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
 import FilePreviewModal from './FilePreviewModal';
 import { FileWithUrls } from '@/types/fileManager';
+import RejectionReasonModal from './RejectionReasonModal';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -44,6 +45,7 @@ interface Publication {
   };
   status: 'pending' | 'draft' | 'approved' | 'rejected';
   publicationDate?: string;
+  rejectionReason?: string;
   hasComments: boolean;
   isFeatured: boolean;
   isLeaderboard: boolean;
@@ -91,6 +93,8 @@ export default function PublicationPreviewModal({
   const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [schedulePublication, setSchedulePublication] = useState(false);
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
 
   const padNumber = (value: number, length: number = 2) => String(value).padStart(length, '0');
 
@@ -239,15 +243,20 @@ export default function PublicationPreviewModal({
     }
   };
 
-  const handleReject = async () => {
+  const handleReject = () => {
+    setRejectionModalOpen(true);
+  };
+
+  const handleConfirmRejection = async (rejectionReason: string) => {
     if (!publicationId) return;
 
+    setIsRejecting(true);
     try {
-      setSaving(true);
-      const response = await apiClient.rejectPublication(publicationId);
+      const response = await apiClient.rejectPublication(publicationId, rejectionReason);
 
       if (response.success) {
         showSuccess(t('publications.publicationRejected'));
+        setRejectionModalOpen(false);
         await loadPublication();
         onReject?.();
       } else {
@@ -256,7 +265,7 @@ export default function PublicationPreviewModal({
     } catch (error) {
       showError(t('errors.failedToRejectPublication'));
     } finally {
-      setSaving(false);
+      setIsRejecting(false);
     }
   };
 
@@ -304,7 +313,7 @@ export default function PublicationPreviewModal({
                     </button>
                     <button
                       onClick={handleReject}
-                      disabled={saving}
+                      disabled={saving || isRejecting}
                       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
                     >
                       <XCircle size={16} />
@@ -493,8 +502,20 @@ export default function PublicationPreviewModal({
                       <option value="rejected">{t('nav.rejectedPublications')}</option>
                     </select>
                   ) : (
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg text-au-grey-text text-sm">
-                      {status}
+                    <div className="flex flex-col gap-2">
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg text-au-grey-text text-sm">
+                        {status === 'approved' ? t('publications.statusApproved') :
+                         status === 'pending' ? t('nav.pendingPublications') :
+                         status === 'rejected' ? t('publications.statusRejected') :
+                         status === 'draft' ? t('nav.draftPublications') :
+                         status}
+                      </div>
+                      {status === 'rejected' && publication?.rejectionReason && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                          <p className="font-semibold mb-1">{t('publications.rejectionReason') || 'Rejection Reason'}:</p>
+                          <p className="text-red-600 break-words">{publication.rejectionReason}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -604,6 +625,15 @@ export default function PublicationPreviewModal({
         isOpen={isPreviewModalOpen}
         onClose={() => setIsPreviewModalOpen(false)}
         file={previewFile}
+      />
+
+      {/* Rejection Reason Modal */}
+      <RejectionReasonModal
+        isOpen={rejectionModalOpen}
+        onClose={() => setRejectionModalOpen(false)}
+        onConfirm={handleConfirmRejection}
+        publicationTitle={publication?.title}
+        isLoading={isRejecting}
       />
     </div>
   );
