@@ -122,7 +122,8 @@ export class DatabaseUtils {
     const keys = Object.keys(data);
     const columns = keys.join(', ');
     const placeholders = keys.map(() => '?').join(', ');
-    const values = keys.map(key => data[key]);
+    // Convert undefined to null for MySQL compatibility
+    const values = keys.map(key => data[key] === undefined ? null : data[key]);
     
     return { columns, placeholders, values };
   }
@@ -130,7 +131,8 @@ export class DatabaseUtils {
   static buildUpdateSet(data: Record<string, any>): { set: string; values: any[] } {
     const keys = Object.keys(data);
     const set = keys.map(key => `${key} = ?`).join(', ');
-    const values = keys.map(key => data[key]);
+    // Convert undefined to null for MySQL compatibility
+    const values = keys.map(key => data[key] === undefined ? null : data[key]);
     
     return { set, values };
   }

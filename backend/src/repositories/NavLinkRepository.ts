@@ -27,8 +27,8 @@ export class NavLinkRepository implements INavLinkRepository {
       const { columns, placeholders, values } = DatabaseUtils.buildInsertValues({
         id: navLink.id,
         label: navLink.label,
-        url: navLink.url,
-        route: navLink.route,
+        url: navLink.url ?? null,
+        route: navLink.route ?? null,
         external: navLink.external ? 1 : 0,
         display_order: navLink.order,
         is_active: navLink.isActive ? 1 : 0,
