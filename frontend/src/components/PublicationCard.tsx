@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Music, Eye, MessageCircle, Camera, Video, FileText, Image, Calendar, User } from 'lucide-react';
 import { Publication } from '@/store/publicationsSlice';
@@ -58,80 +57,9 @@ const getMediaDetails = (publication: Publication) => {
 
 export default function PublicationCard({ publication, variant: propVariant, onVariantDetected }: PublicationCardProps) {
   const mediaDetails = getMediaDetails(publication);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
-  const [calculatedVariant, setCalculatedVariant] = useState<'small' | 'medium' | 'large' | 'default'>('default');
-  const imgRef = useRef<HTMLImageElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Use prop variant if explicitly provided (and not 'default'), otherwise use calculated variant from dimensions
-  // When propVariant is undefined or 'default', we auto-detect from dimensions
-  const shouldAutoDetect = propVariant === undefined || propVariant === 'default';
-  const variant = shouldAutoDetect ? calculatedVariant : propVariant;
-
-  useEffect(() => {
-    // Reset dimensions and variant when media URL changes
-    setDimensions(null);
-    setCalculatedVariant('default');
-  }, [mediaDetails.url]);
-
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    const naturalWidth = img.naturalWidth;
-    const naturalHeight = img.naturalHeight;
-    
-    if (naturalWidth > 0 && naturalHeight > 0) {
-      setDimensions({ width: naturalWidth, height: naturalHeight });
-      calculateVariantFromDimensions(naturalWidth, naturalHeight);
-    }
-  };
-
-  const handleVideoLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const video = e.currentTarget;
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
-    
-    if (videoWidth > 0 && videoHeight > 0) {
-      setDimensions({ width: videoWidth, height: videoHeight });
-      calculateVariantFromDimensions(videoWidth, videoHeight);
-    }
-  };
-
-  const calculateVariantFromDimensions = (width: number, height: number) => {
-    if (width === 0 || height === 0) {
-      const newVariant = 'default';
-      setCalculatedVariant(newVariant);
-      // Only notify if auto-detecting (no explicit variant prop or it's 'default')
-      if ((propVariant === undefined || propVariant === 'default') && onVariantDetected) {
-        onVariantDetected(newVariant);
-      }
-      return;
-    }
-
-    const aspectRatio = width / height;
-    let newVariant: 'small' | 'medium' | 'large' | 'default';
-    
-    // Portrait (tall) images/videos -> large variant
-    // Aspect ratio < 0.8 means height is significantly larger than width
-    if (aspectRatio < 0.8) {
-      newVariant = 'large';
-    }
-    // Landscape (wide) images/videos -> small variant
-    // Aspect ratio > 1.5 means width is significantly larger than height
-    else if (aspectRatio > 1.5) {
-      newVariant = 'small';
-    }
-    // Square-ish or moderate aspect ratio -> medium variant
-    // Aspect ratio between 0.8 and 1.5
-    else {
-      newVariant = 'medium';
-    }
-    
-    setCalculatedVariant(newVariant);
-    // Only notify if auto-detecting (no explicit variant prop or it's 'default')
-    if ((propVariant === undefined || propVariant === 'default') && onVariantDetected) {
-      onVariantDetected(newVariant);
-    }
-  };
+  
+  // Use prop variant if provided, otherwise default to 'medium'
+  const variant = propVariant || 'medium';
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -227,32 +155,21 @@ export default function PublicationCard({ publication, variant: propVariant, onV
       <div className="absolute inset-0">
         {mediaDetails.isVideo && mediaDetails.url ? (
           <video
-            ref={videoRef}
             src={mediaDetails.url}
             className="h-full w-full object-cover"
             muted
             playsInline
             loop
             preload="metadata"
-            onLoadedMetadata={handleVideoLoadedMetadata}
-            onError={() => {
-              // Fallback to default variant if video fails to load
-              setCalculatedVariant('default');
-            }}
           />
         ) : (
           <img
-            ref={imgRef}
             src={mediaDetails.url || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
             alt={publication.title}
             className="h-full w-full object-cover"
-            onLoad={handleImageLoad}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
-              // Reset to default variant on error
-              setCalculatedVariant('default');
-              setDimensions(null);
             }}
           />
         )}
