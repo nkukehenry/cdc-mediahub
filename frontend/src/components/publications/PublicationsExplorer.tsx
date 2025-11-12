@@ -399,7 +399,7 @@ export default function PublicationsExplorer({
           {/* More Filters Collapsible */}
           <div className={cn(
             "pt-3",
-            (categories.length > 0 || tags.length > 0) ? "border-t border-gray-200 mt-3" : "mt-0"
+            (categories.length > 0 || tags.length > 0) ? "border-gray-200 mt-3" : "mt-0"
           )}>
             <button
               onClick={() => setIsMoreFiltersOpen(!isMoreFiltersOpen)}
