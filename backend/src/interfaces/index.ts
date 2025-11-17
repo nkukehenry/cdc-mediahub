@@ -34,6 +34,8 @@ export interface IFileService {
   upload(file: Express.Multer.File, userId: string, folderId?: string): Promise<FileEntity>;
   download(id: string, userId?: string): Promise<{ filePath: string; fileName: string; mimeType: string }>;
   generateThumbnail(filePath: string, mimeType: string): Promise<string>;
+  extractVideoFrame(filePath: string, timestampSeconds?: number): Promise<string>;
+  extractYouTubeFrame(youtubeUrl: string, timestampSeconds?: number): Promise<string>;
   deleteFile(id: string, userId?: string): Promise<boolean>;
   renameFile(id: string, newName: string, userId?: string): Promise<FileEntity>;
   getFiles(folderId: string | null, userId?: string): Promise<FileEntity[]>;
@@ -563,6 +565,7 @@ export interface INavLinkRepository {
 
 export interface PublicationFilters {
   status?: PublicationStatus;
+  scheduled?: boolean; // Filter for scheduled publications (publication_date > now)
   categoryId?: string;
   subcategoryId?: string;
   creatorId?: string;
@@ -591,6 +594,7 @@ export interface IPublicationRepository {
   findByCreator(creatorId: string, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   findAll(filters?: PublicationFilters, limit?: number, offset?: number): Promise<PublicationEntity[]>;
   countAll(filters?: PublicationFilters): Promise<number>;
+  countByStatus(): Promise<Record<string, number>>;
   findFeatured(limit?: number): Promise<PublicationEntity[]>;
   findLeaderboard(limit?: number): Promise<PublicationEntity[]>;
   findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<PublicationEntity[]>;
@@ -690,6 +694,7 @@ export interface IPublicationService {
   addComment(id: string, data: CreatePostCommentData): Promise<{ comment: PostCommentEntity; commentsCount: number }>;
   deleteComment(commentId: string, expectedPostId?: string): Promise<{ deleted: boolean; postId: string; commentsCount: number }>;
   getRecentComments(limit: number): Promise<PostCommentEntity[]>;
+  getPublicationCountsByStatus(): Promise<Record<string, number>>;
 }
 
 export interface ICategoryService {

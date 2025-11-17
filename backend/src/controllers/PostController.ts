@@ -349,6 +349,20 @@ export class PostController {
     }
   }
 
+  async getPublicationCountsByStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const counts = await this.postService.getPublicationCountsByStatus();
+
+      res.json({
+        success: true,
+        data: { counts },
+      });
+    } catch (error) {
+      this.logger.error('Get publication counts by status failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
   async search(req: Request, res: Response): Promise<void> {
     try {
       const { q } = req.query;
@@ -684,6 +698,11 @@ export class PostController {
       
       if (req.query.status) {
         filters.status = req.query.status as PublicationStatus;
+      }
+      
+      if (req.query.scheduled !== undefined) {
+        const scheduledValue = String(req.query.scheduled);
+        filters.scheduled = scheduledValue === 'true';
       }
       
       if (req.query.categoryId) {

@@ -27,25 +27,22 @@ const extractYouTubeVideoId = (url: string): string | null => {
 };
 
 const getMediaDetails = (publication: Publication) => {
-    // Check for YouTube URL first
-    if (publication.youtubeUrl) {
-      const videoId = extractYouTubeVideoId(publication.youtubeUrl);
-      if (videoId) {
-        return {
-          isVideo: true,
-          isYouTube: true,
-          youtubeVideoId: videoId,
-          url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-          mimeType: undefined,
-          attachment: undefined,
-        };
-      }
-    }
+    // Check if publication is in a video category
+    const categoryName = publication.category?.name?.toLowerCase() || '';
+    const categorySlug = publication.category?.slug?.toLowerCase() || '';
+    const isVideoCategory = categoryName.includes('video') || categorySlug.includes('video');
 
+    // Check for video content (YouTube URL or video attachments)
+    const hasYouTubeUrl = Boolean(publication.youtubeUrl);
+    const youtubeVideoId = publication.youtubeUrl ? extractYouTubeVideoId(publication.youtubeUrl) : null;
+    const hasVideoAttachment = publication.attachments?.some(att => att.mimeType?.startsWith('video/')) || false;
+    const hasVideoContent = hasYouTubeUrl || hasVideoAttachment;
+
+    // Prioritize coverImage (including captured thumbnails) over everything else
     const coverImage = publication.coverImage;
     if (coverImage) {
       const lower = coverImage.toLowerCase();
-      const isVideo =
+      const isCoverImageVideo =
         lower.includes('.mp4') ||
         lower.includes('.mov') ||
         lower.includes('.webm') ||
@@ -56,26 +53,53 @@ const getMediaDetails = (publication: Publication) => {
         lower.includes('.ogv') ||
         lower.includes('.ogg');
 
+      // If coverImage exists, always use it (this includes captured thumbnails from videos)
+      // But mark as video if it's a video file OR if the publication has video content (YouTube/video attachments)
+      const isVideo = isCoverImageVideo || hasVideoContent;
+      // For play button: show if in video category OR has video content
+      const shouldShowPlayButton = isVideoCategory || hasVideoContent;
+
       return {
         isVideo,
-        isYouTube: false,
-        youtubeVideoId: null,
+        isVideoCategory: shouldShowPlayButton, // True if in video category OR has video content
+        isYouTube: Boolean(youtubeVideoId),
+        youtubeVideoId: youtubeVideoId,
         url: getImageUrl(coverImage),
         mimeType: publication.attachments?.[0]?.mimeType,
         attachment: undefined,
       };
     }
 
-    const firstAttachment = publication.attachments?.[0];
-    if (firstAttachment && firstAttachment.mimeType?.startsWith('video/')) {
-      const attachmentUrl =
-        firstAttachment.downloadUrl ||
-        (firstAttachment.filePath ? getImageUrl(firstAttachment.filePath) : undefined);
+    // Fall back to YouTube URL if no coverImage exists
+    if (publication.youtubeUrl && youtubeVideoId) {
       return {
         isVideo: true,
+        isVideoCategory: isVideoCategory || true, // YouTube is always a video
+        isYouTube: true,
+        youtubeVideoId: youtubeVideoId,
+        url: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+        mimeType: undefined,
+        attachment: undefined,
+      };
+    }
+
+    const firstAttachment = publication.attachments?.[0];
+    if (firstAttachment && firstAttachment.mimeType?.startsWith('video/')) {
+      // For video attachments, prefer thumbnail if available, otherwise use downloadUrl or filePath
+      const thumbnailUrl = (firstAttachment as any).thumbnailUrl;
+      const thumbnailPath = (firstAttachment as any).thumbnailPath;
+      const attachmentUrl =
+        thumbnailUrl ||
+        (thumbnailPath ? getImageUrl(thumbnailPath) : undefined) ||
+        firstAttachment.downloadUrl ||
+        (firstAttachment.filePath ? getImageUrl(firstAttachment.filePath) : undefined) ||
+        getImageUrl(PLACEHOLDER_IMAGE_PATH);
+      return {
+        isVideo: true,
+        isVideoCategory: isVideoCategory || true, // Video attachments are always videos
         isYouTube: false,
         youtubeVideoId: null,
-        url: attachmentUrl || '',
+        url: attachmentUrl,
         mimeType: firstAttachment.mimeType,
         attachment: firstAttachment,
       };
@@ -83,6 +107,7 @@ const getMediaDetails = (publication: Publication) => {
 
     return {
       isVideo: false,
+      isVideoCategory,
       isYouTube: false,
       youtubeVideoId: null,
       url: getImageUrl(PLACEHOLDER_IMAGE_PATH),
@@ -190,33 +215,24 @@ export default function PublicationCard({ publication, variant: propVariant, onV
       {/* Full-bleed Image/Video/YouTube */}
       <div className="absolute inset-0">
         {mediaDetails.isYouTube && mediaDetails.youtubeVideoId ? (
-          <div className="h-full w-full relative">
-            <img
-              src={mediaDetails.url}
-              alt={publication.title}
-              className="h-full w-full object-cover"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
-              }}
-            />
-            {/* YouTube Play Button Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-              <div className="w-16 h-16 rounded-full bg-red-600/90 flex items-center justify-center shadow-lg">
-                <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-              </div>
-            </div>
-          </div>
-        ) : mediaDetails.isVideo && mediaDetails.url ? (
-          <video
+          <img
             src={mediaDetails.url}
+            alt={publication.title}
             className="h-full w-full object-cover"
-            muted
-            playsInline
-            loop
-            preload="metadata"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+            }}
+          />
+        ) : mediaDetails.isVideo && mediaDetails.isVideoCategory ? (
+          <img
+            src={mediaDetails.url}
+            alt={publication.title}
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+            }}
           />
         ) : (
           <img
@@ -232,7 +248,18 @@ export default function PublicationCard({ publication, variant: propVariant, onV
       </div>
 
       {/* Gradient Overlay - Always visible but subtle */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent z-0" />
+
+      {/* Play Button Overlay - Always visible above all overlays */}
+      {(mediaDetails.isYouTube && mediaDetails.youtubeVideoId) || (mediaDetails.isVideo && mediaDetails.isVideoCategory) ? (
+        <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className={`w-16 h-16 rounded-full ${mediaDetails.isYouTube ? 'bg-red-600/90' : 'bg-au-corporate-green/90'} flex items-center justify-center shadow-lg transition-transform duration-300 group-hover:scale-110`}>
+            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+      ) : null}
 
       {/* Category Badge - Top Left */}
       <div className="absolute left-3 top-3 z-20">
@@ -247,7 +274,7 @@ export default function PublicationCard({ publication, variant: propVariant, onV
       </div>
 
       {/* Hover Overlay - Shows metadata on hover */}
-      <div className="absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/80 to-black/40 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+      <div className="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/80 to-black/40 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <div className="space-y-3 transform translate-y-4 transition-transform duration-300 group-hover:translate-y-0">
           {/* Title */}
           <h3 className="text-xl font-bold text-white line-clamp-2 drop-shadow-lg opacity-0 transform translate-y-2 transition-all duration-300 delay-75 group-hover:opacity-100 group-hover:translate-y-0">

@@ -289,6 +289,18 @@ export class PostRepository implements IPublicationRepository {
         params.push(filters.status);
       }
 
+      // Filter for scheduled publications (publication_date IS NOT NULL AND publication_date > current date/time)
+      if (filters?.scheduled === true) {
+        const now = DatabaseUtils.formatDateTime(new Date());
+        conditions.push('p.publication_date IS NOT NULL AND p.publication_date > ?');
+        params.push(now);
+      } else if (filters?.scheduled === false) {
+        // Filter for non-scheduled publications (publication_date is null or <= current date/time)
+        const now = DatabaseUtils.formatDateTime(new Date());
+        conditions.push('(p.publication_date IS NULL OR p.publication_date <= ?)');
+        params.push(now);
+      }
+
       if (filters?.categoryId) {
         conditions.push('p.category_id = ?');
         params.push(filters.categoryId);
@@ -461,10 +473,54 @@ export class PostRepository implements IPublicationRepository {
     }
   }
 
+  async countByStatus(): Promise<Record<string, number>> {
+    try {
+      const query = `
+        SELECT 
+          status,
+          COUNT(*) as count
+        FROM posts
+        GROUP BY status
+      `;
+      
+      const results = await DatabaseUtils.findMany<{ status: string; count: number }>(query, []);
+      
+      // Initialize all statuses with 0
+      // Map 'approved' to 'published' for frontend display
+      const counts: Record<string, number> = {
+        draft: 0,
+        pending: 0,
+        published: 0, // Maps from 'approved' in DB
+        rejected: 0,
+        scheduled: 0
+      };
+      
+      // Fill in actual counts, mapping 'approved' to 'published'
+      results.forEach(row => {
+        const status = row.status;
+        if (status === 'approved') {
+          counts.published = row.count;
+        } else if (status in counts) {
+          counts[status] = row.count;
+        } else {
+          // Handle any other statuses that might exist
+          counts[status] = row.count;
+        }
+      });
+      
+      this.logger.debug('countByStatus query executed', { counts, rawResults: results });
+      return counts;
+    } catch (error) {
+      this.logger.error('Failed to count posts by status', error as Error);
+      throw this.errorHandler.createDatabaseError('Failed to count posts by status', 'select', 'posts');
+    }
+  }
+
   async findFeatured(limit?: number): Promise<PublicationEntity[]> {
     try {
-      let query = 'SELECT * FROM posts WHERE is_featured = 1 AND status = ? ORDER BY created_at DESC';
-      const params: any[] = ['approved'];
+      const now = DatabaseUtils.formatDateTime(new Date());
+      let query = 'SELECT * FROM posts WHERE is_featured = 1 AND status = ? AND (publication_date IS NULL OR publication_date <= ?) ORDER BY created_at DESC';
+      const params: any[] = ['approved', now];
 
       if (limit !== undefined) {
         const safeLimit = Math.max(0, Math.floor(limit));
@@ -481,8 +537,9 @@ export class PostRepository implements IPublicationRepository {
 
   async findLeaderboard(limit?: number): Promise<PublicationEntity[]> {
     try {
-      let query = 'SELECT * FROM posts WHERE is_leaderboard = 1 AND status = ? ORDER BY created_at DESC';
-      const params: any[] = ['approved'];
+      const now = DatabaseUtils.formatDateTime(new Date());
+      let query = 'SELECT * FROM posts WHERE is_leaderboard = 1 AND status = ? AND (publication_date IS NULL OR publication_date <= ?) ORDER BY created_at DESC';
+      const params: any[] = ['approved', now];
 
       if (limit !== undefined) {
         const safeLimit = Math.max(0, Math.floor(limit));
@@ -499,7 +556,7 @@ export class PostRepository implements IPublicationRepository {
 
   async findPublished(categoryId?: string, subcategoryId?: string, limit?: number, offset?: number, tags?: string[], search?: string): Promise<PublicationEntity[]> {
     try {
-      const now = new Date().toISOString();
+      const now = DatabaseUtils.formatDateTime(new Date());
       let query = `SELECT DISTINCT p.* FROM posts p`;
       const params: any[] = [];
       const conditions: string[] = ['p.status = ?', '(p.publication_date IS NULL OR p.publication_date <= ?)'];
@@ -572,7 +629,7 @@ export class PostRepository implements IPublicationRepository {
 
   async countPublished(categoryId?: string, subcategoryId?: string, tags?: string[], search?: string): Promise<number> {
     try {
-      const now = new Date().toISOString();
+      const now = DatabaseUtils.formatDateTime(new Date());
       let query = `SELECT COUNT(DISTINCT p.id) as count FROM posts p`;
       const params: any[] = [];
       const conditions: string[] = ['p.status = ?', '(p.publication_date IS NULL OR p.publication_date <= ?)'];
@@ -631,11 +688,13 @@ export class PostRepository implements IPublicationRepository {
 
   async search(query: string, limit?: number, offset?: number): Promise<PublicationEntity[]> {
     try {
+      const now = DatabaseUtils.formatDateTime(new Date());
       const searchTerm = `%${query}%`;
       let sql = `SELECT * FROM posts 
-                 WHERE (title LIKE ? OR description LIKE ? OR meta_title LIKE ? OR meta_description LIKE ?)
+                 WHERE status = ? AND (publication_date IS NULL OR publication_date <= ?)
+                 AND (title LIKE ? OR description LIKE ? OR meta_title LIKE ? OR meta_description LIKE ?)
                  ORDER BY created_at DESC`;
-      const params: any[] = [searchTerm, searchTerm, searchTerm, searchTerm];
+      const params: any[] = ['approved', now, searchTerm, searchTerm, searchTerm, searchTerm];
       
       let safeLimit: number | undefined;
       let safeOffset: number | undefined;

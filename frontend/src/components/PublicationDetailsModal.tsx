@@ -12,7 +12,7 @@ interface PublicationDetailsModalProps {
     title: string;
     slug: string;
     description?: string;
-    status: 'draft' | 'pending' | 'approved' | 'rejected';
+    status: 'draft' | 'pending' | 'approved' | 'rejected' | 'scheduled';
     rejectionReason?: string;
     createdAt: string;
     updatedAt: string;
@@ -66,6 +66,12 @@ export default function PublicationDetailsModal({
       icon: XCircle,
       color: 'bg-red-100 text-red-700',
       iconColor: 'text-red-500',
+    },
+    scheduled: {
+      label: 'Scheduled',
+      icon: Calendar,
+      color: 'bg-blue-100 text-blue-700',
+      iconColor: 'text-blue-500',
     },
   };
 

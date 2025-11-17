@@ -421,6 +421,18 @@ export class FileManagerServer {
       res.status(204).end();
     });
 
+    // Handle OPTIONS preflight requests for thumbnail files
+    this.app.options('/thumbnails/:filename(*)', (req, res) => {
+      const serverConfig = this.config.getServerConfig();
+      res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+      res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
+      res.status(204).end();
+    });
+
+    // Serve static files from uploads directory
     this.app.get('/uploads/:filename(*)', async (req, res): Promise<void> => {
       try {
         const serverConfig = this.config.getServerConfig();
@@ -478,6 +490,72 @@ export class FileManagerServer {
         this.logger.debug('Served static file', { filename, filePath });
       } catch (error) {
         this.logger.error('Error serving static file', error as Error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      }
+    });
+
+    // Serve static files from thumbnails directory (if separate from uploads)
+    this.app.get('/thumbnails/:filename(*)', async (req, res): Promise<void> => {
+      try {
+        const serverConfig = this.config.getServerConfig();
+        const appConfig = this.config.getConfig();
+        const thumbnailPath = appConfig.thumbnailPath;
+        const filename = req.params.filename;
+        const filePath = path.join(thumbnailPath, filename);
+        
+        // Security: Ensure the file path is within the thumbnails directory
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(path.resolve(thumbnailPath))) {
+          this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
+          res.status(403).json({ error: 'Access denied' });
+          return;
+        }
+        
+        // Check if file exists
+        try {
+          await fs.promises.access(filePath);
+        } catch {
+          this.logger.debug('Thumbnail file not found', { filePath });
+          res.status(404).json({ error: 'File not found' });
+          return;
+        }
+        
+        // Get file stats
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) {
+          res.status(404).json({ error: 'File not found' });
+          return;
+        }
+        
+        // Set CORS headers explicitly
+        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+        if (serverConfig.cors.credentials) {
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+        
+        // Set appropriate headers
+        res.setHeader('Content-Type', this.getContentType(filename));
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+        
+        // Send file
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.on('error', (error) => {
+          this.logger.error('Error streaming thumbnail file', error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error' });
+          }
+        });
+        fileStream.pipe(res);
+        
+        this.logger.debug('Served thumbnail file', { filename, filePath });
+      } catch (error) {
+        this.logger.error('Error serving thumbnail file', error as Error);
         if (!res.headersSent) {
           res.status(500).json({ error: 'Internal server error' });
         }
@@ -585,6 +663,65 @@ export class FileManagerServer {
     this.app.get('/api/files/:id/download',
       (req, res) => {
         this.handleFileDownload(req, res);
+      }
+    );
+
+    /**
+     * @swagger
+     * /api/files/extract-thumbnail:
+     *   post:
+     *     summary: Extract thumbnail from video
+     *     description: Extract a thumbnail frame from an uploaded video file or YouTube URL at a specific timestamp
+     *     tags: [Files]
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               fileId:
+     *                 type: string
+     *                 description: ID of the uploaded video file
+     *               youtubeUrl:
+     *                 type: string
+     *                 description: YouTube video URL
+     *               timestamp:
+     *                 type: number
+     *                 description: Timestamp in seconds (default: 1)
+     *             oneOf:
+     *               - required: [fileId]
+     *               - required: [youtubeUrl]
+     *     responses:
+     *       200:
+     *         description: Thumbnail extracted successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               allOf:
+     *                 - $ref: '#/components/schemas/SuccessResponse'
+     *                 - type: object
+     *                   properties:
+     *                     data:
+     *                       type: object
+     *                       properties:
+     *                         thumbnailPath:
+     *                           type: string
+     *                         thumbnailUrl:
+     *                           type: string
+     *       400:
+     *         description: Validation error
+     *       401:
+     *         description: Unauthorized
+     *       500:
+     *         description: Internal server error
+     */
+    this.app.post('/api/files/extract-thumbnail',
+      this.authMiddleware.authenticate,
+      (req, res) => {
+        this.handleExtractVideoThumbnail(req, res);
       }
     );
 
@@ -2235,6 +2372,14 @@ export class FileManagerServer {
       }
     );
 
+    this.app.get('/api/admin/publications/counts-by-status',
+      this.authMiddleware.authenticate,
+      this.rbacMiddleware.requireRole('admin'),
+      (req, res) => {
+        this.postController.getPublicationCountsByStatus(req, res);
+      }
+    );
+
     this.app.delete('/api/admin/posts/:id/comments/:commentId',
       this.authMiddleware.authenticate,
       ensureCanDeleteComments,
@@ -3614,6 +3759,265 @@ export class FileManagerServer {
       this.logger.error('File download failed', error as Error);
       const statusCode = (error as any).type === 'VALIDATION_ERROR' ? 403 : 500;
       res.status(statusCode).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  private async handleExtractVideoThumbnail(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const { fileId, youtubeUrl, timestamp } = req.body;
+      
+      if (!fileId && !youtubeUrl) {
+        res.status(400).json({
+          success: false,
+          error: {
+            type: 'VALIDATION_ERROR',
+            message: 'Either fileId or youtubeUrl is required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const timestampSeconds = timestamp ? parseFloat(String(timestamp)) : 1;
+      
+      let thumbnailPath: string;
+      let thumbnailUrl: string;
+
+      if (fileId) {
+        // Extract from uploaded video file
+        const file = await this.fileRepository.findById(fileId);
+        if (!file) {
+          res.status(404).json({
+            success: false,
+            error: {
+              type: 'NOT_FOUND',
+              message: 'File not found',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
+        }
+
+        // Check file access by attempting download (which checks access)
+        try {
+          await this.fileService.download(fileId, userId);
+        } catch (error) {
+          // If download fails with validation error, it's likely an access issue
+          const errorType = (error as any).type;
+          if (errorType === 'VALIDATION_ERROR' || errorType === 'UNAUTHORIZED') {
+            res.status(403).json({
+              success: false,
+              error: {
+                type: 'FORBIDDEN',
+                message: 'You do not have access to this file',
+                timestamp: new Date().toISOString()
+              }
+            });
+            return;
+          }
+          throw error;
+        }
+
+        // Check if it's a video file
+        if (!file.mimeType?.startsWith('video/')) {
+          res.status(400).json({
+            success: false,
+            error: {
+              type: 'VALIDATION_ERROR',
+              message: 'File is not a video',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
+        }
+
+        thumbnailPath = await this.fileService.extractVideoFrame(file.filePath, timestampSeconds);
+      } else {
+        // Extract from YouTube URL
+        thumbnailPath = await this.fileService.extractYouTubeFrame(youtubeUrl, timestampSeconds);
+      }
+
+      // Normalize thumbnailPath to relative path (for frontend consumption)
+      // Get the upload path to determine the base directory
+      const appConfig = this.config.getConfig();
+      const uploadPathResolved = path.resolve(appConfig.uploadPath).replace(/\\/g, '/');
+      const thumbnailPathResolved = path.resolve(appConfig.thumbnailPath).replace(/\\/g, '/');
+      
+      // Resolve thumbnailPath to absolute path (in case it's relative)
+      // If relative, it might be relative to current working directory or relative to thumbnailPath config
+      let thumbnailPathAbsolute: string;
+      if (path.isAbsolute(thumbnailPath)) {
+        thumbnailPathAbsolute = thumbnailPath;
+      } else {
+        // If relative path starts with 'thumbnails/' or 'thumbnails\', resolve relative to configured thumbnailPath
+        const normalizedRelative = thumbnailPath.replace(/\\/g, '/');
+        if (normalizedRelative.startsWith('thumbnails/')) {
+          // Extract the filename part (everything after 'thumbnails/')
+          const filename = normalizedRelative.substring('thumbnails/'.length);
+          thumbnailPathAbsolute = path.resolve(thumbnailPathResolved, filename);
+        } else {
+          // Assume it's just a filename, resolve relative to configured thumbnailPath
+          thumbnailPathAbsolute = path.resolve(thumbnailPathResolved, path.basename(thumbnailPath));
+        }
+      }
+      let normalizedPath = thumbnailPathAbsolute.replace(/\\/g, '/');
+      
+      // Extract relative path from absolute path
+      let relativeThumbnailPath: string;
+      
+      // Check if the thumbnailPath is within the uploadPath directory
+      if (normalizedPath.includes(uploadPathResolved)) {
+        // Extract relative path from uploadPath
+        const relativeFromUploads = normalizedPath.substring(normalizedPath.indexOf(uploadPathResolved) + uploadPathResolved.length);
+        relativeThumbnailPath = relativeFromUploads.startsWith('/') 
+          ? `uploads${relativeFromUploads}`
+          : `uploads/${relativeFromUploads}`;
+      } else if (normalizedPath.includes(thumbnailPathResolved)) {
+        // Thumbnail path is separate from uploadPath - check if it's directly in "thumbnails" directory
+        const relativeFromThumbnails = normalizedPath.substring(normalizedPath.indexOf(thumbnailPathResolved) + thumbnailPathResolved.length);
+        const filename = path.basename(normalizedPath);
+        
+        // Check if thumbnailPath directory name is "thumbnails" (not under uploads)
+        const thumbnailPathName = path.basename(thumbnailPathResolved);
+        if (thumbnailPathName === 'thumbnails' || thumbnailPathResolved.endsWith('/thumbnails') || thumbnailPathResolved.endsWith('\\thumbnails')) {
+          // Thumbnails are in a separate /thumbnails directory
+          relativeThumbnailPath = `thumbnails/${filename}`;
+        } else {
+          // Thumbnails are under uploads directory
+          relativeThumbnailPath = `uploads/thumbnails/${filename}`;
+        }
+      } else {
+        // Try to find "uploads/" or "thumbnails/" in the path
+        const uploadsIndex = normalizedPath.indexOf('uploads/');
+        const thumbnailsIndex = normalizedPath.indexOf('thumbnails/');
+        
+        if (uploadsIndex >= 0) {
+          relativeThumbnailPath = normalizedPath.substring(uploadsIndex);
+        } else if (thumbnailsIndex >= 0) {
+          // Check if thumbnails is directly in root (not under uploads)
+          const pathBeforeThumbnails = normalizedPath.substring(0, thumbnailsIndex);
+          if (!pathBeforeThumbnails.includes('uploads')) {
+            relativeThumbnailPath = normalizedPath.substring(thumbnailsIndex);
+          } else {
+            relativeThumbnailPath = `uploads/${normalizedPath.substring(thumbnailsIndex)}`;
+          }
+        } else {
+          // Check if thumbnailPath config is a separate "thumbnails" directory
+          const thumbnailPathName = path.basename(thumbnailPathResolved);
+          if (thumbnailPathName === 'thumbnails' || thumbnailPathResolved.endsWith('/thumbnails') || thumbnailPathResolved.endsWith('\\thumbnails')) {
+            const filename = path.basename(normalizedPath);
+            relativeThumbnailPath = `thumbnails/${filename}`;
+          } else {
+            // Extract just the filename and assume it's in uploads/thumbnails
+            const filename = path.basename(normalizedPath);
+            relativeThumbnailPath = `uploads/thumbnails/${filename}`;
+          }
+        }
+      }
+      
+      // Verify the file exists at the original location (before normalization)
+      // Retry a few times in case of file system delay (especially for yt-dlp downloads)
+      let fileExists = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await fs.promises.access(thumbnailPath);
+          fileExists = true;
+          this.logger.debug('Thumbnail file verified at original path', { 
+            thumbnailPath, 
+            relativeThumbnailPath, 
+            attempt: attempt + 1 
+          });
+          break;
+        } catch (error) {
+          if (attempt < 4) {
+            // Wait progressively longer: 200ms, 500ms, 1s, 2s
+            const delay = attempt === 0 ? 200 : attempt === 1 ? 500 : attempt === 2 ? 1000 : 2000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            this.logger.error('Thumbnail file not found at original path after retries', 
+              error instanceof Error ? error : new Error(String(error)),
+              { 
+                thumbnailPath,
+                relativeThumbnailPath,
+                uploadPath: appConfig.uploadPath,
+                thumbnailPathConfig: appConfig.thumbnailPath,
+                absoluteThumbnailPath: path.resolve(appConfig.thumbnailPath)
+              }
+            );
+          }
+        }
+      }
+      
+      if (!fileExists) {
+        // File doesn't exist - check if it's in a different location
+        // List files in thumbnail directory for debugging
+        try {
+          const thumbnailDir = appConfig.thumbnailPath;
+          const files = await fs.promises.readdir(thumbnailDir);
+          this.logger.error('Thumbnail file does not exist after extraction', 
+            new Error('Thumbnail file missing'),
+            { 
+              thumbnailPath,
+              relativeThumbnailPath,
+              thumbnailDir,
+              filesInThumbnailDir: files.filter(f => f.includes('youtube')),
+              expectedFilename: path.basename(thumbnailPath)
+            }
+          );
+        } catch (listError) {
+          this.logger.error('Thumbnail file does not exist after extraction', 
+            listError instanceof Error ? listError : new Error(String(listError)),
+            { 
+              thumbnailPath,
+              relativeThumbnailPath
+            }
+          );
+        }
+        
+        // Don't return a path for a non-existent file - return error instead
+        res.status(500).json({
+          success: false,
+          error: {
+            type: 'THUMBNAIL_ERROR',
+            message: 'Failed to create thumbnail file',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      // Generate URL for the thumbnail
+      thumbnailUrl = `${req.protocol}://${req.get('host')}/${relativeThumbnailPath}`;
+
+      this.logger.debug('Thumbnail extraction response', { 
+        originalPath: thumbnailPath, 
+        relativePath: relativeThumbnailPath, 
+        thumbnailUrl 
+      });
+
+      res.json({
+        success: true,
+        data: {
+          thumbnailPath: relativeThumbnailPath,
+          thumbnailUrl
+        }
+      });
+    } catch (error) {
+      this.logger.error('Video thumbnail extraction failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
     }
   }
 

@@ -748,7 +748,7 @@ function PublicationDetailsContent() {
         </Link>
 
         <div className="bg-white rounded-lg shadow-md">
-          {/* YouTube Video - Always used as cover when present */}
+          {/* Video at the top - YouTube or first video attachment */}
           {youtubeVideoId ? (
             <div className="relative w-full aspect-video overflow-hidden bg-black">
               <iframe
@@ -759,25 +759,8 @@ function PublicationDetailsContent() {
                 title={publication.title}
               />
             </div>
-          ) : publication.coverImage && !isFirstAttachmentVideo ? (
-            <div className="relative w-full h-64 md:h-96 overflow-hidden">
-              <img
-                src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
-                alt={publication.title}
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent"></div>
-            </div>
-          ) : !youtubeVideoId && firstAttachment && isFirstAttachmentVideo ? (
-            // Show first video attachment as cover only if no YouTube URL
+          ) : firstAttachment && isFirstAttachmentVideo ? (
             (() => {
-              const isAudio = firstAttachmentMime.startsWith('audio/');
-              const isPdf = firstAttachmentMime === 'application/pdf';
-              
               if (mediaBlobUrl && isFirstAttachmentVideo) {
                 return (
                   <div className="relative w-full aspect-video overflow-hidden bg-black">
@@ -934,24 +917,36 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
-              {publication.attachments && publication.attachments.length > 0 && (() => {
+              {(() => {
                 // Separate attachments by type
-                const videoAttachments = publication.attachments.filter(
+                // Exclude first video attachment if it's shown at the top
+                const allVideoAttachments = (publication.attachments || []).filter(
                   (att) => att.mimeType?.startsWith('video/')
                 );
-                const audioAttachments = publication.attachments.filter(
+                const videoAttachments = isFirstAttachmentVideo && allVideoAttachments.length > 0
+                  ? allVideoAttachments.slice(1) // Exclude first video (shown at top)
+                  : allVideoAttachments;
+                const audioAttachments = (publication.attachments || []).filter(
                   (att) => att.mimeType?.startsWith('audio/')
                 );
-                const imageAttachments = publication.attachments.filter(
+                const imageAttachments = (publication.attachments || []).filter(
                   (att) => att.mimeType?.startsWith('image/')
                 );
+                
+                // Don't include cover image in attachments - it's already displayed separately
                 const visualAttachments = [...imageAttachments, ...videoAttachments];
-                const otherAttachments = publication.attachments.filter(
+                const otherAttachments = (publication.attachments || []).filter(
                   (att) =>
                     !att.mimeType?.startsWith('video/') &&
                     !att.mimeType?.startsWith('audio/') &&
                     !att.mimeType?.startsWith('image/')
                 );
+                
+                const hasAttachments = visualAttachments.length > 0 || audioAttachments.length > 0 || otherAttachments.length > 0;
+                
+                if (!hasAttachments) {
+                  return null;
+                }
 
                 return (
                   <div className="border-t border-gray-200 pt-8">
@@ -996,15 +991,30 @@ function PublicationDetailsContent() {
                               >
                                 <div className="relative h-40 bg-gray-100">
                                   {isVideo ? (
-                                    <video
-                                      src={videoUrl}
-                                      className="w-full h-full object-cover"
-                                      controls
-                                      playsInline
-                                      preload="metadata"
-                                      onClick={(e) => e.stopPropagation()}
-                                      onPlay={(e) => e.stopPropagation()}
-                                    />
+                                    <>
+                                      {/* Show video thumbnail instead of inline player */}
+                                      <img
+                                        src={
+                                          (attachment as any).thumbnailUrl 
+                                            ? (attachment as any).thumbnailUrl 
+                                            : (attachment as any).thumbnailPath 
+                                              ? getImageUrl((attachment as any).thumbnailPath) 
+                                              : getImageUrl(PLACEHOLDER_IMAGE_PATH)
+                                        }
+                                        alt={attachment.originalName}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          const target = e.target as HTMLImageElement;
+                                          target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                                        }}
+                                      />
+                                      {/* Play button overlay for videos */}
+                                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center cursor-pointer">
+                                        <div className="w-16 h-16 rounded-full bg-au-corporate-green/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                          <Play className="h-8 w-8 text-white ml-1" fill="currentColor" />
+                                        </div>
+                                      </div>
+                                    </>
                                   ) : (
                                     <img
                                       src={imageUrl}

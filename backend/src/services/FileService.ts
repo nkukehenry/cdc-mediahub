@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
+import ffmpeg from 'fluent-ffmpeg';
 import { IFileService, IFileShareRepository, FileEntity, CreateFileData, ShareFileData, FileShareEntity, AccessLevel } from '../interfaces';
 import { DatabaseUtils } from '../utils/DatabaseUtils';
 import { getLogger } from '../utils/Logger';
@@ -147,6 +148,240 @@ export class FileService implements IFileService {
     } catch (error) {
       this.logger.error('Thumbnail generation failed', error as Error, { filePath });
       throw this.errorHandler.createThumbnailError('Failed to generate thumbnail', filePath);
+    }
+  }
+
+  async extractVideoFrame(filePath: string, timestampSeconds: number = 1): Promise<string> {
+    try {
+      if (!await this.fileExists(filePath)) {
+        throw this.errorHandler.createFileNotFoundError('video');
+      }
+
+      const filename = path.basename(filePath, path.extname(filePath));
+      const thumbnailFilename = `frame_${filename}_${timestampSeconds}.jpg`;
+      const thumbnailPath = path.join(this.thumbnailPath, thumbnailFilename);
+
+      return new Promise((resolve, reject) => {
+        ffmpeg(filePath)
+          .screenshots({
+            timestamps: [timestampSeconds],
+            filename: thumbnailFilename,
+            folder: this.thumbnailPath,
+            size: '1920x1080' // Max quality, will be resized if needed
+          })
+          .on('end', () => {
+            this.logger.debug('Video frame extracted', { filePath, timestampSeconds, thumbnailPath });
+            resolve(thumbnailPath);
+          })
+          .on('error', (err: Error) => {
+            this.logger.error('Video frame extraction failed', err, { filePath, timestampSeconds });
+            reject(this.errorHandler.createThumbnailError('Failed to extract video frame', filePath));
+          });
+      });
+    } catch (error) {
+      this.logger.error('Video frame extraction failed', error as Error, { filePath, timestampSeconds });
+      throw error;
+    }
+  }
+
+  async extractYouTubeFrame(youtubeUrl: string, timestampSeconds: number = 1): Promise<string> {
+    try {
+      // Extract video ID from URL
+      const videoId = this.extractYouTubeVideoId(youtubeUrl);
+      if (!videoId) {
+        throw this.errorHandler.createValidationError('Invalid YouTube URL');
+      }
+
+      // Ensure thumbnail directory exists
+      await this.ensureDirectories();
+
+      const thumbnailFilename = `youtube_${videoId}_${timestampSeconds}.jpg`;
+      const thumbnailPath = path.join(this.thumbnailPath, thumbnailFilename);
+
+      // Check if thumbnail already exists
+      if (await this.fileExists(thumbnailPath)) {
+        this.logger.debug('YouTube thumbnail already exists', { thumbnailPath });
+        return thumbnailPath;
+      }
+
+      // Try using yt-dlp to download a short segment and extract frame
+      // This is more reliable than using ffmpeg directly with YouTube URLs
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      // Create a temporary video file path
+      const tempVideoFilename = `youtube_${videoId}_temp_${Date.now()}.mp4`;
+      const tempVideoPath = path.join(this.thumbnailPath, tempVideoFilename);
+
+      try {
+        // Calculate start time (subtract a small buffer to ensure we have data)
+        const startTime = Math.max(0, timestampSeconds - 5);
+        const duration = 10; // Download 10 seconds around the timestamp
+
+        // Use yt-dlp to download a short segment
+        // yt-dlp -f "best[height<=720]" -ss START -t DURATION URL -o OUTPUT
+        const ytdlpCommand = `yt-dlp -f "best[height<=720]/best" --no-playlist --no-warnings --quiet -ss ${startTime} -t ${duration} "${youtubeUrl}" -o "${tempVideoPath}"`;
+        
+        this.logger.debug('Attempting to download YouTube segment with yt-dlp', { 
+          youtubeUrl, 
+          startTime, 
+          duration,
+          tempVideoPath 
+        });
+
+        await execAsync(ytdlpCommand, { timeout: 60000 }); // 60 second timeout
+
+        // Check if video file was created
+        if (!(await this.fileExists(tempVideoPath))) {
+          throw new Error('Failed to download YouTube video segment');
+        }
+
+        // Now extract frame at the relative timestamp within the segment
+        const relativeTimestamp = timestampSeconds - startTime;
+
+        return new Promise((resolve, reject) => {
+          ffmpeg(tempVideoPath)
+            .screenshots({
+              timestamps: [relativeTimestamp],
+              filename: thumbnailFilename,
+              folder: this.thumbnailPath,
+              size: '1920x1080'
+            })
+            .on('end', async () => {
+              // Clean up temporary video file
+              try {
+                await fs.unlink(tempVideoPath);
+                this.logger.debug('Temporary video file deleted', { tempVideoPath });
+              } catch (cleanupError) {
+                this.logger.warn('Failed to delete temporary video file', { 
+                  error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+                  tempVideoPath 
+                });
+              }
+
+              this.logger.debug('YouTube frame extracted', { youtubeUrl, timestampSeconds, thumbnailPath });
+              resolve(thumbnailPath);
+            })
+            .on('error', async (err: Error) => {
+              // Clean up temporary video file on error
+              try {
+                await fs.unlink(tempVideoPath);
+              } catch (cleanupError) {
+                // Ignore cleanup errors
+              }
+
+              this.logger.warn('Frame extraction from downloaded segment failed, using thumbnail API fallback', { 
+                youtubeUrl, 
+                error: err.message 
+              });
+
+              // Fallback to YouTube's thumbnail API (doesn't support custom timestamps)
+              const fallbackUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+              this.downloadYouTubeThumbnail(fallbackUrl, thumbnailPath)
+                .then(() => resolve(thumbnailPath))
+                .catch((downloadError) => {
+                  this.logger.error('YouTube thumbnail download failed', downloadError as Error, { youtubeUrl });
+                  reject(this.errorHandler.createThumbnailError('Failed to extract YouTube frame', youtubeUrl));
+                });
+            });
+        });
+      } catch (error) {
+        // Clean up temporary file if it exists
+        try {
+          if (await this.fileExists(tempVideoPath)) {
+            await fs.unlink(tempVideoPath);
+          }
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+
+        // If yt-dlp fails, fallback to YouTube thumbnail API
+        this.logger.warn('yt-dlp download failed, using thumbnail API fallback', { 
+          youtubeUrl, 
+          videoId,
+          timestampSeconds,
+          thumbnailPath,
+          error: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined
+        });
+
+        try {
+          const fallbackUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          await this.downloadYouTubeThumbnail(fallbackUrl, thumbnailPath);
+          
+          // Verify the fallback thumbnail was saved
+          if (!(await this.fileExists(thumbnailPath))) {
+            throw new Error('Fallback thumbnail was not saved successfully');
+          }
+          
+          this.logger.debug('YouTube thumbnail saved via fallback API', { thumbnailPath });
+          return thumbnailPath;
+        } catch (fallbackError) {
+          this.logger.error('Fallback thumbnail download also failed', fallbackError as Error, {
+            youtubeUrl,
+            videoId,
+            thumbnailPath
+          });
+          throw this.errorHandler.createThumbnailError(
+            `Failed to extract YouTube frame: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+            youtubeUrl
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error('YouTube frame extraction failed', error as Error, { youtubeUrl, timestampSeconds });
+      throw error;
+    }
+  }
+
+  private async downloadYouTubeThumbnail(url: string, outputPath: string): Promise<void> {
+    try {
+      // Ensure directory exists
+      const outputDir = path.dirname(outputPath);
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download thumbnail: ${response.statusText} (${response.status})`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(outputPath, buffer);
+      
+      // Verify file was written
+      if (!(await this.fileExists(outputPath))) {
+        throw new Error('Thumbnail file was not created after write');
+      }
+      
+      this.logger.debug('YouTube thumbnail downloaded and saved', { url, outputPath, size: buffer.length });
+    } catch (error) {
+      this.logger.error('Failed to download YouTube thumbnail', error as Error, { url, outputPath });
+      throw error;
+    }
+  }
+
+  private extractYouTubeVideoId(url: string): string | null {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /youtube\.com\/.*[?&]v=([^&\n?#]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
     }
   }
 

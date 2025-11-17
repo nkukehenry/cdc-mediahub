@@ -49,6 +49,8 @@ export default {
     details: 'Détails',
     yes: 'Oui',
     no: 'Non',
+    filters: 'Filtres',
+    all: 'Tous',
   },
   // Auth
   auth: {

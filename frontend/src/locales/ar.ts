@@ -49,6 +49,8 @@ export default {
     details: 'التفاصيل',
     yes: 'نعم',
     no: 'لا',
+    filters: 'المرشحات',
+    all: 'الكل',
   },
   // Auth
   auth: {

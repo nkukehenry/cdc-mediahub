@@ -243,6 +243,13 @@ class ApiClient {
     return response.blob();
   }
 
+  async extractVideoThumbnail(data: { fileId?: string; youtubeUrl?: string; timestamp?: number }): Promise<ApiResponse<{ thumbnailPath: string; thumbnailUrl: string }>> {
+    return this.request<{ thumbnailPath: string; thumbnailUrl: string }>('/api/files/extract-thumbnail', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async searchFiles(query: string): Promise<ApiResponse> {
     return this.request(`/api/files/search?q=${encodeURIComponent(query)}`);
   }
@@ -569,6 +576,10 @@ class ApiClient {
 
   async getRecentComments(limit: number = 5): Promise<ApiResponse<{ comments: any[] }>> {
     return this.request<{ comments: any[] }>(`/api/admin/comments/recent?limit=${limit}`);
+  }
+
+  async getPublicationCountsByStatus(): Promise<ApiResponse<{ counts: Record<string, number> }>> {
+    return this.request<{ counts: Record<string, number> }>('/api/admin/publications/counts-by-status');
   }
 
   // Publication management methods

@@ -43,6 +43,14 @@ export default {
     metaTitle: 'Meta Title (SEO)',
     metaDescription: 'Meta Description (SEO)',
     status: 'Status',
+    statusLabels: {
+      draft: 'Draft',
+      pending: 'Pending',
+      scheduled: 'Scheduled',
+      published: 'Published',
+      rejected: 'Rejected',
+      approved: 'Approved',
+    },
     publicationDate: 'Publication Date',
     schedulePublication: 'Schedule Publication',
     notScheduled: 'Not scheduled',
@@ -169,6 +177,8 @@ export default {
     next: 'Next',
     yes: 'Yes',
     no: 'No',
+    filters: 'Filters',
+    all: 'All',
   },
   // Auth
   auth: {
@@ -327,6 +337,8 @@ export default {
     newUsersThisYear: 'New Users This Year',
     recentComments: 'Recent Comments',
     noComments: 'No comments yet',
+    publicationStatusCounts: 'Publication Status Counts',
+    publicationStatusCountsSubtitle: 'Count of publications by status',
     title: 'Title',
     category: 'Category',
     publicationCount: 'Publications',

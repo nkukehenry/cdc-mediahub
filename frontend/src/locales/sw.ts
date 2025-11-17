@@ -48,6 +48,8 @@ export default {
     details: 'Maelezo',
     yes: 'Ndiyo',
     no: 'Hapana',
+    filters: 'Vichungi',
+    all: 'Zote',
   },
   // Auth
   auth: {

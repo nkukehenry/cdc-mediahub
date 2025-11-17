@@ -245,6 +245,36 @@ function DashboardContent() {
         </ChartCard>
       </div>
 
+      {/* Publication Status Counts */}
+      <ChartCard 
+        title={t('admin.publicationStatusCounts') || 'Publication Status Counts'}
+        subtitle={t('admin.publicationStatusCountsSubtitle') || 'Count of publications by status'}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-8 h-8 border-4 border-au-gold border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : analytics?.publicationStats?.byStatus ? (
+          <BarChartCard
+            title=""
+            data={analytics.publicationStats.byStatus.map(item => ({ 
+              name: t(`publications.statusLabels.${item.status}`) || item.status, 
+              count: item.count 
+            }))}
+            dataKey="count"
+            xKey="name"
+            height={320}
+            color="#4ECDC4"
+            layout="vertical"
+            xAngle={0}
+          />
+        ) : (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-gray-500 text-sm">No data available</p>
+          </div>
+        )}
+      </ChartCard>
+
       {/* Monthly Visitor Stats */}
       <ChartCard 
         title={t('admin.monthlyVisitorStats')}

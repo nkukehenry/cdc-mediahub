@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, Eye } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, Eye, RefreshCw } from 'lucide-react';
 import { cn, getImageUrl, PLACEHOLDER_IMAGE_PATH, isImageFile, isVideoFile, isAudioFile, isPdfFile, stripHtmlTags } from '@/utils/fileUtils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { showSuccess, showError } from '@/utils/errorHandler';
@@ -90,6 +90,14 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const [isLeaderboard, setIsLeaderboard] = useState(false);
   const [existingCoverImage, setExistingCoverImage] = useState<string | null>(null);
   const [schedulePublication, setSchedulePublication] = useState(false);
+  const [capturedThumbnail, setCapturedThumbnail] = useState<string | null>(null);
+  const [isCapturingThumbnail, setIsCapturingThumbnail] = useState(false);
+  const [showVideoForCapture, setShowVideoForCapture] = useState(false); // Toggle to show video when thumbnail is captured
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const youtubeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
+  const videoBlobUrlRef = useRef<string | null>(null);
+  const autoCapturedRef = useRef<string | null>(null); // Track if we've auto-captured for current video
   const isVideoMimeType = (mimeType?: string) => Boolean(mimeType && mimeType.startsWith('video/'));
   const isImageMimeType = (mimeType?: string) => Boolean(mimeType && mimeType.startsWith('image/'));
   const isVideoPath = (filePath?: string | null) => {
@@ -145,13 +153,219 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     return isVideoPath(existingCoverImage);
   }, [youtubeVideoId, coverFile, existingCoverImage]);
 
+  // Load video file as blob URL for preview (similar to FilePreviewModal)
+  useEffect(() => {
+    if (coverFile && coverIsVideo && coverFile.id) {
+      // Only reload if blob URL doesn't exist
+      if (!videoBlobUrlRef.current) {
+        // Load blob URL for video files to ensure proper playback
+        const fetchVideoBlob = async () => {
+          try {
+            const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+            
+            const headers: HeadersInit = {
+              'Content-Type': 'application/json',
+            };
+            if (token) {
+              headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const response = await fetch(`${apiBaseUrl}/api/files/${coverFile.id}/download`, {
+              headers
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to load video: ${response.statusText}`);
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            
+            // Clean up previous blob URL if it exists
+            if (videoBlobUrlRef.current && videoBlobUrlRef.current !== url) {
+              URL.revokeObjectURL(videoBlobUrlRef.current);
+            }
+            
+            videoBlobUrlRef.current = url;
+            setVideoBlobUrl(url);
+          } catch (err) {
+            console.error('Failed to fetch video for preview:', err);
+            setVideoBlobUrl(null);
+          }
+        };
+
+        fetchVideoBlob();
+      } else {
+        // Blob URL already exists, just update state
+        setVideoBlobUrl(videoBlobUrlRef.current);
+      }
+
+      // Cleanup blob URL only on unmount or file change
+      return () => {
+        // Don't clean up - keep blob URL for reuse when switching views
+      };
+    } else if (!coverFile) {
+      // Only clean up if we no longer have a video file
+      if (videoBlobUrlRef.current) {
+        URL.revokeObjectURL(videoBlobUrlRef.current);
+        videoBlobUrlRef.current = null;
+      }
+      setVideoBlobUrl(null);
+    }
+  }, [coverFile?.id, coverIsVideo]);
+
+  // Auto-capture thumbnail when uploaded video is ready
+  useEffect(() => {
+    if (coverFile && coverIsVideo && videoRef.current && !capturedThumbnail && !showVideoForCapture && !isCapturingThumbnail) {
+      const videoElement = videoRef.current;
+      const videoKey = coverFile.id || coverFile.filePath || 'unknown';
+      
+      // Only auto-capture once per video
+      if (autoCapturedRef.current === videoKey) {
+        return;
+      }
+
+      const handleVideoReady = async () => {
+        // Ensure video has valid dimensions
+        if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+          // Wait a bit for video dimensions to be available
+          setTimeout(() => {
+            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0 && autoCapturedRef.current !== videoKey && !isCapturingThumbnail) {
+              autoCapturedRef.current = videoKey;
+              handleCaptureThumbnail().catch(err => {
+                console.error('Auto-capture failed:', err);
+                // Reset so we can try again
+                autoCapturedRef.current = null;
+              });
+            }
+          }, 500);
+          return;
+        }
+
+        // Seek to first second for better frame
+        if (videoElement.duration > 1) {
+          videoElement.currentTime = 1;
+          videoElement.addEventListener('seeked', () => {
+            if (autoCapturedRef.current !== videoKey && !isCapturingThumbnail) {
+              autoCapturedRef.current = videoKey;
+              handleCaptureThumbnail().catch(err => {
+                console.error('Auto-capture failed:', err);
+                autoCapturedRef.current = null;
+              });
+            }
+          }, { once: true });
+        } else {
+          // Video is too short, capture immediately
+          if (autoCapturedRef.current !== videoKey && !isCapturingThumbnail) {
+            autoCapturedRef.current = videoKey;
+            handleCaptureThumbnail().catch(err => {
+              console.error('Auto-capture failed:', err);
+              autoCapturedRef.current = null;
+            });
+          }
+        }
+      };
+
+      // Check if video is already loaded
+      if (videoElement.readyState >= 2) {
+        handleVideoReady();
+      } else {
+        videoElement.addEventListener('loadeddata', handleVideoReady, { once: true });
+        videoElement.addEventListener('canplay', handleVideoReady, { once: true });
+      }
+
+      return () => {
+        videoElement.removeEventListener('loadeddata', handleVideoReady);
+        videoElement.removeEventListener('canplay', handleVideoReady);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverFile?.id, coverFile?.filePath, coverIsVideo, capturedThumbnail, showVideoForCapture, isCapturingThumbnail]);
+
+  // Auto-capture thumbnail when YouTube video URL is set
+  useEffect(() => {
+    if (youtubeVideoId && youtubeUrl && !capturedThumbnail && !showVideoForCapture && !isCapturingThumbnail) {
+      const youtubeKey = youtubeVideoId;
+      
+      // Only auto-capture once per YouTube video
+      if (autoCapturedRef.current === youtubeKey) {
+        return;
+      }
+
+      // Auto-capture YouTube thumbnail after a short delay to ensure URL is stable
+      const timeoutId = setTimeout(() => {
+        if (autoCapturedRef.current !== youtubeKey && !isCapturingThumbnail) {
+          autoCapturedRef.current = youtubeKey;
+          handleCaptureThumbnail().catch(err => {
+            console.error('Auto-capture YouTube thumbnail failed:', err);
+            autoCapturedRef.current = null;
+          });
+        }
+      }, 1000); // Wait 1 second for YouTube iframe to potentially load
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [youtubeVideoId, youtubeUrl, capturedThumbnail, showVideoForCapture, isCapturingThumbnail]);
+
+  // Reset auto-capture tracking when video changes
+  useEffect(() => {
+    const currentKey = coverFile?.id || coverFile?.filePath || youtubeVideoId;
+    if (autoCapturedRef.current && autoCapturedRef.current !== currentKey) {
+      autoCapturedRef.current = null;
+    }
+  }, [coverFile?.id, coverFile?.filePath, youtubeVideoId]);
+
   const coverPreviewSource = useMemo(() => {
+    // If showing video for capture, prioritize video source over captured thumbnail
+    if (showVideoForCapture) {
+      // YouTube URL
+      if (youtubeVideoId) {
+        return `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`;
+      }
+      // Uploaded video
+      if (coverFile && coverIsVideo) {
+        if (videoBlobUrl) {
+          return videoBlobUrl;
+        }
+        return (
+          coverFile.downloadUrl ||
+          (coverFile.filePath ? getImageUrl(coverFile.filePath) : undefined) ||
+          coverFile.thumbnailUrl ||
+          ''
+        );
+      }
+    }
+    
+    // Captured thumbnail takes priority (when not showing video)
+    if (capturedThumbnail && !showVideoForCapture) {
+      console.log('Using captured thumbnail:', capturedThumbnail);
+      // If captured thumbnail is a file path (not a full URL or blob), convert it
+      if (capturedThumbnail && 
+          !capturedThumbnail.startsWith('http') && 
+          !capturedThumbnail.startsWith('blob:')) {
+        // Convert file path to URL using getImageUrl (handles both relative and absolute paths)
+        const imageUrl = getImageUrl(capturedThumbnail);
+        console.log('Converted file path to image URL:', imageUrl);
+        return imageUrl;
+      }
+      return capturedThumbnail;
+    }
+    
     // YouTube URL takes priority
     if (youtubeVideoId) {
       return `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`;
     }
+    
     if (coverFile) {
       if (coverIsVideo) {
+        // Use blob URL for new publications, or downloadUrl/filePath for edit mode
+        if (videoBlobUrl) {
+          return videoBlobUrl;
+        }
         return (
           coverFile.downloadUrl ||
           (coverFile.filePath ? getImageUrl(coverFile.filePath) : undefined) ||
@@ -170,7 +384,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       return getImageUrl(existingCoverImage);
     }
     return getImageUrl(PLACEHOLDER_IMAGE_PATH);
-  }, [youtubeVideoId, coverFile, coverIsVideo, existingCoverImage]);
+  }, [capturedThumbnail, youtubeVideoId, coverFile, coverIsVideo, existingCoverImage, videoBlobUrl, showVideoForCapture]);
 
   const coverPreviewMime = coverFile?.mimeType || (coverIsVideo ? 'video/mp4' : 'image/jpeg');
 
@@ -674,6 +888,332 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     });
   };
 
+  const captureFrameFromVideo = (videoElement: HTMLVideoElement): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth || videoElement.clientWidth;
+        canvas.height = videoElement.videoHeight || videoElement.clientHeight;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'));
+          return;
+        }
+        
+        // Draw the current video frame to canvas
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        
+        // Convert canvas to blob
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('Failed to create blob from canvas'));
+            return;
+          }
+          
+          // Create object URL from blob
+          const blobUrl = URL.createObjectURL(blob);
+          resolve(blobUrl);
+        }, 'image/jpeg', 0.95);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  const handleCaptureThumbnail = async () => {
+    try {
+      setIsCapturingThumbnail(true);
+      
+      // For uploaded videos - capture frame from video element using canvas
+      if (coverFile && coverIsVideo && videoRef.current) {
+        try {
+          const videoElement = videoRef.current;
+          
+          // Ensure video is loaded and seek to current time if needed
+          if (videoElement.readyState < 2) {
+            // Wait for video to load enough data
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                videoElement.removeEventListener('loadeddata', onLoadedData);
+                videoElement.removeEventListener('seeked', onSeeked);
+                videoElement.removeEventListener('error', onError);
+                reject(new Error('Video loading timeout'));
+              }, 5000);
+              
+              const onLoadedData = () => {
+                // Seek to current time to ensure frame is ready
+                const currentTime = videoElement.currentTime || 1;
+                if (currentTime > 0 && currentTime < videoElement.duration) {
+                  videoElement.currentTime = currentTime;
+                  videoElement.addEventListener('seeked', onSeeked, { once: true });
+                } else {
+                  clearTimeout(timeout);
+                  videoElement.removeEventListener('error', onError);
+                  resolve();
+                }
+              };
+              
+              const onSeeked = () => {
+                clearTimeout(timeout);
+                videoElement.removeEventListener('loadeddata', onLoadedData);
+                videoElement.removeEventListener('error', onError);
+                resolve();
+              };
+              
+              const onError = () => {
+                clearTimeout(timeout);
+                videoElement.removeEventListener('loadeddata', onLoadedData);
+                videoElement.removeEventListener('seeked', onSeeked);
+                reject(new Error('Video failed to load'));
+              };
+              
+              videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
+              videoElement.addEventListener('error', onError, { once: true });
+              
+              // Trigger load if not already loading
+              if (videoElement.readyState === 0) {
+                videoElement.load();
+              }
+            });
+          } else {
+            // Video is already loaded, but ensure current frame is ready
+            const currentTime = videoElement.currentTime || 1;
+            if (currentTime > 0 && currentTime < (videoElement.duration || Infinity)) {
+              await new Promise<void>((resolve) => {
+                const onSeeked = () => {
+                  videoElement.removeEventListener('seeked', onSeeked);
+                  resolve();
+                };
+                videoElement.addEventListener('seeked', onSeeked, { once: true });
+                videoElement.currentTime = currentTime;
+                // Timeout in case seeked doesn't fire
+                setTimeout(() => {
+                  videoElement.removeEventListener('seeked', onSeeked);
+                  resolve();
+                }, 1000);
+              });
+            }
+          }
+          
+          // Wait a bit for video to be fully ready
+          if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+            await new Promise<void>((resolve) => {
+              const checkReady = () => {
+                if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                  resolve();
+                } else {
+                  setTimeout(checkReady, 100);
+                }
+              };
+              checkReady();
+              // Max wait 2 seconds
+              setTimeout(() => resolve(), 2000);
+            });
+          }
+          
+          // Capture frame from video element
+          const blobUrl = await captureFrameFromVideo(videoElement);
+          
+          // Upload the captured frame as a file
+          const response = await fetch(blobUrl);
+          const blob = await response.blob();
+          
+          // Create a File object from the blob
+          const file = new File([blob], `thumbnail-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          
+          // Upload the thumbnail file
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+          const headers: HeadersInit = {};
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          const uploadResponse = await fetch(`${apiBaseUrl}/api/files/upload`, {
+            method: 'POST',
+            headers,
+            body: formData,
+          });
+          
+          if (!uploadResponse.ok) {
+            throw new Error('Failed to upload thumbnail');
+          }
+          
+          const uploadData = await uploadResponse.json();
+          
+          if (uploadData.success && uploadData.data?.file) {
+            const uploadedFile = uploadData.data.file;
+            // For images, prefer filePath converted to URL, then thumbnailUrl, then downloadUrl
+            // thumbnailUrl might be null for image files, and downloadUrl requires auth
+            let thumbnailUrl: string | null = null;
+            
+            if (uploadedFile.filePath) {
+              // Use filePath converted to image URL (this is the most reliable for display)
+              thumbnailUrl = getImageUrl(uploadedFile.filePath);
+            } else if (uploadedFile.thumbnailUrl) {
+              // Use thumbnailUrl if available (full URL)
+              thumbnailUrl = uploadedFile.thumbnailUrl;
+            } else if (uploadedFile.downloadUrl) {
+              // Fallback to downloadUrl
+              thumbnailUrl = uploadedFile.downloadUrl;
+            }
+            
+            if (!thumbnailUrl) {
+              // Last resort: keep blob URL (will be lost on refresh but at least shows)
+              console.warn('No valid URL found for captured thumbnail, using blob URL');
+              thumbnailUrl = blobUrl;
+            }
+            
+            console.log('Setting captured thumbnail:', { 
+              thumbnailUrl, 
+              filePath: uploadedFile.filePath, 
+              thumbnailUrlFromAPI: uploadedFile.thumbnailUrl,
+              downloadUrl: uploadedFile.downloadUrl 
+            });
+            
+            setCapturedThumbnail(thumbnailUrl);
+            // Set the uploaded file path as cover image for form submission
+            setExistingCoverImage(uploadedFile.filePath);
+            // Hide video view and show captured thumbnail
+            setShowVideoForCapture(false);
+            // Clean up blob URL only if we have a server URL
+            if (thumbnailUrl !== blobUrl) {
+              URL.revokeObjectURL(blobUrl);
+            }
+            showSuccess('Frame captured and saved successfully');
+          } else {
+            // Fallback: use blob URL directly (will be lost on page refresh)
+            console.warn('Upload failed, using blob URL as fallback');
+            setCapturedThumbnail(blobUrl);
+            setShowVideoForCapture(false);
+            showError('Frame captured but failed to upload. It will be lost on page refresh.');
+          }
+        } catch (error) {
+          console.error('Failed to capture frame from video:', error);
+          showError(error instanceof Error ? error.message : 'Failed to capture frame from video');
+        }
+      } else if (youtubeVideoId && youtubeUrl) {
+        // For YouTube videos, capture frame from YouTube's thumbnail API
+        // Note: Direct YouTube video URLs aren't accessible due to CORS,
+        // so we'll use YouTube's thumbnail API (which provides frame at default timestamp)
+        // and upload it as a file, similar to uploaded videos
+        try {
+          // Get YouTube's high-quality thumbnail (this is the best we can do on frontend
+          // without backend service, as YouTube doesn't allow direct video access)
+          const thumbnailUrls = [
+            `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+            `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+            `https://img.youtube.com/vi/${youtubeVideoId}/mqdefault.jpg`,
+            `https://img.youtube.com/vi/${youtubeVideoId}/sddefault.jpg`
+          ];
+          
+          // Try each thumbnail URL until one works
+          let imgBlob: Blob | null = null;
+          for (const thumbnailUrl of thumbnailUrls) {
+            try {
+              const imgResponse = await fetch(thumbnailUrl);
+              if (imgResponse.ok) {
+                imgBlob = await imgResponse.blob();
+                break;
+              }
+            } catch {
+              // Continue to next fallback
+            }
+          }
+          
+          if (!imgBlob) {
+            throw new Error('Failed to fetch YouTube thumbnail from all sources');
+          }
+          
+          // Create a File object from the blob
+          const file = new File([imgBlob], `youtube-thumbnail-${youtubeVideoId}-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          
+          // Upload the thumbnail file (same as uploaded videos)
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+          const headers: HeadersInit = {};
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          const uploadResponse = await fetch(`${apiBaseUrl}/api/files/upload`, {
+            method: 'POST',
+            headers,
+            body: formData,
+          });
+          
+          if (!uploadResponse.ok) {
+            throw new Error('Failed to upload thumbnail');
+          }
+          
+          const uploadData = await uploadResponse.json();
+          
+          if (uploadData.success && uploadData.data?.file) {
+            const uploadedFile = uploadData.data.file;
+            // For images, prefer filePath converted to URL, then thumbnailUrl, then downloadUrl
+            let thumbnailUrlToUse: string | null = null;
+            
+            if (uploadedFile.filePath) {
+              thumbnailUrlToUse = getImageUrl(uploadedFile.filePath);
+            } else if (uploadedFile.thumbnailUrl) {
+              thumbnailUrlToUse = uploadedFile.thumbnailUrl;
+            } else if (uploadedFile.downloadUrl) {
+              thumbnailUrlToUse = uploadedFile.downloadUrl;
+            }
+            
+            if (thumbnailUrlToUse) {
+              setCapturedThumbnail(thumbnailUrlToUse);
+              setExistingCoverImage(uploadedFile.filePath);
+              setShowVideoForCapture(false);
+              showSuccess('Frame captured successfully');
+            } else {
+              throw new Error('Failed to get thumbnail URL from upload');
+            }
+          } else {
+            throw new Error('Upload failed');
+          }
+        } catch (error) {
+          console.error('Failed to capture YouTube frame on frontend:', error);
+          // Fall back to backend API if frontend capture fails (for timestamp-specific frames)
+          try {
+            const youtubeTimestamp = 1;
+            const response = await apiClient.extractVideoThumbnail({
+              youtubeUrl,
+              timestamp: youtubeTimestamp
+            });
+            
+            if (response.success && response.data?.thumbnailPath) {
+              const thumbnailPath = response.data.thumbnailPath;
+              setCapturedThumbnail(thumbnailPath);
+              setExistingCoverImage(thumbnailPath);
+              setShowVideoForCapture(false);
+              showSuccess('Frame captured successfully');
+            } else {
+              throw new Error('Backend API also failed');
+            }
+          } catch (fallbackError) {
+            console.error('Failed to capture YouTube thumbnail via backend:', fallbackError);
+            showError('Failed to capture frame from YouTube video');
+          }
+        }
+      } else {
+        showError('No video available to capture');
+      }
+    } catch (error) {
+      console.error('Failed to capture thumbnail:', error);
+      showError(error instanceof Error ? error.message : 'Failed to capture frame');
+    } finally {
+      setIsCapturingThumbnail(false);
+    }
+  };
+
   const handleAttachmentPreview = (file: FileWithUrls) => {
     setPreviewFile(file);
     setIsPreviewModalOpen(true);
@@ -875,9 +1415,13 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     setIsLoading(true);
     try {
       // Get cover image file path from selected file or use existing
+      // Captured thumbnail takes priority
       let coverImageUrl: string | undefined = undefined;
       
-      if (coverFile) {
+      if (capturedThumbnail && existingCoverImage) {
+        // Use captured thumbnail path
+        coverImageUrl = existingCoverImage;
+      } else if (coverFile) {
         // Use filePath as stored in database (backend expects file path, not download URL)
         coverImageUrl = coverFile.filePath;
       } else if (existingCoverImage && isEditMode) {
@@ -1295,45 +1839,150 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                 {coverFile || existingCoverImage || youtubeVideoId ? (
                   <div className="relative">
                     <div className={`w-full ${coverIsVideo ? 'h-96 md:h-[28rem]' : 'h-64'} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center transition-all duration-300`}>
-                      {youtubeVideoId ? (
-                        <div className="w-full h-full relative">
+                      {capturedThumbnail && !showVideoForCapture ? (
+                        // Show captured thumbnail as cover image (highest priority)
+                        <div className="relative w-full h-full bg-gray-100">
                           <img
+                            key={`captured-thumbnail-${capturedThumbnail}`}
                             src={coverPreviewSource}
                             alt={t('publications.coverImagePreview')}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover absolute inset-0 z-0"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                              console.error('Failed to load captured thumbnail:', coverPreviewSource);
+                              // Only fall back to placeholder if current source is not already placeholder
+                              if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
+                                const placeholderUrl = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                                target.src = placeholderUrl;
+                              }
+                            }}
+                            onLoad={() => {
+                              console.log('Captured thumbnail loaded successfully:', coverPreviewSource);
                             }}
                           />
-                          {/* YouTube Play Button Overlay */}
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors">
-                            <div className="w-16 h-16 rounded-full bg-red-600/90 flex items-center justify-center shadow-lg">
-                              <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                              </svg>
-                            </div>
+                          {/* Show video button when thumbnail is captured (for both uploaded videos and YouTube) */}
+                          {(coverFile && coverIsVideo) || youtubeVideoId ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowVideoForCapture(true)}
+                              className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors flex items-center gap-2 shadow-lg z-20"
+                              disabled={isLoading}
+                              title="Change frame from video"
+                            >
+                              <Video size={16} />
+                              <span>Change Frame</span>
+                            </button>
+                          ) : null}
+                          {/* Captured thumbnail badge */}
+                          <div className="absolute top-2 left-2 bg-au-gold text-white px-2 py-1 rounded text-xs font-semibold z-20">
+                            Captured Frame
+                          </div>
+                        </div>
+                      ) : youtubeVideoId && (!capturedThumbnail || showVideoForCapture) ? (
+                        <div className="w-full h-full relative">
+                          {/* YouTube Player for scrubbing */}
+                          <div className="relative w-full h-full">
+                            <iframe
+                              src={`https://www.youtube.com/embed/${youtubeVideoId}?enablejsapi=1&rel=0`}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              title={t('publications.coverImagePreview')}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleCaptureThumbnail}
+                              disabled={isCapturingThumbnail || isLoading}
+                              className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-au-gold text-white rounded-lg hover:bg-au-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg z-10"
+                            >
+                              {isCapturingThumbnail ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                  <span>Capturing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ImageIcon size={16} />
+                                  <span>Capture Frame as Cover</span>
+                                </>
+                              )}
+                            </button>
+                            {/* Cancel button when changing frame */}
+                            {capturedThumbnail && showVideoForCapture && (
+                              <button
+                                type="button"
+                                onClick={() => setShowVideoForCapture(false)}
+                                className="absolute top-2 left-2 px-3 py-2 bg-gray-800/80 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm flex items-center gap-2 z-10"
+                                disabled={isLoading}
+                              >
+                                <X size={14} />
+                                <span>Cancel</span>
+                              </button>
+                            )}
                           </div>
                           {/* YouTube Badge */}
-                          <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">
+                          <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold z-10">
                             YouTube
                           </div>
                         </div>
-                      ) : coverIsVideo ? (
-                        coverPreviewSource ? (
-                          <video
-                            key={coverFile?.id || existingCoverImage || 'cover-preview-video'}
-                            className="w-full h-full object-cover"
-                            controls
-                            preload="metadata"
-                          >
-                            <source src={coverPreviewSource} type={coverPreviewMime} />
-                            {t('publications.videoPreviewNotSupported') || 'Video preview not supported.'}
-                          </video>
+                      ) : coverIsVideo && (!capturedThumbnail || showVideoForCapture) ? (
+                        // Show video when no thumbnail captured, or when user wants to change frame
+                        coverFile?.id && !videoBlobUrl && coverIsVideo ? (
+                          // Show loading state while blob URL is being fetched
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-corporate-green mx-auto mb-2"></div>
+                              <p className="text-sm text-gray-600">Loading video preview...</p>
+                            </div>
+                          </div>
+                        ) : coverPreviewSource ? (
+                          <div className="relative w-full h-full">
+                            <video
+                              ref={videoRef}
+                              key={coverFile?.id || existingCoverImage || 'cover-preview-video'}
+                              className="w-full h-full object-cover"
+                              controls
+                              preload="metadata"
+                            >
+                              <source src={coverPreviewSource} type={coverPreviewMime} />
+                              {t('publications.videoPreviewNotSupported') || 'Video preview not supported.'}
+                            </video>
+                            <button
+                              type="button"
+                              onClick={handleCaptureThumbnail}
+                              disabled={isCapturingThumbnail || isLoading}
+                              className="absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-au-gold text-white rounded-lg hover:bg-au-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg z-10"
+                            >
+                              {isCapturingThumbnail ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                  <span>Capturing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ImageIcon size={16} />
+                                  <span>Capture Frame as Cover</span>
+                                </>
+                              )}
+                            </button>
+                            {/* Show "Use as Cover" button when changing frame */}
+                            {capturedThumbnail && showVideoForCapture && (
+                              <button
+                                type="button"
+                                onClick={() => setShowVideoForCapture(false)}
+                                className="absolute top-2 left-2 px-3 py-2 bg-gray-800/80 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm flex items-center gap-2 z-10"
+                                disabled={isLoading}
+                              >
+                                <X size={14} />
+                                <span>Cancel</span>
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div className="text-sm text-gray-500">{t('publications.videoPreviewNotAvailable') || 'Video preview not available.'}</div>
                         )
                       ) : (
+                        // Regular image (non-video, non-captured)
                         <img
                           key={coverFile?.id || existingCoverImage || 'cover-preview'}
                           src={coverPreviewSource}
@@ -1356,12 +2005,14 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                           setExistingCoverImage(null);
                         }
                         setYoutubeUrl('');
-                      }}
-                      className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                      disabled={isLoading}
-                    >
-                      <X size={16} />
-                    </button>
+                        setCapturedThumbnail(null);
+                        setShowVideoForCapture(false);
+                    }}
+                    className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                    disabled={isLoading}
+                  >
+                    <X size={16} />
+                  </button>
                   </div>
                 ) : (
                   <button

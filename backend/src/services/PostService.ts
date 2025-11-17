@@ -132,6 +132,27 @@ export class PostService implements IPublicationService {
       if (!post) {
         return null;
       }
+      
+      // For public access, only return approved publications that are not scheduled (publication_date <= now)
+      // Admin users can access all publications through admin endpoints, but public endpoints should filter
+      if (post.status !== 'approved') {
+        // Not approved - return null for public access
+        return null;
+      }
+      
+      // Check if publication is scheduled (publication_date in the future)
+      if (post.publicationDate) {
+        const now = new Date();
+        const publicationDate = post.publicationDate instanceof Date 
+          ? post.publicationDate 
+          : new Date(post.publicationDate);
+        
+        if (publicationDate > now) {
+          // Publication is scheduled for future - return null for public access
+          return null;
+        }
+      }
+      
       const withRelations = await this.postRepository.getWithRelations(post.id);
       if (!withRelations) {
         return null;
@@ -731,6 +752,15 @@ export class PostService implements IPublicationService {
       return enrichedComments;
     } catch (error) {
       this.logger.error('Failed to get recent comments', error as Error);
+      throw error;
+    }
+  }
+
+  async getPublicationCountsByStatus(): Promise<Record<string, number>> {
+    try {
+      return await this.postRepository.countByStatus();
+    } catch (error) {
+      this.logger.error('Failed to get publication counts by status', error as Error);
       throw error;
     }
   }

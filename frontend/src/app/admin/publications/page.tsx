@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { Plus, Search, Edit, MoreVertical, X, Eye, Check, Send, Info } from 'lucide-react';
+import { Plus, Search, Edit, MoreVertical, X, Eye, Check, Send, Info, Filter } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -34,7 +34,7 @@ interface Publication {
     name: string;
     email: string;
   };
-  status: 'pending' | 'draft' | 'approved' | 'rejected';
+  status: 'pending' | 'draft' | 'approved' | 'rejected' | 'scheduled';
   publicationDate?: string;
   rejectionReason?: string;
   hasComments: boolean;
@@ -52,11 +52,24 @@ function PublicationsPageContent() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const status = searchParams.get('status') as 'pending' | 'draft' | 'approved' | 'rejected' | null;
+  const urlStatus = searchParams.get('status') as 'pending' | 'draft' | 'approved' | 'rejected' | 'scheduled' | null;
+  const urlScheduled = searchParams.get('scheduled');
+  const urlCategoryId = searchParams.get('categoryId');
+  const urlSubcategoryId = searchParams.get('subcategoryId');
+  const updatingUrlRef = useRef(false);
   
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'draft' | 'approved' | 'rejected' | 'scheduled' | ''>(urlStatus || '');
+  const [scheduledFilter, setScheduledFilter] = useState<boolean | null>(
+    urlScheduled === 'true' ? true : urlScheduled === 'false' ? false : null
+  );
+  const [categoryFilter, setCategoryFilter] = useState<string>(urlCategoryId || '');
+  const [subcategoryFilter, setSubcategoryFilter] = useState<string>(urlSubcategoryId || '');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  const [subcategories, setSubcategories] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -90,6 +103,122 @@ function PublicationsPageContent() {
     )
   );
 
+  // Load categories and subcategories
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        const response = await apiClient.getCategories();
+        if (response.success && response.data?.categories) {
+          setCategories(response.data.categories);
+        }
+      } catch (error) {
+        console.error('Failed to load categories:', error);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    
+    loadCategories();
+  }, []);
+
+  // Load subcategories when category is selected
+  useEffect(() => {
+    const loadSubcategories = async () => {
+      if (!categoryFilter) {
+        // Load all subcategories if no category selected
+        try {
+          const response = await apiClient.getSubcategories();
+          if (response.success && response.data?.subcategories) {
+            setSubcategories(response.data.subcategories);
+          }
+        } catch (error) {
+          console.error('Failed to load subcategories:', error);
+        }
+      } else {
+        // Load subcategories for selected category
+        try {
+          const response = await apiClient.getCategorySubcategories(categoryFilter);
+          if (response.success && response.data?.subcategories) {
+            const subcategories = response.data.subcategories;
+            setSubcategories(subcategories);
+            // Clear subcategory filter if it doesn't belong to selected category
+            // Use functional update to get current value
+            setSubcategoryFilter(current => {
+              if (current) {
+                const subcategoryIds = subcategories.map((s: { id: string }) => s.id);
+                if (!subcategoryIds.includes(current)) {
+                  return '';
+                }
+              }
+              return current;
+            });
+          }
+        } catch (error) {
+          console.error('Failed to load subcategories:', error);
+          setSubcategories([]);
+          // Clear subcategory filter if loading failed
+          setSubcategoryFilter('');
+        }
+      }
+    };
+    
+    loadSubcategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryFilter]); // Only depend on categoryFilter
+
+  // Sync filters with URL params when URL changes (e.g., browser back/forward)
+  useEffect(() => {
+    if (updatingUrlRef.current) {
+      updatingUrlRef.current = false;
+      return;
+    }
+    
+    const currentStatus = searchParams.get('status') || '';
+    const currentScheduled = searchParams.get('scheduled');
+    const currentCategoryId = searchParams.get('categoryId') || '';
+    const currentSubcategoryId = searchParams.get('subcategoryId') || '';
+    const scheduled = currentScheduled === 'true' ? true : currentScheduled === 'false' ? false : null;
+    
+    if (currentStatus !== statusFilter) {
+      setStatusFilter(currentStatus as typeof statusFilter);
+    }
+    if (scheduled !== scheduledFilter) {
+      setScheduledFilter(scheduled);
+    }
+    if (currentCategoryId !== categoryFilter) {
+      setCategoryFilter(currentCategoryId);
+    }
+    if (currentSubcategoryId !== subcategoryFilter) {
+      setSubcategoryFilter(currentSubcategoryId);
+    }
+  }, [urlStatus, urlScheduled, urlCategoryId, urlSubcategoryId]);
+
+  // Update URL when filters change
+  useEffect(() => {
+    const newParams = new URLSearchParams();
+    if (statusFilter) {
+      newParams.set('status', statusFilter);
+    }
+    if (scheduledFilter !== null) {
+      newParams.set('scheduled', scheduledFilter.toString());
+    }
+    if (categoryFilter) {
+      newParams.set('categoryId', categoryFilter);
+    }
+    if (subcategoryFilter) {
+      newParams.set('subcategoryId', subcategoryFilter);
+    }
+    const newUrl = newParams.toString() ? `/admin/publications?${newParams.toString()}` : '/admin/publications';
+    
+    // Only update URL if it's different from current URL
+    const currentUrl = `/admin/publications${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    if (newUrl !== currentUrl) {
+      updatingUrlRef.current = true;
+      router.replace(newUrl, { scroll: false });
+    }
+  }, [statusFilter, scheduledFilter, categoryFilter, subcategoryFilter, router, searchParams]);
+
   // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -103,7 +232,7 @@ function PublicationsPageContent() {
   useEffect(() => {
     setCurrentPage(1);
     loadPublications(1);
-  }, [status]);
+  }, [statusFilter, scheduledFilter, categoryFilter, subcategoryFilter]);
 
   // Close action menus on outside click
   useEffect(() => {
@@ -130,7 +259,28 @@ function PublicationsPageContent() {
     try {
       setLoading(true);
       const filters: any = {};
-      if (status) filters.status = status;
+      
+      // Handle status filter
+      // If status is 'scheduled', use scheduled filter instead
+      if (statusFilter === 'scheduled') {
+        filters.scheduled = true;
+      } else if (statusFilter) {
+        filters.status = statusFilter;
+      }
+      
+      // Handle scheduled checkbox filter (only if status filter is not 'scheduled')
+      if (statusFilter !== 'scheduled' && scheduledFilter !== null) {
+        filters.scheduled = scheduledFilter;
+      }
+      
+      if (categoryFilter) {
+        filters.categoryId = categoryFilter;
+      }
+      
+      if (subcategoryFilter) {
+        filters.subcategoryId = subcategoryFilter;
+      }
+      
       if (searchQuery.trim()) filters.search = searchQuery.trim();
       
       const response = await apiClient.getPublications(filters, page, pageLimit);
@@ -153,9 +303,11 @@ function PublicationsPageContent() {
   };
 
   const getTitle = () => {
-    if (status === 'pending') return t('nav.pendingPublications');
-    if (status === 'draft') return t('nav.draftPublications');
-    if (status === 'rejected') return t('nav.rejectedPublications');
+    if (statusFilter === 'pending') return t('nav.pendingPublications');
+    if (statusFilter === 'draft') return t('nav.draftPublications');
+    if (statusFilter === 'rejected') return t('nav.rejectedPublications');
+    if (statusFilter === 'scheduled' || scheduledFilter === true) return t('publications.statusLabels.scheduled') || 'Scheduled';
+    if (statusFilter === 'approved') return t('publications.statusLabels.published') || 'Published';
     return t('nav.allPublications');
   };
 
@@ -169,6 +321,8 @@ function PublicationsPageContent() {
         return 'bg-red-100 text-red-800';
       case 'draft':
         return 'bg-gray-100 text-gray-800';
+      case 'scheduled':
+        return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -302,8 +456,9 @@ function PublicationsPageContent() {
           </Link>
         </div>
 
-        {/* Search */}
-        <div className="mb-6">
+        {/* Filters and Search */}
+        <div className="mb-6 space-y-4">
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -313,6 +468,120 @@ function PublicationsPageContent() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none"
             />
+          </div>
+          
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Filter size={16} className="text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">{t('common.filters') || 'Filters'}:</span>
+            </div>
+            
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="status-filter" className="text-sm text-gray-600">
+                {t('publications.status')}:
+              </label>
+              <select
+                id="status-filter"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as typeof statusFilter);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none bg-white"
+              >
+                <option value="">{t('common.all') || 'All'}</option>
+                <option value="draft">{t('publications.statusLabels.draft') || 'Draft'}</option>
+                <option value="pending">{t('publications.statusLabels.pending') || 'Pending'}</option>
+                <option value="approved">{t('publications.statusLabels.published') || 'Published'}</option>
+                <option value="scheduled">{t('publications.statusLabels.scheduled') || 'Scheduled'}</option>
+                <option value="rejected">{t('publications.statusLabels.rejected') || 'Rejected'}</option>
+              </select>
+            </div>
+            
+            {/* Scheduled Filter */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={scheduledFilter === true}
+                  onChange={(e) => {
+                    setScheduledFilter(e.target.checked ? true : null);
+                    // If checking scheduled, set status to empty (scheduled overrides status)
+                    if (e.target.checked && statusFilter !== 'scheduled') {
+                      setStatusFilter('');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className="w-4 h-4 text-au-corporate-green border-gray-300 rounded focus:ring-au-gold"
+                />
+                <span>{t('publications.statusLabels.scheduled') || 'Scheduled Only'}</span>
+              </label>
+              {(scheduledFilter === true || statusFilter === 'scheduled') && (
+                <button
+                  onClick={() => {
+                    setScheduledFilter(null);
+                    if (statusFilter === 'scheduled') {
+                      setStatusFilter('');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs text-red-600 hover:text-red-700"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            
+            {/* Category Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="category-filter" className="text-sm text-gray-600">
+                {t('publications.category')}:
+              </label>
+              <select
+                id="category-filter"
+                value={categoryFilter}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setSubcategoryFilter(''); // Clear subcategory when category changes
+                  setCurrentPage(1);
+                }}
+                disabled={loadingCategories}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none bg-white disabled:opacity-50 disabled:cursor-not-allowed min-w-[150px]"
+              >
+                <option value="">{t('common.all') || 'All'}</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Subcategory Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="subcategory-filter" className="text-sm text-gray-600">
+                {t('publications.subcategories')}:
+              </label>
+              <select
+                id="subcategory-filter"
+                value={subcategoryFilter}
+                onChange={(e) => {
+                  setSubcategoryFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                disabled={loadingCategories || (Boolean(categoryFilter) && subcategories.length === 0)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none bg-white disabled:opacity-50 disabled:cursor-not-allowed min-w-[150px]"
+              >
+                <option value="">{t('common.all') || 'All'}</option>
+                {subcategories.map((subcategory) => (
+                  <option key={subcategory.id} value={subcategory.id}>
+                    {subcategory.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -381,6 +650,7 @@ function PublicationsPageContent() {
                                publication.status === 'pending' ? t('nav.pendingPublications') :
                                publication.status === 'rejected' ? t('publications.statusRejected') :
                                publication.status === 'draft' ? t('nav.draftPublications') :
+                               publication.status === 'scheduled' ? t('publications.statusLabels.scheduled') || 'Scheduled' :
                                publication.status}
                             </span>
                             {publication.isFeatured && (
