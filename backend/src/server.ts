@@ -2226,6 +2226,15 @@ export class FileManagerServer {
       }
     );
 
+    // Get recent comments (Admin)
+    this.app.get('/api/admin/comments/recent',
+      this.authMiddleware.authenticate,
+      this.rbacMiddleware.requireRole('admin'),
+      (req, res) => {
+        this.postController.getRecentComments(req, res);
+      }
+    );
+
     this.app.delete('/api/admin/posts/:id/comments/:commentId',
       this.authMiddleware.authenticate,
       ensureCanDeleteComments,

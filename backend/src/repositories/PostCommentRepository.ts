@@ -141,4 +141,47 @@ export class PostCommentRepository implements IPostCommentRepository {
       throw this.errorHandler.createDatabaseError('Failed to delete comment', 'delete', 'post_comments');
     }
   }
+
+  async findRecent(limit: number): Promise<PostCommentEntity[]> {
+    try {
+      const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+
+      const comments = await DatabaseUtils.findMany<any>(
+        `SELECT pc.*, 
+                u.username, u.first_name, u.last_name, u.avatar,
+                p.title as post_title, p.slug as post_slug
+         FROM post_comments pc
+         LEFT JOIN users u ON pc.user_id = u.id
+         LEFT JOIN posts p ON pc.post_id = p.id
+         ORDER BY pc.created_at DESC
+         LIMIT ${safeLimit}`,
+        []
+      );
+
+      return comments.map((comment: any) => ({
+        id: comment.id,
+        postId: comment.post_id,
+        userId: comment.user_id ?? undefined,
+        authorName: comment.author_name ?? undefined,
+        authorEmail: comment.author_email ?? undefined,
+        content: comment.content,
+        createdAt: new Date(comment.created_at),
+        author: comment.user_id ? {
+          id: comment.user_id,
+          username: comment.username ?? undefined,
+          firstName: comment.first_name ?? undefined,
+          lastName: comment.last_name ?? undefined,
+          avatar: comment.avatar ?? undefined,
+        } : undefined,
+        post: comment.post_title ? {
+          id: comment.post_id,
+          title: comment.post_title,
+          slug: comment.post_slug ?? undefined,
+        } : undefined,
+      }));
+    } catch (error) {
+      this.logger.error('Failed to fetch recent comments', error as Error, { limit });
+      throw this.errorHandler.createDatabaseError('Failed to fetch recent comments', 'select', 'post_comments');
+    }
+  }
 }

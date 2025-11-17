@@ -69,6 +69,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const [attachmentFiles, setAttachmentFiles] = useState<FileWithUrls[]>([]);
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false);
   const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [metaTitle, setMetaTitle] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
   const [previewFile, setPreviewFile] = useState<FileWithUrls | null>(null);
@@ -99,6 +100,21 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   const padNumber = (value: number, length: number = 2) => String(value).padStart(length, '0');
 
+  const extractYouTubeVideoId = (url: string): string | null => {
+    if (!url) return null;
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /youtube\.com\/.*[?&]v=([^&\n?#]+)/,
+    ];
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    return null;
+  };
+
   const formatDateTimeForInput = (value?: string) => {
     if (!value) return '';
     const date = new Date(value);
@@ -117,14 +133,23 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${milliseconds}`;
   };
 
+  const youtubeVideoId = useMemo(() => {
+    return youtubeUrl ? extractYouTubeVideoId(youtubeUrl) : null;
+  }, [youtubeUrl]);
+
   const coverIsVideo = useMemo(() => {
+    if (youtubeVideoId) return true;
     if (coverFile) {
       return isVideoMimeType(coverFile.mimeType);
     }
     return isVideoPath(existingCoverImage);
-  }, [coverFile, existingCoverImage]);
+  }, [youtubeVideoId, coverFile, existingCoverImage]);
 
   const coverPreviewSource = useMemo(() => {
+    // YouTube URL takes priority
+    if (youtubeVideoId) {
+      return `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`;
+    }
     if (coverFile) {
       if (coverIsVideo) {
         return (
@@ -145,7 +170,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       return getImageUrl(existingCoverImage);
     }
     return getImageUrl(PLACEHOLDER_IMAGE_PATH);
-  }, [coverFile, coverIsVideo, existingCoverImage]);
+  }, [youtubeVideoId, coverFile, coverIsVideo, existingCoverImage]);
 
   const coverPreviewMime = coverFile?.mimeType || (coverIsVideo ? 'video/mp4' : 'image/jpeg');
 
@@ -376,6 +401,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           setExistingCoverImage(publication.coverImage);
           // If coverImage is a path, we'll show it but not set it as coverFile
           // coverFile is only set when user selects a new file
+        }
+        if (publication.youtubeUrl) {
+          setYoutubeUrl(publication.youtubeUrl);
         }
         
         // Handle subcategories
@@ -691,9 +719,18 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
     const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
     
+    // Check for YouTube URL
+    const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
+    
     if (isAudioCategory || isVideoCategory) {
+      // If YouTube URL is provided for video category, skip attachment validation
+      if (isVideoCategory && hasYouTubeUrl) {
+        // YouTube URL is provided, attachments are optional
+        return true;
+      }
+      
       if (attachmentFiles.length === 0) {
-        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment${isVideoCategory ? ' or YouTube URL' : ''}`;
         setErrors(prev => ({
           ...prev,
           attachments: message
@@ -705,7 +742,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       // Mandate that the FIRST attachment matches the category type
       const firstAttachment = attachmentFiles[0];
       if (!firstAttachment) {
-        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment${isVideoCategory ? ' or YouTube URL' : ''}`;
         setErrors(prev => ({
           ...prev,
           attachments: message
@@ -740,7 +777,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       });
       
       if (!hasMatchingAttachment) {
-        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment`;
+        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment${isVideoCategory ? ' or YouTube URL' : ''}`;
         setErrors(prev => ({
           ...prev,
           attachments: message
@@ -776,17 +813,29 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     }
 
     if (step === 2) {
+      // If YouTube URL is provided, cover and attachments are optional
+      const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
       const hasCover = Boolean(coverFile || existingCoverImage);
-      if (!hasCover) {
-        const message = t('publications.coverRequired') || 'A cover image is required.';
+      if (!hasCover && !hasYouTubeUrl) {
+        const message = t('publications.coverRequired') || 'A cover image or YouTube URL is required.';
         newErrors.cover = message;
         errorMessages.push(message);
       }
 
-      if (attachmentFiles.length === 0) {
-        const message = t('publications.attachmentsRequired') || 'Please select at least one attachment.';
-        newErrors.attachments = message;
-        errorMessages.push(message);
+      // Only require attachments if no YouTube URL is provided
+      if (!hasYouTubeUrl && attachmentFiles.length === 0) {
+        const selectedCategory = categories.find(c => c.id === categoryId);
+        if (selectedCategory) {
+          const categoryNameLower = selectedCategory.name.toLowerCase();
+          const categorySlugLower = selectedCategory.slug.toLowerCase();
+          const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
+          const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+          if (isAudioCategory || isVideoCategory) {
+            const message = t('publications.attachmentsRequired') || 'Please select at least one attachment or provide a YouTube URL.';
+            newErrors.attachments = message;
+            errorMessages.push(message);
+          }
+        }
       }
     }
 
@@ -842,6 +891,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           metaTitle: metaTitle.trim() || undefined,
           metaDescription: metaDescription.trim() || undefined,
           coverImage: coverImageUrl,
+          youtubeUrl: youtubeUrl && youtubeUrl.trim() !== '' ? youtubeUrl.trim() : undefined,
           categoryId,
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
@@ -880,6 +930,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           metaTitle: metaTitle.trim() || undefined,
           metaDescription: metaDescription.trim() || undefined,
           coverImage: coverImageUrl,
+          youtubeUrl: youtubeUrl && youtubeUrl.trim() !== '' ? youtubeUrl.trim() : undefined,
           categoryId,
           subcategoryIds: subcategoryIds.length > 0 ? subcategoryIds : undefined,
           attachmentFileIds: attachmentFileIds.length > 0 ? attachmentFileIds : undefined,
@@ -1222,10 +1273,34 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                 <label className="block text-sm font-medium text-au-grey-text mb-1">
                   {t('publications.coverImage')}
                 </label>
-                {coverFile || existingCoverImage ? (
+                {coverFile || existingCoverImage || youtubeVideoId ? (
                   <div className="relative">
                     <div className={`w-full ${coverIsVideo ? 'h-96 md:h-[28rem]' : 'h-64'} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center transition-all duration-300`}>
-                      {coverIsVideo ? (
+                      {youtubeVideoId ? (
+                        <div className="w-full h-full relative">
+                          <img
+                            src={coverPreviewSource}
+                            alt={t('publications.coverImagePreview')}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                            }}
+                          />
+                          {/* YouTube Play Button Overlay */}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors">
+                            <div className="w-16 h-16 rounded-full bg-red-600/90 flex items-center justify-center shadow-lg">
+                              <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            </div>
+                          </div>
+                          {/* YouTube Badge */}
+                          <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">
+                            YouTube
+                          </div>
+                        </div>
+                      ) : coverIsVideo ? (
                         coverPreviewSource ? (
                           <video
                             key={coverFile?.id || existingCoverImage || 'cover-preview-video'}
@@ -1261,6 +1336,7 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                         if (isEditMode) {
                           setExistingCoverImage(null);
                         }
+                        setYoutubeUrl('');
                       }}
                       className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                       disabled={isLoading}
@@ -1281,6 +1357,41 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                 )}
                 {errors.cover && (
                   <p className="text-xs text-red-500 mt-2">{errors.cover}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-au-grey-text mb-1">
+                  {t('publications.youtubeUrl') || 'YouTube URL'} <span className="text-gray-500 text-xs font-normal">(Optional - alternative to cover image and attachments)</span>
+                </label>
+                <input
+                  type="url"
+                  value={youtubeUrl}
+                  onChange={(e) => {
+                    setYoutubeUrl(e.target.value);
+                    if (errors.cover) {
+                      setErrors(prev => {
+                        const updated = { ...prev };
+                        delete updated.cover;
+                        return updated;
+                      });
+                    }
+                    if (errors.attachments) {
+                      setErrors(prev => {
+                        const updated = { ...prev };
+                        delete updated.attachments;
+                        return updated;
+                      });
+                    }
+                  }}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-transparent"
+                  disabled={isLoading}
+                />
+                {youtubeUrl && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('publications.youtubeUrlNote') || 'When a YouTube URL is provided, cover image and attachments are optional.'}
+                  </p>
                 )}
               </div>
 

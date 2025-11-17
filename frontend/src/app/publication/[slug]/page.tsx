@@ -528,11 +528,27 @@ function PublicationDetailsContent() {
     );
   }
 
+  const extractYouTubeVideoId = (url: string): string | null => {
+    if (!url) return null;
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /youtube\.com\/.*[?&]v=([^&\n?#]+)/,
+    ];
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    return null;
+  };
+
   const publication = currentPublication!;
   const firstAttachment = publication.attachments?.[0];
   const firstAttachmentMime = firstAttachment?.mimeType || '';
   const isFirstAttachmentVideo = firstAttachmentMime.startsWith('video/');
   const commentsSectionEnabled = Boolean(publication.hasComments);
+  const youtubeVideoId = publication.youtubeUrl ? extractYouTubeVideoId(publication.youtubeUrl) : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -548,7 +564,18 @@ function PublicationDetailsContent() {
         </Link>
 
         <div className="bg-white rounded-lg shadow-md">
-          {publication.coverImage && !isFirstAttachmentVideo && (
+          {/* YouTube Video - Takes priority over cover image and attachments */}
+          {youtubeVideoId ? (
+            <div className="relative w-full aspect-video overflow-hidden bg-black">
+              <iframe
+                src={`https://www.youtube.com/embed/${youtubeVideoId}?rel=0`}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={publication.title}
+              />
+            </div>
+          ) : publication.coverImage && !isFirstAttachmentVideo ? (
             <div className="relative w-full h-64 md:h-96 overflow-hidden">
               <img
                 src={getImageUrl(publication.coverImage) || getImageUrl(PLACEHOLDER_IMAGE_PATH)}
@@ -561,10 +588,15 @@ function PublicationDetailsContent() {
               />
               <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent"></div>
             </div>
-          )}
+          ) : null}
 
           <div className="p-6 md:p-8 lg:p-12">
             {(() => {
+              // Don't show attachments if YouTube video is present
+              if (youtubeVideoId) {
+                return null;
+              }
+
               if (!publication.attachments || publication.attachments.length === 0) {
                 return null;
               }

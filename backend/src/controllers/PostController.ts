@@ -332,6 +332,23 @@ export class PostController {
     }
   }
 
+  async getRecentComments(req: Request, res: Response): Promise<void> {
+    try {
+      const limitParam = req.query.limit;
+      const limit = limitParam ? Math.max(1, Math.min(100, parseInt(String(limitParam), 10) || 5)) : 5;
+
+      const comments = await this.postService.getRecentComments(limit);
+
+      res.json({
+        success: true,
+        data: { comments },
+      });
+    } catch (error) {
+      this.logger.error('Get recent comments failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
   async search(req: Request, res: Response): Promise<void> {
     try {
       const { q } = req.query;
@@ -395,6 +412,7 @@ export class PostController {
         metaTitle,
         metaDescription,
         coverImage,
+        youtubeUrl,
         categoryId,
         subcategoryIds,
         attachmentFileIds,
@@ -447,6 +465,7 @@ export class PostController {
         metaTitle,
         metaDescription,
         coverImage,
+        youtubeUrl: youtubeUrl && youtubeUrl.trim() !== '' ? youtubeUrl.trim() : undefined,
         categoryId,
         creatorId: req.user.userId,
         subcategoryIds,

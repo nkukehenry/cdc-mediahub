@@ -419,6 +419,7 @@ class ApiClient {
     metaTitle?: string;
     metaDescription?: string;
     coverImage?: string;
+    youtubeUrl?: string;
     categoryId: string;
     subcategoryIds?: string[];
     attachmentFileIds?: string[];
@@ -566,6 +567,10 @@ class ApiClient {
     return this.request<{ analytics: any }>('/api/admin/analytics/dashboard');
   }
 
+  async getRecentComments(limit: number = 5): Promise<ApiResponse<{ comments: any[] }>> {
+    return this.request<{ comments: any[] }>(`/api/admin/comments/recent?limit=${limit}`);
+  }
+
   // Publication management methods
   async getPublicationById(id: string): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>(`/api/admin/posts/${id}`);
@@ -578,6 +583,7 @@ class ApiClient {
     metaTitle?: string;
     metaDescription?: string;
     coverImage?: string;
+    youtubeUrl?: string;
     categoryId?: string;
     subcategoryIds?: string[];
     attachmentFileIds?: string[];

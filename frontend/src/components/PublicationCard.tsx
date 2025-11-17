@@ -11,7 +11,37 @@ interface PublicationCardProps {
   onVariantDetected?: (variant: 'small' | 'medium' | 'large' | 'default') => void;
 }
 
+const extractYouTubeVideoId = (url: string): string | null => {
+  if (!url) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/.*[?&]v=([^&\n?#]+)/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+};
+
 const getMediaDetails = (publication: Publication) => {
+    // Check for YouTube URL first
+    if (publication.youtubeUrl) {
+      const videoId = extractYouTubeVideoId(publication.youtubeUrl);
+      if (videoId) {
+        return {
+          isVideo: true,
+          isYouTube: true,
+          youtubeVideoId: videoId,
+          url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          mimeType: undefined,
+          attachment: undefined,
+        };
+      }
+    }
+
     const coverImage = publication.coverImage;
     if (coverImage) {
       const lower = coverImage.toLowerCase();
@@ -28,6 +58,8 @@ const getMediaDetails = (publication: Publication) => {
 
       return {
         isVideo,
+        isYouTube: false,
+        youtubeVideoId: null,
         url: getImageUrl(coverImage),
         mimeType: publication.attachments?.[0]?.mimeType,
         attachment: undefined,
@@ -41,6 +73,8 @@ const getMediaDetails = (publication: Publication) => {
         (firstAttachment.filePath ? getImageUrl(firstAttachment.filePath) : undefined);
       return {
         isVideo: true,
+        isYouTube: false,
+        youtubeVideoId: null,
         url: attachmentUrl || '',
         mimeType: firstAttachment.mimeType,
         attachment: firstAttachment,
@@ -49,6 +83,8 @@ const getMediaDetails = (publication: Publication) => {
 
     return {
       isVideo: false,
+      isYouTube: false,
+      youtubeVideoId: null,
       url: getImageUrl(PLACEHOLDER_IMAGE_PATH),
       mimeType: undefined,
       attachment: undefined,
@@ -151,9 +187,29 @@ export default function PublicationCard({ publication, variant: propVariant, onV
         transitionProperty: 'height, box-shadow',
       }}
     >
-      {/* Full-bleed Image/Video */}
+      {/* Full-bleed Image/Video/YouTube */}
       <div className="absolute inset-0">
-        {mediaDetails.isVideo && mediaDetails.url ? (
+        {mediaDetails.isYouTube && mediaDetails.youtubeVideoId ? (
+          <div className="h-full w-full relative">
+            <img
+              src={mediaDetails.url}
+              alt={publication.title}
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+              }}
+            />
+            {/* YouTube Play Button Overlay */}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+              <div className="w-16 h-16 rounded-full bg-red-600/90 flex items-center justify-center shadow-lg">
+                <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        ) : mediaDetails.isVideo && mediaDetails.url ? (
           <video
             src={mediaDetails.url}
             className="h-full w-full object-cover"

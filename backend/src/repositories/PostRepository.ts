@@ -32,6 +32,7 @@ export class PostRepository implements IPublicationRepository {
         metaTitle: postData.metaTitle,
         metaDescription: postData.metaDescription,
         coverImage: postData.coverImage,
+        youtubeUrl: postData.youtubeUrl,
         categoryId: postData.categoryId,
         creatorId: postData.creatorId,
         status: postData.status || 'pending',
@@ -79,6 +80,9 @@ export class PostRepository implements IPublicationRepository {
       if (post.coverImage !== undefined && post.coverImage !== null && post.coverImage.trim() !== '') {
         // Normalize path separators (Windows backslashes to forward slashes for consistency)
         insertData.cover_image = post.coverImage.replace(/\\/g, '/');
+      }
+      if (post.youtubeUrl !== undefined && post.youtubeUrl !== null && post.youtubeUrl.trim() !== '') {
+        insertData.youtube_url = post.youtubeUrl.trim();
       }
       if (postData.publicationDate) {
         // Format the date directly from the input (string or Date) to MySQL DATETIME format
@@ -665,6 +669,9 @@ export class PostRepository implements IPublicationRepository {
       if (data.metaTitle !== undefined) updateData.meta_title = data.metaTitle;
       if (data.metaDescription !== undefined) updateData.meta_description = data.metaDescription;
       if (data.coverImage !== undefined) updateData.cover_image = data.coverImage;
+      if (data.youtubeUrl !== undefined) {
+        updateData.youtube_url = data.youtubeUrl ? data.youtubeUrl.trim() : null;
+      }
       if (data.categoryId !== undefined) updateData.category_id = data.categoryId;
       if (data.status !== undefined) updateData.status = data.status;
       if (data.publicationDate !== undefined) {
@@ -1139,6 +1146,7 @@ export class PostRepository implements IPublicationRepository {
       metaTitle: dbPost.meta_title,
       metaDescription: dbPost.meta_description,
       coverImage: dbPost.cover_image,
+      youtubeUrl: dbPost.youtube_url,
       categoryId: dbPost.category_id,
       creatorId: dbPost.creator_id,
       approvedBy: dbPost.approved_by,

@@ -75,8 +75,8 @@ export default function PublicFooter() {
   );
 
   return (
-    <footer className="bg-gray-800 text-white py-12 px-6 md:px-16 lg:px-24 xl:px-32 border-t-4 border-au-red">
-      <div className="container mx-auto">
+    <footer className="text-white py-12 px-6 md:px-16 lg:px-24 xl:px-32 border-t-2 border-au-red">
+      <div className="bg-gray-70 container mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
           {/* Left Column - Logo and Description */}
           <div className="flex flex-col">
@@ -86,7 +86,7 @@ export default function PublicFooter() {
                 <img 
                   src={getImageUrl(settings.logo)} 
                   alt={settings?.site?.name || 'Site Logo'} 
-                  className="h-12 md:h-16 w-auto mr-3 object-contain"
+                  className="h-12 md:h-16 w-auto mr-3 object-contain rounded-md"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
@@ -98,17 +98,17 @@ export default function PublicFooter() {
                 <img 
                   src="./logo.png" 
                   alt="Site Logo" 
-                  className="h-12 md:h-16 w-auto mr-3"
+                  className="h-12 md:h-16 w-auto mr-3 rounded-md"
                 />
               )}
             </div>
             
             {/* Descriptive Text */}
-            <p className="text-gray-300 font-semibold text-sm md:text-base">
+            <p className="text-gray-500 font-semibold text-sm md:text-base">
               {settings?.site?.name || settings?.site?.tagline || 'Africa CDC Digital Media Hub (DMH)'}
             </p>
             {settings?.site?.description && (
-              <p className="text-gray-400 text-xs mt-2">
+              <p className="text-gray-500 text-xs mt-2">
                 {settings.site.description}
               </p>
             )}
@@ -116,7 +116,7 @@ export default function PublicFooter() {
 
           {/* Middle Column - Social Media */}
           <div className="flex flex-col">
-            <h3 className="text-white font-bold text-sm md:text-base mb-4 uppercase tracking-wide">
+            <h3 className="text-gray-600 font-bold text-sm md:text-base mb-4 uppercase tracking-wide">
               SOCIAL MEDIA
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -150,7 +150,7 @@ export default function PublicFooter() {
 
           {/* Right Column - Category Links */}
           <div className="flex flex-col">
-            <h3 className="text-white font-bold text-sm md:text-base mb-3 uppercase tracking-wide">
+            <h3 className="text-gray-600 font-bold text-sm md:text-base mb-3 uppercase tracking-wide">
               CATEGORIES
             </h3>
             {loading ? (
@@ -165,14 +165,14 @@ export default function PublicFooter() {
                   <Link
                     key={category.id}
                     href={`/category/${category.slug}`}
-                    className="text-gray-300 hover:text-white text-[10px] md:text-xs transition-colors duration-200 whitespace-nowrap"
+                    className="text-gray-500 hover:text-white text-[10px] md:text-xs transition-colors duration-200 whitespace-nowrap"
                   >
                     {category.name}
                   </Link>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-[10px] md:text-xs">No categories available</p>
+              <p className="text-gray-500 text-[10px] md:text-xs">No categories available</p>
             )}
           </div>
         </div>

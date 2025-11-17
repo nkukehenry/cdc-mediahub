@@ -633,6 +633,12 @@ export class DatabaseConnection {
         await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN rejection_reason TEXT`);
       }
 
+      // Add youtube_url column to posts table if it doesn't exist
+      const youtubeUrlColumn = await DatabaseUtils.findMany<any>(`SHOW COLUMNS FROM posts LIKE 'youtube_url'`);
+      if (youtubeUrlColumn.length === 0) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN youtube_url VARCHAR(500)`);
+      }
+
       const postViewerIndex = await DatabaseUtils.findMany<any>(`SHOW INDEX FROM post_views WHERE Key_name = 'idx_post_viewer_token'`);
       if (postViewerIndex.length === 0) {
         await DatabaseUtils.executeQuery(`CREATE INDEX idx_post_viewer_token ON post_views (post_id, viewer_token)`);

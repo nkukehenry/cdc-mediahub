@@ -43,13 +43,17 @@ export class PostService implements IPublicationService {
         }
       }
 
-      // Validate audio/video categories have matching attachments
+      // Validate audio/video categories have matching attachments or YouTube URL
       const categoryNameLower = category.name.toLowerCase();
       const categorySlugLower = category.slug.toLowerCase();
       const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
       const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+      const hasYouTubeUrl = postData.youtubeUrl && postData.youtubeUrl.trim() !== '';
       
-      if ((isAudioCategory || isVideoCategory) && postData.attachmentFileIds && postData.attachmentFileIds.length > 0) {
+      // If YouTube URL is provided, skip attachment validation for video categories
+      if (isVideoCategory && hasYouTubeUrl) {
+        // YouTube URL is provided, attachments and cover image are optional
+      } else if ((isAudioCategory || isVideoCategory) && postData.attachmentFileIds && postData.attachmentFileIds.length > 0) {
         // Check if at least one attachment matches the category type
         let hasMatchingAttachment = false;
         for (const fileId of postData.attachmentFileIds) {
@@ -73,11 +77,11 @@ export class PostService implements IPublicationService {
             'attachmentFileIds'
           );
         }
-      } else if (isAudioCategory || isVideoCategory) {
-        // Category requires attachments but none provided
+      } else if (isAudioCategory || (isVideoCategory && !hasYouTubeUrl)) {
+        // Category requires attachments but none provided (and no YouTube URL for video)
         const categoryType = isAudioCategory ? 'audio' : 'video';
         throw this.errorHandler.createValidationError(
-          `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+          `Publications in ${categoryType} categories must have at least one ${categoryType} attachment or YouTube URL`,
           'attachmentFileIds'
         );
       }
@@ -425,54 +429,68 @@ export class PostService implements IPublicationService {
         category = await this.categoryRepository.findById(existingPost.categoryId);
       }
 
-      // Validate audio/video categories have matching attachments
+      // Validate audio/video categories have matching attachments or YouTube URL
       if (category) {
         const categoryNameLower = category.name.toLowerCase();
         const categorySlugLower = category.slug.toLowerCase();
         const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
         const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
         
+        // Check for YouTube URL - use updated one if provided, otherwise get existing
+        let youtubeUrl: string | undefined = undefined;
+        if (data.youtubeUrl !== undefined) {
+          youtubeUrl = data.youtubeUrl && data.youtubeUrl.trim() !== '' ? data.youtubeUrl.trim() : undefined;
+        } else {
+          youtubeUrl = existingPost.youtubeUrl;
+        }
+        const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
+        
         if (isAudioCategory || isVideoCategory) {
-          // Get attachment file IDs - use updated ones if provided, otherwise get existing
-          let attachmentFileIds: string[] = [];
-          if (data.attachmentFileIds !== undefined) {
-            attachmentFileIds = data.attachmentFileIds;
+          // If YouTube URL is provided, skip attachment validation for video categories
+          if (isVideoCategory && hasYouTubeUrl) {
+            // YouTube URL is provided, attachments and cover image are optional
           } else {
-            const existingPostWithRelations = await this.postRepository.getWithRelations(id);
-            attachmentFileIds = existingPostWithRelations?.attachments?.map(a => a.id) || [];
-          }
-          
-          if (attachmentFileIds.length > 0) {
-            // Check if at least one attachment matches the category type
-            let hasMatchingAttachment = false;
-            for (const fileId of attachmentFileIds) {
-              const file = await this.fileRepository.findById(fileId);
-              if (file) {
-                if (isAudioCategory && file.mimeType.startsWith('audio/')) {
-                  hasMatchingAttachment = true;
-                  break;
-                }
-                if (isVideoCategory && file.mimeType.startsWith('video/')) {
-                  hasMatchingAttachment = true;
-                  break;
-                }
-              }
+            // Get attachment file IDs - use updated ones if provided, otherwise get existing
+            let attachmentFileIds: string[] = [];
+            if (data.attachmentFileIds !== undefined) {
+              attachmentFileIds = data.attachmentFileIds;
+            } else {
+              const existingPostWithRelations = await this.postRepository.getWithRelations(id);
+              attachmentFileIds = existingPostWithRelations?.attachments?.map(a => a.id) || [];
             }
             
-            if (!hasMatchingAttachment) {
+            if (attachmentFileIds.length > 0) {
+              // Check if at least one attachment matches the category type
+              let hasMatchingAttachment = false;
+              for (const fileId of attachmentFileIds) {
+                const file = await this.fileRepository.findById(fileId);
+                if (file) {
+                  if (isAudioCategory && file.mimeType.startsWith('audio/')) {
+                    hasMatchingAttachment = true;
+                    break;
+                  }
+                  if (isVideoCategory && file.mimeType.startsWith('video/')) {
+                    hasMatchingAttachment = true;
+                    break;
+                  }
+                }
+              }
+              
+              if (!hasMatchingAttachment) {
+                const categoryType = isAudioCategory ? 'audio' : 'video';
+                throw this.errorHandler.createValidationError(
+                  `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+                  'attachmentFileIds'
+                );
+              }
+            } else if (isAudioCategory || (isVideoCategory && !hasYouTubeUrl)) {
+              // Category requires attachments but none provided (and no YouTube URL for video)
               const categoryType = isAudioCategory ? 'audio' : 'video';
               throw this.errorHandler.createValidationError(
-                `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
+                `Publications in ${categoryType} categories must have at least one ${categoryType} attachment or YouTube URL`,
                 'attachmentFileIds'
               );
             }
-          } else {
-            // Category requires attachments but none provided
-            const categoryType = isAudioCategory ? 'audio' : 'video';
-            throw this.errorHandler.createValidationError(
-              `Publications in ${categoryType} categories must have at least one ${categoryType} attachment`,
-              'attachmentFileIds'
-            );
           }
         }
       }
@@ -702,6 +720,19 @@ export class PostService implements IPublicationService {
     }
 
     return enriched;
+  }
+
+  async getRecentComments(limit: number): Promise<PostCommentEntity[]> {
+    try {
+      const comments = await this.postCommentRepository.findRecent(limit);
+      const enrichedComments = await Promise.all(
+        comments.map(comment => this.enrichCommentAuthor(comment))
+      );
+      return enrichedComments;
+    } catch (error) {
+      this.logger.error('Failed to get recent comments', error as Error);
+      throw error;
+    }
   }
 }
 

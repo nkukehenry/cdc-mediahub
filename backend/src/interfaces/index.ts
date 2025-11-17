@@ -304,6 +304,7 @@ export interface PublicationEntity {
   metaTitle?: string;
   metaDescription?: string;
   coverImage?: string;
+  youtubeUrl?: string;
   categoryId: string;
   creatorId: string;
   approvedBy?: string;
@@ -452,6 +453,7 @@ export interface CreatePublicationData {
   metaTitle?: string;
   metaDescription?: string;
   coverImage?: string;
+  youtubeUrl?: string;
   categoryId: string;
   creatorId: string;
   subcategoryIds?: string[];
@@ -472,6 +474,7 @@ export interface UpdatePublicationData {
   metaTitle?: string;
   metaDescription?: string;
   coverImage?: string;
+  youtubeUrl?: string;
   categoryId?: string;
   subcategoryIds?: string[];
   attachmentFileIds?: string[];
@@ -643,6 +646,11 @@ export interface PostCommentEntity {
   content: string;
   createdAt: Date;
   author?: PostCommentAuthor;
+  post?: {
+    id: string;
+    title: string;
+    slug?: string;
+  };
 }
 
 export interface CreatePostCommentData {
@@ -681,6 +689,7 @@ export interface IPublicationService {
   getComments(id: string, options?: { limit?: number; offset?: number }): Promise<{ comments: PostCommentEntity[]; total: number; limit: number; offset: number; page: number; totalPages: number }>;
   addComment(id: string, data: CreatePostCommentData): Promise<{ comment: PostCommentEntity; commentsCount: number }>;
   deleteComment(commentId: string, expectedPostId?: string): Promise<{ deleted: boolean; postId: string; commentsCount: number }>;
+  getRecentComments(limit: number): Promise<PostCommentEntity[]>;
 }
 
 export interface ICategoryService {
@@ -750,4 +759,5 @@ export interface IPostCommentRepository {
   countByPost(postId: string): Promise<number>;
   findById(id: string): Promise<PostCommentEntity | null>;
   delete(id: string): Promise<boolean>;
+  findRecent(limit: number): Promise<PostCommentEntity[]>;
 }

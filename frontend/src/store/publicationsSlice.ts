@@ -10,6 +10,7 @@ export interface Publication {
   metaTitle?: string;
   metaDescription?: string;
   coverImage?: string;
+  youtubeUrl?: string;
   categoryId: string;
   category?: {
     id: string;

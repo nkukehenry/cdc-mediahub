@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from '@/hooks/useTranslation';
 import { fetchDashboardAnalytics } from '@/store/analyticsSlice';
 import { RootState, AppDispatch } from '@/store';
-import { Users, FileText, FolderTree, Eye, TrendingUp, BarChart3, Award, Crown, Calendar, Activity } from 'lucide-react';
+import { Users, FileText, FolderTree, Eye, TrendingUp, BarChart3, Award, Crown, Calendar, Activity, MessageSquare, Clock } from 'lucide-react';
+import { apiClient } from '@/utils/apiClient';
+import Link from 'next/link';
 
 // Dashboard components
 import StatCard from './dashboard/StatCard';
@@ -15,13 +17,45 @@ import BarChartCard from './dashboard/BarChartCard';
 import AreaChartCard from './dashboard/AreaChartCard';
 import DataTable from './dashboard/DataTable';
 
+interface Comment {
+  id: string;
+  postId: string;
+  authorName?: string | null;
+  content: string;
+  createdAt: Date | string;
+  post?: {
+    id: string;
+    title: string;
+    slug?: string;
+  };
+}
+
 function DashboardContent() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const { analytics, loading, error } = useSelector((state: RootState) => state.analytics);
+  const [recentComments, setRecentComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
 
   useEffect(() => {
     dispatch(fetchDashboardAnalytics());
+    
+    // Fetch recent comments
+    const loadRecentComments = async () => {
+      try {
+        setCommentsLoading(true);
+        const response = await apiClient.getRecentComments(5);
+        if (response.success && response.data) {
+          setRecentComments(response.data.comments || []);
+        }
+      } catch (err) {
+        console.error('Failed to load recent comments:', err);
+      } finally {
+        setCommentsLoading(false);
+      }
+    };
+    
+    loadRecentComments();
   }, [dispatch]);
 
   if (loading) {
@@ -280,6 +314,59 @@ function DashboardContent() {
           />
         </ChartCard>
       </div>
+
+      {/* Recent Comments */}
+      <ChartCard title={t('admin.recentComments') || 'Recent Comments'}>
+        {commentsLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-6 h-6 border-3 border-au-gold border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : recentComments.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            {t('admin.noComments') || 'No comments yet'}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {recentComments.map((comment) => {
+              const date = new Date(comment.createdAt);
+              const timeAgo = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              
+              return (
+                <div key={comment.id} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <MessageSquare className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-900">
+                          {comment.authorName || 'Anonymous'}
+                        </span>
+                        <span className="text-xs text-gray-500 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {timeAgo}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+                        {comment.content}
+                      </p>
+                      {comment.post && (
+                        <Link 
+                          href={comment.post.slug ? `/publication/${comment.post.slug}` : `/admin/publications`}
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
+                        >
+                          <FileText className="h-3 w-3" />
+                          {comment.post.title}
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ChartCard>
     </div>
   );
 }
