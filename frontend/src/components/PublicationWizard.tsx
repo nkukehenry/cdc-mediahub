@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ChevronRight, ChevronLeft, Tag, CheckCircle2, FileText, X, Image as ImageIcon, FolderOpen, Copy, FileIcon, Video, Music, Archive, FileSpreadsheet, FileCode, Eye } from 'lucide-react';
-import { cn, getImageUrl, PLACEHOLDER_IMAGE_PATH, isImageFile, isVideoFile, isAudioFile, isPdfFile } from '@/utils/fileUtils';
+import { cn, getImageUrl, PLACEHOLDER_IMAGE_PATH, isImageFile, isVideoFile, isAudioFile, isPdfFile, stripHtmlTags } from '@/utils/fileUtils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { showSuccess, showError } from '@/utils/errorHandler';
 import { apiClient } from '@/utils/apiClient';
@@ -1534,10 +1534,8 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                     type="button"
                     onClick={() => {
                       // Extract plain text from HTML description
-                      const tempDiv = document.createElement('div');
-                      tempDiv.innerHTML = description;
-                      const plainText = tempDiv.textContent || tempDiv.innerText || '';
-                      setMetaDescription(plainText.trim());
+                      const plainText = stripHtmlTags(description);
+                      setMetaDescription(plainText);
                     }}
                     disabled={!description.trim() || isLoading}
                     className="px-2 py-1 text-xs text-au-grey-text/70 hover:text-au-corporate-green border border-gray-300 rounded hover:border-au-corporate-green transition-colors flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"

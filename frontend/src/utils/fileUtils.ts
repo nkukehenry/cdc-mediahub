@@ -61,9 +61,37 @@ export const validateFileSize = (file: File, maxSize: number): boolean => {
   return file.size <= maxSize;
 };
 
+/**
+ * Strip HTML tags from a string and return plain text
+ * @param html - The HTML string to strip
+ * @returns Plain text without HTML tags
+ */
+export const stripHtmlTags = (html?: string | null): string => {
+  if (!html) return '';
+  
+  // Check if we're in a browser environment
+  if (typeof document === 'undefined') {
+    // Fallback for server-side: use regex to remove HTML tags
+    return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  }
+  
+  // Create a temporary div element to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  // Get plain text content
+  const plainText = tempDiv.textContent || tempDiv.innerText || '';
+  
+  // Clean up multiple spaces and newlines
+  return plainText.replace(/\s+/g, ' ').trim();
+};
+
 export const truncateText = (value?: string | null, maxLength = 32): string => {
   if (!value) return '';
-  const trimmed = value.trim();
+  
+  // Strip HTML tags first if present
+  const plainText = stripHtmlTags(value);
+  const trimmed = plainText.trim();
   if (!trimmed) return '';
 
   if (trimmed.length <= maxLength) {
