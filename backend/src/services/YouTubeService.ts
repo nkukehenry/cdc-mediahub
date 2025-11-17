@@ -79,7 +79,7 @@ export class YouTubeService {
   private logger = getLogger('YouTubeService');
   private errorHandler = getErrorHandler();
   private readonly CACHE_KEY = 'youtube:live-events';
-  private readonly CACHE_TTL = 300; // 5 minutes cache
+  private readonly CACHE_TTL = 3 * 60 * 60; // 3 hours cache
   private readonly API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
   constructor(private cacheService?: ICacheService) {}

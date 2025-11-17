@@ -2,6 +2,8 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { apiClient } from '@/utils/apiClient';
 import { getCachedData, setCachedData, CACHE_KEYS } from '@/utils/cacheUtils';
 
+const YOUTUBE_CACHE_EXPIRY = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
 export interface YouTubeLiveEvent {
   id: string;
   title: string;
@@ -44,7 +46,7 @@ export const fetchYouTubeLiveEvents = createAsyncThunk(
         apiClient.getYouTubeLiveEvents()
           .then(response => {
             if (response.success && response.data?.events) {
-              setCachedData(CACHE_KEYS.YOUTUBE_LIVE_EVENTS, response.data.events);
+              setCachedData(CACHE_KEYS.YOUTUBE_LIVE_EVENTS, response.data.events, YOUTUBE_CACHE_EXPIRY);
             }
           })
           .catch(error => console.error('Background fetch failed:', error));
@@ -58,7 +60,7 @@ export const fetchYouTubeLiveEvents = createAsyncThunk(
       throw new Error(response.error?.message || 'Failed to fetch YouTube live events');
     }
     const events = response.data.events as YouTubeLiveEvent[];
-    setCachedData(CACHE_KEYS.YOUTUBE_LIVE_EVENTS, events);
+    setCachedData(CACHE_KEYS.YOUTUBE_LIVE_EVENTS, events, YOUTUBE_CACHE_EXPIRY);
     return events;
   }
 );
