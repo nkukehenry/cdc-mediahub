@@ -23,7 +23,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
   const blobUrlRef = useRef<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Fetch file with auth headers and create blob URL
+  // Fetch file with optional auth headers and create blob URL (same logic as carousel)
   useEffect(() => {
     if (isOpen && file) {
       setError(null);
@@ -32,16 +32,16 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
       const fetchFile = async () => {
         try {
           const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-          if (!token) {
-            setError(t('errors.authenticationRequired'));
-            setIsLoading(false);
-            return;
+          
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+          };
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
           }
 
           const response = await fetch(`${API_BASE_URL}/api/files/${file.id}/download`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
+            headers
           });
 
           if (!response.ok) {
@@ -77,22 +77,23 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
         setBlobUrl(null);
       };
     }
-  }, [isOpen, file?.id]);
+  }, [isOpen, file?.id, t]);
 
   const handleDownload = async () => {
     if (!file) return;
     
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-      if (!token) {
-        setError(t('errors.authenticationRequired'));
-        return;
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/files/${file.id}/download`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers
       });
 
       if (!response.ok) {

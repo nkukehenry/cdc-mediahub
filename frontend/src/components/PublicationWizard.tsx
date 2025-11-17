@@ -564,20 +564,26 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         const categorySlugLower = selectedCategory.slug.toLowerCase();
         const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
         const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
+        const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
 
         if (isAudioCategory || isVideoCategory) {
-          const firstAttachment = files[0];
-          const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
-                                         (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+          // Skip first attachment matching validation if YouTube URL is provided for video category
+          if (isVideoCategory && hasYouTubeUrl) {
+            // YouTube URL is provided, attachments are optional and don't need to match
+          } else {
+            const firstAttachment = files[0];
+            const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                           (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
 
-          if (!firstAttachmentMatches) {
-            const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
-            setErrors(prev => ({
-              ...prev,
-              attachments: message
-            }));
-            showError(message);
-            return;
+            if (!firstAttachmentMatches) {
+              const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
+              setErrors(prev => ({
+                ...prev,
+                attachments: message
+              }));
+              showError(message);
+              return;
+            }
           }
         }
       }
@@ -739,30 +745,32 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         return false;
       }
       
-      // Mandate that the FIRST attachment matches the category type
-      const firstAttachment = attachmentFiles[0];
-      if (!firstAttachment) {
-        const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment${isVideoCategory ? ' or YouTube URL' : ''}`;
-        setErrors(prev => ({
-          ...prev,
-          attachments: message
-        }));
-        showError(message);
-        return false;
-      }
-      
-      // Check if the first attachment matches the category type
-      const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
-                                     (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
-      
-      if (!firstAttachmentMatches) {
-        const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
-        setErrors(prev => ({
-          ...prev,
-          attachments: message
-        }));
-        showError(message);
-        return false;
+      // Mandate that the FIRST attachment matches the category type (unless YouTube URL is provided for video)
+      if (!hasYouTubeUrl || !isVideoCategory) {
+        const firstAttachment = attachmentFiles[0];
+        if (!firstAttachment) {
+          const message = `Publications in ${isAudioCategory ? 'audio' : 'video'} categories must have at least one ${isAudioCategory ? 'audio' : 'video'} attachment${isVideoCategory ? ' or YouTube URL' : ''}`;
+          setErrors(prev => ({
+            ...prev,
+            attachments: message
+          }));
+          showError(message);
+          return false;
+        }
+        
+        // Check if the first attachment matches the category type
+        const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                       (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+        
+        if (!firstAttachmentMatches) {
+          const message = `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`;
+          setErrors(prev => ({
+            ...prev,
+            attachments: message
+          }));
+          showError(message);
+          return false;
+        }
       }
       
       // Also check that at least one attachment matches (for the requirement)
@@ -1147,23 +1155,34 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                         const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
                         
                         if (isAudioCategory || isVideoCategory) {
-                          const firstAttachment = attachmentFiles[0];
-                          if (firstAttachment) {
-                            const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
-                                                           (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
-                            
-                            if (!firstAttachmentMatches) {
-                              setErrors(prev => ({
-                                ...prev,
-                                attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
-                              }));
-                            } else {
-                              // Clear error if validation passes
-                              setErrors(prev => {
-                                const newErrors = { ...prev };
-                                delete newErrors.attachments;
-                                return newErrors;
-                              });
+                          const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
+                          // Skip first attachment matching validation if YouTube URL is provided for video category
+                          if (isVideoCategory && hasYouTubeUrl) {
+                            // YouTube URL is provided, attachments are optional and don't need to match
+                            setErrors(prev => {
+                              const newErrors = { ...prev };
+                              delete newErrors.attachments;
+                              return newErrors;
+                            });
+                          } else {
+                            const firstAttachment = attachmentFiles[0];
+                            if (firstAttachment) {
+                              const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
+                                                             (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
+                              
+                              if (!firstAttachmentMatches) {
+                                setErrors(prev => ({
+                                  ...prev,
+                                  attachments: `The first attachment must be a ${isAudioCategory ? 'audio' : 'video'} file for ${isAudioCategory ? 'audio' : 'video'} category publications`
+                                }));
+                              } else {
+                                // Clear error if validation passes
+                                setErrors(prev => {
+                                  const newErrors = { ...prev };
+                                  delete newErrors.attachments;
+                                  return newErrors;
+                                });
+                              }
                             }
                           }
                         } else {

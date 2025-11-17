@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Calendar, User, Eye, MessageCircle, Heart, Share2, Download, FileText, Image as ImageIcon, Video, Music, Eye as EyeIcon } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Eye, MessageCircle, Heart, Share2, Download, FileText, Image as ImageIcon, Video, Music, Eye as EyeIcon, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 import PublicNav from '@/components/PublicNav';
 import PublicFooter from '@/components/PublicFooter';
 import { Provider, useDispatch, useSelector } from 'react-redux';
@@ -23,6 +23,189 @@ const COMMENTS_PAGE_SIZE = 10;
 interface PostComment extends PublicationComment {
   postId: string;
   userId?: string | null;
+}
+
+interface MediaCarouselProps {
+  attachments: any[];
+  mediaBlobUrl: string | null;
+  onPreview: (attachment: any) => void;
+  onDownload: (fileId: string, fileName: string) => void;
+}
+
+function MediaCarousel({ attachments, mediaBlobUrl, onPreview, onDownload }: MediaCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    // Fetch media URLs for all attachments
+    const fetchMediaUrls = async () => {
+      const urls: Record<string, string> = {};
+      for (const attachment of attachments) {
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+          const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+          
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+          };
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+
+          const response = await fetch(
+            `${baseUrl}/api/files/${attachment.id}/download`,
+            { headers }
+          );
+
+          if (response.ok) {
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            urls[attachment.id] = blobUrl;
+          }
+        } catch (error) {
+          console.error(`Failed to fetch media for attachment ${attachment.id}:`, error);
+        }
+      }
+      setMediaUrls(urls);
+    };
+
+    fetchMediaUrls();
+
+    // Cleanup function to revoke blob URLs
+    return () => {
+      setMediaUrls((prevUrls) => {
+        Object.values(prevUrls).forEach(url => URL.revokeObjectURL(url));
+        return {};
+      });
+    };
+  }, [attachments]);
+
+  const currentAttachment = attachments[currentIndex];
+  const currentMediaUrl = mediaUrls[currentAttachment?.id] || mediaBlobUrl;
+  const isVideo = currentAttachment?.mimeType?.startsWith('video/');
+  const isAudio = currentAttachment?.mimeType?.startsWith('audio/');
+
+  const goToPrevious = () => {
+    setCurrentIndex((prev) => (prev === 0 ? attachments.length - 1 : prev - 1));
+  };
+
+  const goToNext = () => {
+    setCurrentIndex((prev) => (prev === attachments.length - 1 ? 0 : prev + 1));
+  };
+
+  const goToSlide = (index: number) => {
+    setCurrentIndex(index);
+  };
+
+  if (attachments.length === 0) return null;
+
+  return (
+    <div className="relative">
+      <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+        {currentMediaUrl ? (
+          <div className="w-full">
+            {isVideo ? (
+              <video
+                key={currentAttachment.id}
+                controls
+                className="w-full rounded-lg"
+                preload="auto"
+                style={{ maxHeight: '600px' }}
+              >
+                <source src={currentMediaUrl} type={currentAttachment.mimeType} />
+                Your browser does not support the video tag.
+              </video>
+            ) : isAudio ? (
+              <div className="bg-gray-100 rounded-lg p-6">
+                <audio
+                  key={currentAttachment.id}
+                  controls
+                  className="w-full"
+                  preload="auto"
+                >
+                  <source src={currentMediaUrl} type={currentAttachment.mimeType} />
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="w-full h-64 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-corporate-green mx-auto mb-2"></div>
+              <p className="text-sm text-gray-600">Loading preview...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation arrows */}
+        {attachments.length > 1 && (
+          <>
+            <button
+              onClick={goToPrevious}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors z-10"
+              aria-label="Previous"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={goToNext}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors z-10"
+              aria-label="Next"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Attachment info and controls */}
+      <div className="mt-4 flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-au-grey-text truncate">
+            {currentAttachment.originalName}
+          </p>
+          <p className="text-xs text-au-grey-text/70">
+            {currentIndex + 1} of {attachments.length}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <button
+            onClick={() => onPreview(currentAttachment)}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm"
+          >
+            <EyeIcon className="h-4 w-4" />
+            Preview
+          </button>
+          <button
+            onClick={() => onDownload(currentAttachment.id, currentAttachment.originalName)}
+            className="flex items-center gap-2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors text-sm"
+          >
+            <Download className="h-4 w-4" />
+            Download
+          </button>
+        </div>
+      </div>
+
+      {/* Dots indicator */}
+      {attachments.length > 1 && (
+        <div className="flex justify-center gap-2 mt-4">
+          {attachments.map((_, index) => (
+            <button
+              key={index}
+              onClick={() => goToSlide(index)}
+              className={`h-2 rounded-full transition-all ${
+                index === currentIndex
+                  ? 'bg-au-corporate-green w-8'
+                  : 'bg-gray-300 w-2 hover:bg-gray-400'
+              }`}
+              aria-label={`Go to slide ${index + 1}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PublicationDetailsContent() {
@@ -543,6 +726,7 @@ function PublicationDetailsContent() {
     return null;
   };
 
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   const publication = currentPublication!;
   const firstAttachment = publication.attachments?.[0];
   const firstAttachmentMime = firstAttachment?.mimeType || '';
@@ -564,7 +748,7 @@ function PublicationDetailsContent() {
         </Link>
 
         <div className="bg-white rounded-lg shadow-md">
-          {/* YouTube Video - Takes priority over cover image and attachments */}
+          {/* YouTube Video - Always used as cover when present */}
           {youtubeVideoId ? (
             <div className="relative w-full aspect-video overflow-hidden bg-black">
               <iframe
@@ -588,70 +772,30 @@ function PublicationDetailsContent() {
               />
               <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent"></div>
             </div>
-          ) : null}
-
-          <div className="p-6 md:p-8 lg:p-12">
-            {(() => {
-              // Don't show attachments if YouTube video is present
-              if (youtubeVideoId) {
-                return null;
-              }
-
-              if (!publication.attachments || publication.attachments.length === 0) {
-                return null;
-              }
-
-              if (!firstAttachment) {
-                return null;
-              }
-
+          ) : !youtubeVideoId && firstAttachment && isFirstAttachmentVideo ? (
+            // Show first video attachment as cover only if no YouTube URL
+            (() => {
               const isAudio = firstAttachmentMime.startsWith('audio/');
-              const isImage = firstAttachmentMime.startsWith('image/');
               const isPdf = firstAttachmentMime === 'application/pdf';
-
-              if (mediaBlobUrl && (isFirstAttachmentVideo || isAudio || isImage || isPdf)) {
+              
+              if (mediaBlobUrl && isFirstAttachmentVideo) {
                 return (
-                  <div className="mb-8">
-                    {isFirstAttachmentVideo ? (
-                      <video
-                        controls
-                        className="w-full rounded-lg shadow-md"
-                        preload="auto"
-                        style={{ maxHeight: '600px' }}
-                      >
-                        <source src={mediaBlobUrl} type={firstAttachmentMime} />
-                        Your browser does not support the video tag.
-                      </video>
-                    ) : isAudio ? (
-                      <div className="bg-gray-100 rounded-lg p-6 shadow-md">
-                        <audio
-                          controls
-                          className="w-full"
-                          preload="auto"
-                        >
-                          <source src={mediaBlobUrl} type={firstAttachmentMime} />
-                          Your browser does not support the audio element.
-                        </audio>
-                      </div>
-                    ) : isPdf ? (
-                      <div className="w-full rounded-lg shadow-md overflow-hidden" style={{ height: '600px' }}>
-                        <iframe
-                          src={mediaBlobUrl}
-                          className="w-full h-full"
-                          title={firstAttachment.originalName}
-                        />
-                      </div>
-                    ) : null}
+                  <div className="relative w-full aspect-video overflow-hidden bg-black">
+                    <video
+                      controls
+                      className="w-full h-full"
+                      preload="auto"
+                    >
+                      <source src={mediaBlobUrl} type={firstAttachmentMime} />
+                      Your browser does not support the video tag.
+                    </video>
                   </div>
                 );
               }
-
-              if (isFirstAttachmentVideo || isAudio || isImage || isPdf) {
+              
+              if (isFirstAttachmentVideo) {
                 return (
-                  <div
-                    className="mb-8 bg-gray-100 rounded-lg p-6 shadow-md flex items-center justify-center"
-                    style={{ minHeight: '200px' }}
-                  >
+                  <div className="relative w-full aspect-video overflow-hidden bg-gray-100 flex items-center justify-center">
                     <div className="text-center">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-au-corporate-green mx-auto mb-2"></div>
                       <p className="text-sm text-gray-600">Loading preview...</p>
@@ -659,9 +803,12 @@ function PublicationDetailsContent() {
                   </div>
                 );
               }
-
+              
               return null;
-            })()}
+            })()
+          ) : null}
+
+          <div className="p-6 md:p-8 lg:p-12">
 
             <div className="mb-6">
               {publication.category && (
@@ -787,50 +934,162 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
-              {publication.attachments && publication.attachments.length > 0 && (
-                <div className="border-t border-gray-200 pt-8">
-                  <h2 className="text-xl font-bold text-au-grey-text mb-4">Attachments</h2>
-                  <div className="space-y-3">
-                    {publication.attachments.map((attachment) => {
-                      const FileIcon = getFileIcon(attachment.mimeType);
-                      return (
-                        <div
-                          key={attachment.id}
-                          className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <FileIcon className="h-5 w-5 text-au-grey-text/70 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-au-grey-text truncate">
-                                {attachment.originalName}
-                              </p>
-                              <p className="text-xs text-au-grey-text/70">
-                                {formatFileSize(attachment.size)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handlePreview(attachment)}
-                              className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm"
-                            >
-                              <EyeIcon className="h-4 w-4" />
-                              Preview
-                            </button>
-                            <button
-                              onClick={() => handleDownload(attachment.id, attachment.originalName)}
-                              className="flex items-center gap-2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors text-sm"
-                            >
-                              <Download className="h-4 w-4" />
-                              Download
-                            </button>
-                          </div>
+              {publication.attachments && publication.attachments.length > 0 && (() => {
+                // Separate attachments by type
+                const videoAttachments = publication.attachments.filter(
+                  (att) => att.mimeType?.startsWith('video/')
+                );
+                const audioAttachments = publication.attachments.filter(
+                  (att) => att.mimeType?.startsWith('audio/')
+                );
+                const imageAttachments = publication.attachments.filter(
+                  (att) => att.mimeType?.startsWith('image/')
+                );
+                const visualAttachments = [...imageAttachments, ...videoAttachments];
+                const otherAttachments = publication.attachments.filter(
+                  (att) =>
+                    !att.mimeType?.startsWith('video/') &&
+                    !att.mimeType?.startsWith('audio/') &&
+                    !att.mimeType?.startsWith('image/')
+                );
+
+                return (
+                  <div className="border-t border-gray-200 pt-8">
+                    <h2 className="text-xl font-bold text-au-grey-text mb-4">Attachments</h2>
+                    
+                    {/* Carousel for audio files */}
+                    {audioAttachments.length > 0 && (
+                      <div className="mb-6">
+                        <MediaCarousel
+                          attachments={audioAttachments}
+                          mediaBlobUrl={mediaBlobUrl}
+                          onPreview={handlePreview}
+                          onDownload={handleDownload}
+                        />
+                      </div>
+                    )}
+
+                    {/* Card grid for image/video attachments */}
+                    {visualAttachments.length > 0 && (
+                      <div className="mb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {visualAttachments.map((attachment) => {
+                            const isVideo = attachment.mimeType?.startsWith('video/');
+                            const hasValidSize = typeof attachment.size === 'number' && Number.isFinite(attachment.size);
+                            const formattedSize = hasValidSize ? formatFileSize(attachment.size) : null;
+                            const imageUrl = !isVideo
+                              ? attachment.filePath
+                                ? getImageUrl(attachment.filePath)
+                                : attachment.downloadUrl
+                                  ? attachment.downloadUrl
+                                  : getImageUrl(PLACEHOLDER_IMAGE_PATH)
+                              : undefined;
+                            const videoUrl = isVideo
+                              ? attachment.downloadUrl || `${apiBaseUrl}/api/files/${attachment.id}/download`
+                              : undefined;
+
+                            return (
+                              <div
+                                key={attachment.id}
+                                onClick={() => handlePreview(attachment)}
+                                className="group bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col overflow-hidden"
+                              >
+                                <div className="relative h-40 bg-gray-100">
+                                  {isVideo ? (
+                                    <video
+                                      src={videoUrl}
+                                      className="w-full h-full object-cover"
+                                      controls
+                                      playsInline
+                                      preload="metadata"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onPlay={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    <img
+                                      src={imageUrl}
+                                      alt={attachment.originalName}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+                                      }}
+                                    />
+                                  )}
+                                  {!isVideo && (
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <EyeIcon className="h-6 w-6 text-white" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-3 flex-1 flex flex-col gap-1">
+                                  <p className="text-sm font-semibold text-au-grey-text truncate">
+                                    {attachment.originalName}
+                                  </p>
+                                  {formattedSize && (
+                                    <p className="text-xs text-gray-500">
+                                      {formattedSize}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+
+                    {/* List for other file types */}
+                    {otherAttachments.length > 0 && (
+                      <div className="space-y-3">
+                        {otherAttachments.map((attachment) => {
+                          const hasValidSize = typeof attachment.size === 'number' && Number.isFinite(attachment.size);
+                          const formattedSize = hasValidSize ? formatFileSize(attachment.size) : null;
+                          const FileIcon = getFileIcon(attachment.mimeType);
+                          return (
+                            <div
+                              key={attachment.id}
+                              className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <FileIcon className="h-5 w-5 text-au-grey-text/70 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-au-grey-text truncate">
+                                    {attachment.originalName}
+                                  </p>
+                                  {formattedSize && (
+                                    <p className="text-xs text-au-grey-text/70">
+                                      {formattedSize}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handlePreview(attachment)}
+                                  className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm"
+                                >
+                                  <EyeIcon className="h-4 w-4" />
+                                  Preview
+                                </button>
+                                <button
+                                  onClick={() => handleDownload(attachment.id, attachment.originalName)}
+                                  className="flex items-center gap-2 px-4 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-corporate-green/90 transition-colors text-sm"
+                                >
+                                  <Download className="h-4 w-4" />
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               <div className="border-t border-gray-200 pt-8 mt-8">
                 <CommentsSection
