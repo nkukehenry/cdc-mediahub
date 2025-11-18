@@ -4024,19 +4024,16 @@ export class FileManagerServer {
   private async handleFilePreview(req: express.Request, res: express.Response): Promise<void> {
     try {
       const { id } = req.params;
-      
-      // Public endpoint - no authentication required
-      // Get file directly from repository without authentication checks
+      const rangeHeader = req.headers.range;
+  
       const file = await this.fileRepository.findById(id);
-      
       if (!file) {
         res.status(404).json(this.errorHandler.formatErrorResponse(
           this.errorHandler.createValidationError('File not found')
         ));
         return;
       }
-
-      // Check if file exists on disk
+  
       try {
         await fs.promises.access(file.filePath);
       } catch (error) {
@@ -4046,13 +4043,37 @@ export class FileManagerServer {
         ));
         return;
       }
-
-      res.setHeader('Content-Type', file.mimeType);
-      res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
-      
-      // Ensure the file path is absolute
+  
       const absolutePath = path.resolve(file.filePath);
-      res.sendFile(absolutePath);
+      const stat = await fs.promises.stat(absolutePath);
+      const fileSize = stat.size;
+  
+      const headers: Record<string, string> = {
+        'Content-Type': file.mimeType,
+        'Content-Disposition': `inline; filename="${file.originalName}"`,
+        'Accept-Ranges': 'bytes'
+      };
+  
+      if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+  
+        if (isNaN(start) || isNaN(end) || start >= fileSize || end >= fileSize) {
+          res.status(416).set(headers).end();
+          return;
+        }
+  
+        const chunkSize = (end - start) + 1;
+        headers['Content-Range'] = `bytes ${start}-${end}/${fileSize}`;
+        headers['Content-Length'] = String(chunkSize);
+        res.writeHead(206, headers);
+        fs.createReadStream(absolutePath, { start, end }).pipe(res);
+      } else {
+        headers['Content-Length'] = String(fileSize);
+        res.writeHead(200, headers);
+        fs.createReadStream(absolutePath).pipe(res);
+      }
     } catch (error) {
       this.logger.error('File preview failed', error as Error);
       const statusCode = (error as any).type === 'VALIDATION_ERROR' ? 403 : 500;

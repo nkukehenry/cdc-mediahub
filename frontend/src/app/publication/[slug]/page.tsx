@@ -30,9 +30,10 @@ interface AudioPlayerProps {
   mimeType?: string;
   attachmentId: string;
   audioRefs: React.MutableRefObject<Record<string, HTMLAudioElement>>;
+  onStartPlaying?: (attachmentId: string) => void;
 }
 
-function AudioPlayer({ src, mimeType, attachmentId, audioRefs }: AudioPlayerProps) {
+function AudioPlayer({ src, mimeType, attachmentId, audioRefs, onStartPlaying }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -69,7 +70,10 @@ function AudioPlayer({ src, mimeType, attachmentId, audioRefs }: AudioPlayerProp
         setDuration(audio.duration);
         setIsLoading(false);
       };
-      const handlePlay = () => setIsPlaying(true);
+      const handlePlay = () => {
+        setIsPlaying(true);
+        onStartPlaying?.(attachmentId);
+      };
       const handlePause = () => setIsPlaying(false);
       const handleEnded = () => {
         setIsPlaying(false);
@@ -235,76 +239,12 @@ function MediaCarousel({ attachments, mediaBlobUrl, onPreview, onDownload }: Med
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // Fetch media URLs for all attachments
-    const fetchMediaUrls = async () => {
-      const urls: Record<string, string> = {};
-      for (const attachment of attachments) {
-        try {
-          const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-          const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-          
-          const headers: HeadersInit = {};
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-
-          // Use AbortController for timeout handling
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout for large files
-
-          const response = await fetch(
-            `${baseUrl}/api/files/${attachment.id}/download`,
-            { 
-              headers,
-              signal: controller.signal
-            }
-          );
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const blob = await response.blob();
-            
-            // Verify blob is not empty
-            if (blob.size === 0) {
-              console.error(`Received empty blob for attachment ${attachment.id}`);
-              continue;
-            }
-
-            const blobUrl = URL.createObjectURL(blob);
-            urls[attachment.id] = blobUrl;
-          } else {
-            console.error(`Failed to fetch media for attachment ${attachment.id}: HTTP ${response.status}`);
-          }
-        } catch (error: any) {
-          console.error(`Failed to fetch media for attachment ${attachment.id}:`, error);
-          // For large files, try using direct download URL as fallback
-          if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-            const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-            const downloadUrl = token 
-              ? `${baseUrl}/api/files/${attachment.id}/download`
-              : attachment.downloadUrl || `${baseUrl}/api/files/${attachment.id}/download`;
-            urls[attachment.id] = downloadUrl;
-          }
-        }
-      }
-      setMediaUrls(urls);
-    };
-
-    fetchMediaUrls();
-
-    // Cleanup function to revoke blob URLs
-    return () => {
-      setMediaUrls((prevUrls) => {
-        Object.values(prevUrls).forEach(url => {
-          if (url.startsWith('blob:')) {
-            URL.revokeObjectURL(url);
-          }
-        });
-        return {};
-      });
-    };
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const urls: Record<string, string> = {};
+    attachments.forEach(attachment => {
+      urls[attachment.id] = `${baseUrl}/api/files/${attachment.id}/preview`;
+    });
+    setMediaUrls(urls);
   }, [attachments]);
 
   const currentAttachment = attachments[currentIndex];
@@ -492,7 +432,6 @@ function PublicationDetailsContent() {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({});
-  const audioBlobUrlsRef = useRef<Record<string, string>>({});
   const { user } = useAuth();
   const { handleError, showWarning, showSuccess } = useErrorHandler();
 
@@ -516,13 +455,27 @@ function PublicationDetailsContent() {
   const [guestEmail, setGuestEmail] = useState('');
   const [commentSubmitting, setCommentSubmitting] = useState<boolean>(false);
 
+  const buildPreviewUrl = useCallback((fileId: string) => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    return `${baseUrl}/api/files/${fileId}/preview`;
+  }, []);
+
+  const handleAudioStart = useCallback((attachmentId: string) => {
+    Object.entries(audioRefs.current).forEach(([id, audioElement]) => {
+      if (id !== attachmentId && audioElement && !audioElement.paused) {
+        audioElement.pause();
+      }
+    });
+    setPlayingAudioId(attachmentId);
+  }, []);
+
   useEffect(() => {
     if (slug) {
       dispatch(fetchPublicationBySlug(slug) as any);
     }
   }, [slug, dispatch]);
 
-  // Load audio URLs for all audio attachments
+  // Load audio URLs for all audio attachments using preview streaming
   useEffect(() => {
     if (!currentPublication?.attachments) return;
     
@@ -532,93 +485,16 @@ function PublicationDetailsContent() {
     
     audioAttachments.forEach((attachment: any) => {
       if (!audioUrls[attachment.id]) {
-        const loadAudioUrl = async (retryCount = 0) => {
-          try {
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-            const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-            
-            const headers: HeadersInit = {};
-            if (token) {
-              headers['Authorization'] = `Bearer ${token}`;
-            }
-
-            // Use AbortController for timeout handling
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-
-            const response = await fetch(
-              `${baseUrl}/api/files/${attachment.id}/download`,
-              { 
-                headers,
-                signal: controller.signal
-              }
-            );
-
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
-              // Check if response is actually a blob
-              const contentType = response.headers.get('content-type');
-              if (!contentType || !contentType.startsWith('audio/') && !contentType.startsWith('video/')) {
-                console.warn(`Unexpected content type for audio file ${attachment.id}:`, contentType);
-              }
-
-              const blob = await response.blob();
-              
-              // Verify blob is not empty
-              if (blob.size === 0) {
-                throw new Error('Received empty blob');
-              }
-
-              const blobUrl = URL.createObjectURL(blob);
-              
-              // Clean up old blob URL if it exists
-              if (audioBlobUrlsRef.current[attachment.id]) {
-                URL.revokeObjectURL(audioBlobUrlsRef.current[attachment.id]);
-              }
-              
-              // Store in ref for cleanup tracking
-              audioBlobUrlsRef.current[attachment.id] = blobUrl;
-              
-              setAudioUrls(prev => {
-                // Only update if not already set
-                if (prev[attachment.id]) {
-                  return prev;
-                }
-                return { ...prev, [attachment.id]: blobUrl };
-              });
-            } else {
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-          } catch (error: any) {
-            console.error(`Failed to load audio ${attachment.id} (attempt ${retryCount + 1}):`, error);
-            
-            // Retry up to 2 times for network errors
-            if (retryCount < 2 && (error.name === 'AbortError' || error.message?.includes('fetch'))) {
-              console.log(`Retrying load for audio ${attachment.id}...`);
-              setTimeout(() => loadAudioUrl(retryCount + 1), 1000 * (retryCount + 1)); // Exponential backoff
-            }
-          }
-        };
-        
-        loadAudioUrl();
+        const streamUrl = buildPreviewUrl(attachment.id);
+        setAudioUrls(prev => prev[attachment.id] ? prev : { ...prev, [attachment.id]: streamUrl });
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPublication?.attachments]);
+    // eslint-disable-next-line react-hooks-exhaustive-deps
+  }, [currentPublication?.attachments, buildPreviewUrl]);
 
-  // Cleanup audio URLs on unmount only
+  // Cleanup audio elements on unmount
   useEffect(() => {
     return () => {
-      // Clean up all blob URLs from ref
-      Object.values(audioBlobUrlsRef.current).forEach(url => {
-        if (url && url.startsWith('blob:')) {
-          URL.revokeObjectURL(url);
-        }
-      });
-      audioBlobUrlsRef.current = {};
-      
-      // Clean up audio elements
       Object.values(audioRefs.current).forEach(audio => {
         if (audio) {
           audio.pause();
@@ -626,7 +502,7 @@ function PublicationDetailsContent() {
         }
       });
     };
-  }, []); // Empty dependency array - only run on unmount
+  }, []);
 
   useEffect(() => {
     if (currentPublication && currentPublication.categoryId) {
@@ -739,105 +615,28 @@ function PublicationDetailsContent() {
      loadComments(1, true);
   }, [publicationId, currentPublication, loadComments]);
 
-  // Load first attachment as blob for preview (similar to FilePreviewModal)
+  // Load first attachment preview via streaming URL
   useEffect(() => {
     if (!currentPublication?.attachments || currentPublication.attachments.length === 0) {
-      // Clean up if no attachments
-      if (mediaBlobUrlRef.current) {
-        URL.revokeObjectURL(mediaBlobUrlRef.current);
-        mediaBlobUrlRef.current = null;
-      }
+      mediaBlobUrlRef.current = null;
       setMediaBlobUrl(null);
       return;
     }
 
-    // Get first attachment for preview
     const firstAttachment = currentPublication.attachments[0];
     if (!firstAttachment) {
       return;
     }
 
-    const fetchMediaFile = async (retryCount = 0) => {
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-        
-        // Build headers with auth token if available
-        const headers: HeadersInit = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
+    const previewUrl = buildPreviewUrl(firstAttachment.id);
+    mediaBlobUrlRef.current = previewUrl;
+    setMediaBlobUrl(previewUrl);
 
-        // Use AbortController for timeout handling
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout for large files
-
-        const response = await fetch(`${baseUrl}/api/files/${firstAttachment.id}/download`, {
-          headers,
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-        
-        // Verify blob is not empty
-        if (blob.size === 0) {
-          throw new Error('Received empty blob');
-        }
-
-        const url = URL.createObjectURL(blob);
-        
-        // Clean up previous blob URL
-        if (mediaBlobUrlRef.current) {
-          URL.revokeObjectURL(mediaBlobUrlRef.current);
-        }
-        
-        mediaBlobUrlRef.current = url;
-        setMediaBlobUrl(url);
-      } catch (err: any) {
-        console.error(`Failed to fetch attachment file for preview (attempt ${retryCount + 1}):`, err);
-        
-        // Retry up to 2 times for network errors
-        if (retryCount < 2 && (err.name === 'AbortError' || err.message?.includes('fetch'))) {
-          console.log(`Retrying load for first attachment ${firstAttachment.id}...`);
-          setTimeout(() => fetchMediaFile(retryCount + 1), 1000 * (retryCount + 1)); // Exponential backoff
-        } else {
-          // For large files that timeout, try using direct download URL as fallback
-          if (err.name === 'AbortError' || err.message?.includes('timeout')) {
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-            const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-            const downloadUrl = token 
-              ? `${baseUrl}/api/files/${firstAttachment.id}/download`
-              : firstAttachment.downloadUrl || `${baseUrl}/api/files/${firstAttachment.id}/download`;
-            
-            // Clean up previous blob URL
-            if (mediaBlobUrlRef.current) {
-              URL.revokeObjectURL(mediaBlobUrlRef.current);
-            }
-            
-            mediaBlobUrlRef.current = downloadUrl;
-            setMediaBlobUrl(downloadUrl);
-          }
-        }
-      }
-    };
-
-    fetchMediaFile();
-
-    // Cleanup blob URL on unmount or when publication changes
     return () => {
-      if (mediaBlobUrlRef.current) {
-        URL.revokeObjectURL(mediaBlobUrlRef.current);
-        mediaBlobUrlRef.current = null;
-      }
+      mediaBlobUrlRef.current = null;
       setMediaBlobUrl(null);
     };
-  }, [currentPublication?.id, currentPublication?.attachments]);
+  }, [currentPublication?.id, currentPublication?.attachments, buildPreviewUrl]);
 
   // Close share menu when clicking outside
   useEffect(() => {
@@ -1466,6 +1265,7 @@ function PublicationDetailsContent() {
                                       mimeType={attachment.mimeType}
                                       attachmentId={attachment.id}
                                       audioRefs={audioRefs}
+                                      onStartPlaying={handleAudioStart}
                                     />
                                   ) : (
                                     <div className="w-full h-10 bg-gray-100 rounded-lg flex items-center justify-center">
