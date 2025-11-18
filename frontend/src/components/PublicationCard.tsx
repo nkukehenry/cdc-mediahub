@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo } from 'react';
 import { Music, Eye, MessageCircle, Camera, Video, FileText, Image, Calendar, User } from 'lucide-react';
 import { Publication } from '@/store/publicationsSlice';
-import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText } from '@/utils/fileUtils';
+import { getImageUrl, PLACEHOLDER_IMAGE_PATH, truncateText, formatFileSize } from '@/utils/fileUtils';
+import { isAudioPublication } from '@/utils/publicationUtils';
 
 interface PublicationCardProps {
   publication: Publication;
@@ -26,11 +28,50 @@ const extractYouTubeVideoId = (url: string): string | null => {
   return null;
 };
 
+const generateWaveformBars = (seed: string, length = 60) => {
+  const baseSeed = seed
+    .split('')
+    .reduce((acc, char, index) => acc + char.charCodeAt(0) * (index + 1), 0);
+
+  return Array.from({ length }, (_, i) => {
+    const pseudoRandom = Math.sin(baseSeed + i * 0.35) * 0.5 + 0.5;
+    return Math.max(25, Math.min(90, pseudoRandom * 60 + 25));
+  });
+};
+
 const getMediaDetails = (publication: Publication) => {
     // Check if publication is in a video category
     const categoryName = publication.category?.name?.toLowerCase() || '';
     const categorySlug = publication.category?.slug?.toLowerCase() || '';
     const isVideoCategory = categoryName.includes('video') || categorySlug.includes('video');
+    const audioPublication = isAudioPublication(publication);
+    const firstAudioAttachment = publication.attachments?.find(att => att.mimeType?.startsWith('audio/'));
+    const hasAudioAttachment = Boolean(firstAudioAttachment);
+
+    // If it's an audio publication, always use audio card style (even if it has coverImage)
+    if (audioPublication || hasAudioAttachment) {
+      const coverImageUrl = publication.coverImage ? getImageUrl(publication.coverImage) : undefined;
+      const audioThumbnailUrl = (firstAudioAttachment as any)?.thumbnailUrl;
+      const audioThumbnailPath = (firstAudioAttachment as any)?.thumbnailPath;
+      const audioAttachmentImage =
+        audioThumbnailUrl ||
+        (audioThumbnailPath ? getImageUrl(audioThumbnailPath) : undefined) ||
+        (firstAudioAttachment?.filePath ? getImageUrl(firstAudioAttachment.filePath) : undefined);
+      const backgroundUrl = coverImageUrl || audioAttachmentImage;
+
+      return {
+        isVideo: false,
+        isVideoCategory,
+        isYouTube: false,
+        youtubeVideoId: null,
+        isAudio: true,
+        audioAttachment: firstAudioAttachment,
+        url: getImageUrl(PLACEHOLDER_IMAGE_PATH),
+        mimeType: firstAudioAttachment?.mimeType,
+        attachment: firstAudioAttachment,
+        backgroundUrl: backgroundUrl || getImageUrl(PLACEHOLDER_IMAGE_PATH),
+      };
+    }
 
     // Check for video content (YouTube URL or video attachments)
     const hasYouTubeUrl = Boolean(publication.youtubeUrl);
@@ -64,7 +105,10 @@ const getMediaDetails = (publication: Publication) => {
         isVideoCategory: shouldShowPlayButton, // True if in video category OR has video content
         isYouTube: Boolean(youtubeVideoId),
         youtubeVideoId: youtubeVideoId,
+        isAudio: false,
+        audioAttachment: undefined,
         url: getImageUrl(coverImage),
+        backgroundUrl: getImageUrl(coverImage),
         mimeType: publication.attachments?.[0]?.mimeType,
         attachment: undefined,
       };
@@ -77,7 +121,10 @@ const getMediaDetails = (publication: Publication) => {
         isVideoCategory: isVideoCategory || true, // YouTube is always a video
         isYouTube: true,
         youtubeVideoId: youtubeVideoId,
+        isAudio: false,
+        audioAttachment: undefined,
         url: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+        backgroundUrl: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
         mimeType: undefined,
         attachment: undefined,
       };
@@ -99,7 +146,10 @@ const getMediaDetails = (publication: Publication) => {
         isVideoCategory: isVideoCategory || true, // Video attachments are always videos
         isYouTube: false,
         youtubeVideoId: null,
+        isAudio: false,
+        audioAttachment: undefined,
         url: attachmentUrl,
+        backgroundUrl: attachmentUrl,
         mimeType: firstAttachment.mimeType,
         attachment: firstAttachment,
       };
@@ -110,7 +160,10 @@ const getMediaDetails = (publication: Publication) => {
       isVideoCategory,
       isYouTube: false,
       youtubeVideoId: null,
+      isAudio: false,
+      audioAttachment: undefined,
       url: getImageUrl(PLACEHOLDER_IMAGE_PATH),
+      backgroundUrl: getImageUrl(PLACEHOLDER_IMAGE_PATH),
       mimeType: undefined,
       attachment: undefined,
     };
@@ -118,7 +171,12 @@ const getMediaDetails = (publication: Publication) => {
 
 export default function PublicationCard({ publication, variant: propVariant, onVariantDetected }: PublicationCardProps) {
   const mediaDetails = getMediaDetails(publication);
-  
+  const isAudioCard = Boolean(mediaDetails.isAudio);
+  const audioWaveformBars = useMemo(
+    () => (isAudioCard ? generateWaveformBars(publication.id) : []),
+    [isAudioCard, publication.id]
+  );
+
   // Use prop variant if provided, otherwise default to 'medium'
   const variant = propVariant || 'medium';
 
@@ -202,17 +260,146 @@ export default function PublicationCard({ publication, variant: propVariant, onV
 
   const variantConfig = getVariantConfig();
 
+  if (isAudioCard) {
+    // Audio cards use row-span-3 (150px) to fit compactly in collage grid
+    return (
+      <Link
+        href={`/publication/${publication.slug}`}
+        className="group relative block w-full h-[150px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all duration-300 hover:shadow-md"
+      >
+        {/* Background Image - No blur */}
+        {mediaDetails.backgroundUrl && (
+          <div className="absolute inset-0">
+            <img
+              src={mediaDetails.backgroundUrl}
+              alt={publication.title}
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = getImageUrl(PLACEHOLDER_IMAGE_PATH);
+              }}
+            />
+          </div>
+        )}
+
+        {/* Play Button - Always visible */}
+        <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className="w-12 h-12 rounded-full bg-au-corporate-green/90 flex items-center justify-center shadow-lg transition-transform duration-300 group-hover:scale-110">
+            <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 flex h-full flex-col p-2.5">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 backdrop-blur-sm text-au-corporate-green shadow-sm">
+                <Music className="h-4 w-4" />
+              </div>
+              <h3 className="text-sm font-semibold text-white drop-shadow-md line-clamp-1 truncate">
+                {publication.title || 'Untitled Publication'}
+              </h3>
+            </div>
+            {typeof mediaDetails.audioAttachment?.size === 'number' && Number.isFinite(mediaDetails.audioAttachment.size) && (
+              <span className="text-[10px] font-medium text-white/90 drop-shadow-md shrink-0 bg-black/30 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                {formatFileSize(mediaDetails.audioAttachment.size)}
+              </span>
+            )}
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center">
+            <div className="flex h-8 items-end gap-0.5 mb-1.5">
+              {audioWaveformBars.map((height, index) => (
+                <div
+                  key={index}
+                  className="flex-1 rounded-sm bg-gradient-to-t from-au-corporate-green/90 to-au-gold/90 shadow-sm"
+                  style={{
+                    height: `${height}%`,
+                    minWidth: '2px',
+                    opacity: index % 5 === 0 ? 0.95 : 0.7,
+                  }}
+                />
+              ))}
+            </div>
+            {(() => {
+              const audioDuration = (mediaDetails.audioAttachment as any)?.duration;
+              return (
+                <div className="flex items-center gap-1.5 text-[10px] text-white/90 drop-shadow-md">
+              <Music className="h-2.5 w-2.5" />
+              <span>{mediaDetails.audioAttachment?.mimeType?.split('/')[1]?.toUpperCase() || 'AUDIO'}</span>
+                  {typeof audioDuration === 'number' && Number.isFinite(audioDuration) && (
+                    <>
+                      <span>•</span>
+                      <span>{Math.round(audioDuration)}s</span>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="flex items-center justify-between mt-auto pt-1.5 text-[10px] text-white/90 drop-shadow-md">
+            {publication.publicationDate && (
+              <div className="flex items-center gap-1">
+                <Calendar className="h-2.5 w-2.5" />
+                <span className="truncate">{formatDate(publication.publicationDate)}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Eye className="h-2.5 w-2.5" />
+                <span>{publication.views || 0}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <MessageCircle className="h-2.5 w-2.5" />
+                <span>{publication.commentsCount ?? publication.comments ?? 0}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Hover Overlay - Shows title, author, date with blur */}
+        <div className="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/80 to-black/40 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100 backdrop-blur-sm">
+          <div className="space-y-2 transform translate-y-2 transition-transform duration-300 group-hover:translate-y-0">
+            {/* Title */}
+            <h3 className="text-base font-bold text-white line-clamp-2 drop-shadow-lg opacity-0 transform translate-y-2 transition-all duration-300 delay-75 group-hover:opacity-100 group-hover:translate-y-0">
+              {publication.title || 'Untitled Publication'}
+            </h3>
+
+            {/* Author */}
+            <div className="flex items-center gap-2 text-xs text-white/90 opacity-0 transform translate-y-2 transition-all duration-300 delay-100 group-hover:opacity-100 group-hover:translate-y-0">
+              <User className="h-3 w-3" />
+              <span className="font-medium">{formatAuthorName()}</span>
+            </div>
+
+            {/* Date */}
+            {publication.publicationDate && (
+              <div className="flex items-center gap-2 text-xs text-white/90 opacity-0 transform translate-y-2 transition-all duration-300 delay-150 group-hover:opacity-100 group-hover:translate-y-0">
+                <Calendar className="h-3 w-3" />
+                <span>{formatDate(publication.publicationDate)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
+  const cardHeightClass = variantConfig.height;
+  const cardBackgroundClass = 'bg-gray-100 hover:shadow-2xl';
+
   // Add smooth transition when variant changes
   return (
     <Link
       href={`/publication/${publication.slug}`}
-      className={`group relative block w-full ${variantConfig.height} overflow-hidden rounded-lg bg-gray-100 transition-all duration-500 hover:shadow-2xl`}
+      className={`group relative block w-full ${cardHeightClass} overflow-hidden rounded-lg transition-all duration-500 ${cardBackgroundClass}`}
       style={{
         // Smooth height transition when variant changes
         transitionProperty: 'height, box-shadow',
       }}
     >
-      {/* Full-bleed Image/Video/YouTube */}
       <div className="absolute inset-0">
         {mediaDetails.isYouTube && mediaDetails.youtubeVideoId ? (
           <img

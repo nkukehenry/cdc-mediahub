@@ -13,6 +13,7 @@ import { apiClient } from '@/utils/apiClient';
 import { cn } from '@/utils/fileUtils';
 import PublicationCardSkeleton from '@/components/PublicationCardSkeleton';
 import Skeleton from '@/components/Skeleton';
+import { isAudioPublication } from '@/utils/publicationUtils';
 
 interface Category {
   id: string;
@@ -626,9 +627,11 @@ export default function PublicationsExplorer({
                     // We use a default row-span that will be updated when dimensions are detected
                     // For now, we'll let cards size themselves naturally within the grid
                     const defaultRowSpan = 'row-span-6'; // Default to medium size
+                    const isAudio = isAudioPublication(publication);
+                    const effectiveRowSpan = isAudio ? 'row-span-3' : defaultRowSpan;
                     
                     return (
-                      <div key={publication.id} className={defaultRowSpan}>
+                      <div key={publication.id} className={effectiveRowSpan}>
                         <PublicationCard publication={publication} />
                       </div>
                     );

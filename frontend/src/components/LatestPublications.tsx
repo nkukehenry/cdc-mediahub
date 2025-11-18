@@ -9,13 +9,14 @@ import { fetchLatestPublications } from '@/store/publicationsSlice';
 import PublicationCard from './PublicationCard';
 import PublicationCardSkeleton from './PublicationCardSkeleton';
 import Skeleton from './Skeleton';
+import { isAudioPublication } from '@/utils/publicationUtils';
 
 export default function LatestPublications() {
   const dispatch = useDispatch();
   const { latestPublications, loading } = useSelector((state: RootState) => state.publications);
 
   useEffect(() => {
-    dispatch(fetchLatestPublications(10) as any);
+    dispatch(fetchLatestPublications(12) as any);
   }, [dispatch]);
 
   if (loading) {
@@ -97,7 +98,7 @@ export default function LatestPublications() {
               'large', 'medium', 'small', 'medium', 'large', 'small',
               'medium', 'large', 'small', 'medium', 'default', 'large'
             ];
-            const variant = variants[index % variants.length] || 'default';
+            const variantPattern = variants[index % variants.length] || 'default';
             
             // Map variant to row span for vertical alignment
             const rowSpans: Record<string, string> = {
@@ -106,18 +107,21 @@ export default function LatestPublications() {
               'large': 'row-span-10',
               'default': 'row-span-6'
             };
-            const rowSpan = rowSpans[variant] || 'row-span-6';
+            const isAudio = isAudioPublication(publication);
+            const cardVariant: 'small' | 'medium' | 'large' | 'default' = isAudio ? variantPattern : 'medium';
+            const defaultRowSpan = rowSpans[cardVariant] || 'row-span-6';
+            const effectiveRowSpan = isAudio ? 'row-span-3' : defaultRowSpan;
             
             return (
               <div
                 key={publication.id}
-                className={`${rowSpan} animate-fade-in`}
+                className={`${effectiveRowSpan} animate-fade-in`}
                 style={{
                   animationDelay: `${index * 0.1}s`,
                   animationFillMode: 'both'
                 }}
               >
-                <PublicationCard publication={publication} variant={variant} />
+                <PublicationCard publication={publication} variant={cardVariant} />
               </div>
             );
           })}

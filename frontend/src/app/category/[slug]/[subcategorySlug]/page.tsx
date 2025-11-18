@@ -15,6 +15,7 @@ import { apiClient } from '@/utils/apiClient';
 import { cn } from '@/utils/fileUtils';
 import PublicationCardSkeleton from '@/components/PublicationCardSkeleton';
 import Skeleton from '@/components/Skeleton';
+import { isAudioPublication } from '@/utils/publicationUtils';
 
 interface Category {
   id: string;
@@ -631,14 +632,10 @@ function SubcategoryPageInner() {
                     rowGap: '2px'
                   }}
                 >
-                  {publications.map((publication, index) => {
-                    // Auto-detect variant from image/video dimensions
-                    // Card will calculate variant based on aspect ratio:
-                    // - Portrait (tall) -> large (500px, row-span-10)
-                    // - Landscape (wide) -> small (250px, row-span-5)
-                    // - Square/moderate -> medium (300px, row-span-6)
+                  {publications.map((publication) => {
+                    const rowSpanClass = isAudioPublication(publication) ? 'row-span-3' : 'row-span-6';
                     return (
-                      <div key={publication.id} className="row-span-6">
+                      <div key={publication.id} className={rowSpanClass}>
                         <PublicationCard publication={publication} />
                       </div>
                     );

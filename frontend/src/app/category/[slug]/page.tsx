@@ -14,6 +14,7 @@ import { apiClient } from '@/utils/apiClient';
 import { cn } from '@/utils/fileUtils';
 import PublicationCardSkeleton from '@/components/PublicationCardSkeleton';
 import Skeleton from '@/components/Skeleton';
+import { isAudioPublication } from '@/utils/publicationUtils';
 
 interface Category {
   id: string;
@@ -593,7 +594,10 @@ function CategoryPageInner() {
                     const rowSpan = rowSpans[variant] || 'row-span-6';
                     
                     return (
-                      <div key={publication.id} className={rowSpan}>
+                      <div
+                        key={publication.id}
+                        className={isAudioPublication(publication) ? 'row-span-3' : rowSpan}
+                      >
                         <PublicationCard publication={publication} variant={variant} />
                       </div>
                     );
