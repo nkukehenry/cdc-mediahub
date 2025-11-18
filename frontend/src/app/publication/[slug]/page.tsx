@@ -492,6 +492,7 @@ function PublicationDetailsContent() {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({});
+  const audioBlobUrlsRef = useRef<Record<string, string>>({});
   const { user } = useAuth();
   const { handleError, showWarning, showSuccess } = useErrorHandler();
 
@@ -570,10 +571,18 @@ function PublicationDetailsContent() {
               }
 
               const blobUrl = URL.createObjectURL(blob);
+              
+              // Clean up old blob URL if it exists
+              if (audioBlobUrlsRef.current[attachment.id]) {
+                URL.revokeObjectURL(audioBlobUrlsRef.current[attachment.id]);
+              }
+              
+              // Store in ref for cleanup tracking
+              audioBlobUrlsRef.current[attachment.id] = blobUrl;
+              
               setAudioUrls(prev => {
                 // Only update if not already set
                 if (prev[attachment.id]) {
-                  URL.revokeObjectURL(blobUrl); // Clean up if already exists
                   return prev;
                 }
                 return { ...prev, [attachment.id]: blobUrl };
@@ -598,10 +607,18 @@ function PublicationDetailsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPublication?.attachments]);
 
-  // Cleanup audio URLs on unmount
+  // Cleanup audio URLs on unmount only
   useEffect(() => {
     return () => {
-      Object.values(audioUrls).forEach(url => URL.revokeObjectURL(url));
+      // Clean up all blob URLs from ref
+      Object.values(audioBlobUrlsRef.current).forEach(url => {
+        if (url && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+      audioBlobUrlsRef.current = {};
+      
+      // Clean up audio elements
       Object.values(audioRefs.current).forEach(audio => {
         if (audio) {
           audio.pause();
@@ -609,7 +626,7 @@ function PublicationDetailsContent() {
         }
       });
     };
-  }, [audioUrls]);
+  }, []); // Empty dependency array - only run on unmount
 
   useEffect(() => {
     if (currentPublication && currentPublication.categoryId) {
