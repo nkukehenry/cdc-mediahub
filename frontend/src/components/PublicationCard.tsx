@@ -314,7 +314,7 @@ export default function PublicationCard({ publication, variant: propVariant, onV
               {audioWaveformBars.map((height, index) => (
                 <div
                   key={index}
-                  className="flex-1 rounded-sm bg-gradient-to-t from-au-corporate-green/90 to-au-gold/90 shadow-sm"
+                  className="flex-1 rounded-sm bg-gradient-to-t from-au-corporate-green to-au-corporate-green/60 shadow-sm"
                   style={{
                     height: `${height}%`,
                     minWidth: '2px',
