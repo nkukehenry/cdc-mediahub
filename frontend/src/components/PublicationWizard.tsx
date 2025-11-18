@@ -770,8 +770,17 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
 
   const handleFilePickerSelect = (files: FileWithUrls[]) => {
     console.log('Attachment files selected:', files);
+    console.log('Existing attachment files:', attachmentFiles);
 
-    if (categoryId && files.length > 0) {
+    // Merge new files with existing ones, avoiding duplicates
+    const existingFileIds = new Set(attachmentFiles.map(f => f.id));
+    const newFiles = files.filter(f => !existingFileIds.has(f.id));
+    const mergedFiles = [...attachmentFiles, ...newFiles];
+
+    console.log('New files to add:', newFiles);
+    console.log('Merged files:', mergedFiles);
+
+    if (categoryId && mergedFiles.length > 0) {
       const selectedCategory = categories.find(c => c.id === categoryId);
       if (selectedCategory) {
         const categoryNameLower = selectedCategory.name.toLowerCase();
@@ -785,7 +794,12 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           if (isVideoCategory && hasYouTubeUrl) {
             // YouTube URL is provided, attachments are optional and don't need to match
           } else {
-            const firstAttachment = files[0];
+            // Check the first attachment in the merged list (prioritize existing first attachment if it matches)
+            const firstAttachment = mergedFiles.find(f => 
+              (isAudioCategory && f.mimeType?.startsWith('audio/')) ||
+              (isVideoCategory && f.mimeType?.startsWith('video/'))
+            ) || mergedFiles[0];
+            
             const firstAttachmentMatches = (isAudioCategory && firstAttachment.mimeType?.startsWith('audio/')) ||
                                            (isVideoCategory && firstAttachment.mimeType?.startsWith('video/'));
 
@@ -803,10 +817,10 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       }
     }
 
-    setAttachmentFiles(files);
-    setAttachmentFileIds(files.map(f => f.id));
-    console.log('Attachment file IDs set:', files.map(f => f.id));
-    console.log('Current attachmentFiles state will be:', files);
+    setAttachmentFiles(mergedFiles);
+    setAttachmentFileIds(mergedFiles.map(f => f.id));
+    console.log('Attachment file IDs set:', mergedFiles.map(f => f.id));
+    console.log('Current attachmentFiles state will be:', mergedFiles);
 
     setErrors(prev => {
       const newErrors = { ...prev };
