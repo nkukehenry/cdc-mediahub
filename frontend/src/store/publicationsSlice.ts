@@ -47,6 +47,8 @@ export interface Publication {
   likesCount?: number;
   commentsCount?: number;
   isLiked?: boolean;
+  source?: string;
+  creatorName?: string;
   createdAt: string;
   updatedAt: string;
   attachments?: Array<{

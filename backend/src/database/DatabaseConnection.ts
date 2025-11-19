@@ -186,6 +186,18 @@ export class DatabaseConnection {
         this.logger.info('Added comments_count column to posts table');
       }
 
+      const postsHasSource = await this.columnExists('posts', 'source');
+      if (!postsHasSource) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN source JSON`);
+        this.logger.info('Added source column to posts table');
+      }
+
+      const postsHasCreatorName = await this.columnExists('posts', 'creator_name');
+      if (!postsHasCreatorName) {
+        await DatabaseUtils.executeQuery(`ALTER TABLE posts ADD COLUMN creator_name JSON`);
+        this.logger.info('Added creator_name column to posts table');
+      }
+
       const tablesToConvertCollation = [
         'posts',
         'tags',

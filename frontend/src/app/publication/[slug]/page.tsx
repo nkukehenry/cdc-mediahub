@@ -1200,6 +1200,24 @@ function PublicationDetailsContent() {
                 </div>
               )}
 
+              {publication.source && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-au-grey-text mb-2">Source:</h3>
+                  <div className="px-3 py-1 bg-au-green/10 text-au-green rounded text-sm inline-flex">
+                    {publication.source}
+                  </div>
+                </div>
+              )}
+
+              {publication.creatorName && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-au-grey-text mb-2">Creator Name:</h3>
+                  <div className="px-3 py-1 bg-au-green/10 text-au-green rounded text-sm inline-flex">
+                    {publication.creatorName}
+                  </div>
+                </div>
+              )}
+
               {publication.description && (
                 <div className="mb-8">
                   <div

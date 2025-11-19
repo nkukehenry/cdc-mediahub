@@ -91,6 +91,12 @@ export class PostRepository implements IPublicationRepository {
           typeof postData.publicationDate === 'string' ? postData.publicationDate : postData.publicationDate
         );
       }
+      if (postData.source !== undefined && postData.source !== null && String(postData.source).trim() !== '') {
+        insertData.source = JSON.stringify(String(postData.source).trim());
+      }
+      if (postData.creatorName !== undefined && postData.creatorName !== null && String(postData.creatorName).trim() !== '') {
+        insertData.creator_name = JSON.stringify(String(postData.creatorName).trim());
+      }
 
       const { columns, placeholders, values } = DatabaseUtils.buildInsertValues(insertData);
 
@@ -749,6 +755,14 @@ export class PostRepository implements IPublicationRepository {
       if (data.rejectionReason !== undefined) {
         updateData.rejection_reason = data.rejectionReason ? String(data.rejectionReason).trim() : null;
       }
+      if (data.source !== undefined) {
+        const trimmed = data.source ? String(data.source).trim() : '';
+        updateData.source = trimmed ? JSON.stringify(trimmed) : null;
+      }
+      if (data.creatorName !== undefined) {
+        const trimmed = data.creatorName ? String(data.creatorName).trim() : '';
+        updateData.creator_name = trimmed ? JSON.stringify(trimmed) : null;
+      }
 
       const { set, values } = DatabaseUtils.buildUpdateSet(updateData);
       const params = [...values, id];
@@ -1219,9 +1233,33 @@ export class PostRepository implements IPublicationRepository {
       isLeaderboard: Boolean(dbPost.is_leaderboard),
       likesCount: dbPost.likes_count !== undefined && dbPost.likes_count !== null ? Number(dbPost.likes_count) : 0,
       commentsCount: dbPost.comments_count !== undefined && dbPost.comments_count !== null ? Number(dbPost.comments_count) : 0,
+      source: this.parseOptionalJsonString(dbPost.source),
+      creatorName: this.parseOptionalJsonString(dbPost.creator_name),
       createdAt: new Date(dbPost.created_at),
       updatedAt: new Date(dbPost.updated_at)
     };
+  }
+
+  private parseOptionalJsonString(value: any): string | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'string') {
+          const str = parsed.trim();
+          return str.length > 0 ? str : undefined;
+        }
+      } catch {
+        return trimmed;
+      }
+    }
+    return undefined;
   }
 
   private normalizeTagSlugs(tags: string[]): string[] {

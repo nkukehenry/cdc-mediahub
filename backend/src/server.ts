@@ -3668,6 +3668,102 @@ export class FileManagerServer {
       this.app.get('/api/public/tags', (req, res) => {
         this.tagController.getAll(req, res);
       });
+
+      /**
+       * @swagger
+       * /api/public/sources:
+       *   get:
+       *     summary: Get all unique sources
+       *     description: Get list of all unique source values from publications
+       *     tags: [Publications (Public)]
+       *     responses:
+       *       200:
+       *         description: List of unique sources
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         sources:
+       *                           type: array
+       *                           items:
+       *                             type: string
+       */
+      this.app.get('/api/public/sources', async (req, res) => {
+        try {
+          const posts = await this.postRepository.findAll();
+          const sourceSet = new Set<string>();
+          
+          posts.forEach(post => {
+            if (post.source && typeof post.source === 'string' && post.source.trim()) {
+              sourceSet.add(post.source.trim());
+            }
+          });
+          
+          const sources = Array.from(sourceSet).sort();
+          
+          res.json({
+            success: true,
+            data: { sources }
+          });
+        } catch (error) {
+          this.logger.error('Failed to get sources', error as Error);
+          res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+        }
+      });
+
+      /**
+       * @swagger
+       * /api/public/creator-names:
+       *   get:
+       *     summary: Get all unique creator names
+       *     description: Get list of all unique creator name values from publications
+       *     tags: [Publications (Public)]
+       *     responses:
+       *       200:
+       *         description: List of unique creator names
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         creatorNames:
+       *                           type: array
+       *                           items:
+       *                             type: string
+       */
+      this.app.get('/api/public/creator-names', async (req, res) => {
+        try {
+          const posts = await this.postRepository.findAll();
+          const creatorNameSet = new Set<string>();
+          
+          posts.forEach(post => {
+            if (post.creatorName && typeof post.creatorName === 'string' && post.creatorName.trim()) {
+              creatorNameSet.add(post.creatorName.trim());
+            }
+          });
+          
+          const creatorNames = Array.from(creatorNameSet).sort();
+          
+          res.json({
+            success: true,
+            data: { creatorNames }
+          });
+        } catch (error) {
+          this.logger.error('Failed to get creator names', error as Error);
+          res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+        }
+      });
   
       this.logger.info('Routes setup completed');
     } catch (error) {

@@ -77,6 +77,10 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
   const [availableTags, setAvailableTags] = useState<TagOption[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+  const [availableSources, setAvailableSources] = useState<string[]>([]);
+  const [sourceValue, setSourceValue] = useState('');
+  const [availableCreatorNames, setAvailableCreatorNames] = useState<string[]>([]);
+  const [creatorNameValue, setCreatorNameValue] = useState('');
 
   // Step 3: Description
   const [description, setDescription] = useState('');
@@ -456,6 +460,25 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
     }
   }, [addTag, tagInput]);
 
+  const filteredSourceSuggestions = useMemo(() => {
+    const query = sourceValue.trim().toLowerCase();
+    const list = query
+      ? availableSources.filter((s) => s.toLowerCase().includes(query))
+      : availableSources;
+    return list.slice(0, 8);
+  }, [availableSources, sourceValue]);
+
+  const filteredCreatorNameSuggestions = useMemo(() => {
+    const query = creatorNameValue.trim().toLowerCase();
+    const list = query
+      ? availableCreatorNames.filter((cn) => cn.toLowerCase().includes(query))
+      : availableCreatorNames;
+    return list.slice(0, 8);
+  }, [availableCreatorNames, creatorNameValue]);
+
+  const showSourceSuggestions = sourceValue.trim().length > 0 && filteredSourceSuggestions.length > 0;
+  const showCreatorNameSuggestions = creatorNameValue.trim().length > 0 && filteredCreatorNameSuggestions.length > 0;
+
   const stepErrorFields: Record<number, string[]> = {
     1: ['title', 'slug', 'categoryId'],
     2: ['cover', 'attachments']
@@ -512,7 +535,31 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
       }
     };
 
+    const fetchSources = async () => {
+      try {
+        const response = await apiClient.getSources();
+        if (response.success && response.data?.sources) {
+          setAvailableSources(response.data.sources);
+        }
+      } catch (error) {
+        console.error('Failed to load sources:', error);
+      }
+    };
+
+    const fetchCreatorNames = async () => {
+      try {
+        const response = await apiClient.getCreatorNames();
+        if (response.success && response.data?.creatorNames) {
+          setAvailableCreatorNames(response.data.creatorNames);
+        }
+      } catch (error) {
+        console.error('Failed to load creator names:', error);
+      }
+    };
+
     fetchTags();
+    fetchSources();
+    fetchCreatorNames();
   }, []);
 
   // Load publication data when in edit mode
@@ -698,6 +745,9 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
         } else {
           setSelectedTags([]);
         }
+
+        setSourceValue(typeof publication.source === 'string' ? publication.source : '');
+        setCreatorNameValue(typeof publication.creatorName === 'string' ? publication.creatorName : '');
       } else {
         showError(t('publications.failedToLoadPublication'));
       }
@@ -1467,6 +1517,8 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           isFeatured,
           isLeaderboard,
           tags: selectedTags,
+          source: sourceValue.trim() ? sourceValue.trim() : undefined,
+          creatorName: creatorNameValue.trim() ? creatorNameValue.trim() : undefined,
         });
 
         if (response.success) {
@@ -1506,6 +1558,8 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
           isFeatured,
           isLeaderboard,
           tags: selectedTags,
+          source: sourceValue.trim() ? sourceValue.trim() : undefined,
+          creatorName: creatorNameValue.trim() ? creatorNameValue.trim() : undefined,
         });
 
         if (response.success) {
@@ -2298,6 +2352,148 @@ export default function PublicationWizard({ publicationId, onSuccess, onCancel, 
                             #{tag.name}
                           </button>
                         ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-sm font-medium text-au-grey-text">Source</span>
+                  <span className="text-xs text-au-grey-text/60">Select or type a source for this publication.</span>
+                </div>
+
+                <div className="flex items-center gap-2 mb-3 min-h-[32px]">
+                  {sourceValue ? (
+                    <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium bg-au-green/10 text-au-green rounded-full">
+                      {sourceValue}
+                      <button
+                        type="button"
+                        onClick={() => setSourceValue('')}
+                        className="hover:text-red-500 transition-colors"
+                        aria-label="Clear source"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-au-grey-text/60">No source selected yet.</span>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={sourceValue}
+                    onChange={(event) => setSourceValue(event.target.value)}
+                    placeholder="Type or select a source"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
+                    disabled={isLoading}
+                  />
+                  {showSourceSuggestions && (
+                    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                      {filteredSourceSuggestions.map((source) => (
+                        <button
+                          key={source}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setSourceValue(source);
+                          }}
+                          className="w-full px-4 py-2 flex items-center justify-between text-sm text-au-grey-text hover:bg-gray-50 transition-colors"
+                        >
+                          <span>{source}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {!sourceValue.trim() && availableSources.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-au-grey-text/60 mb-2">Available sources</p>
+                    <div className="flex flex-wrap gap-2">
+                      {availableSources.slice(0, 8).map((source) => (
+                        <button
+                          key={source}
+                          type="button"
+                          onClick={() => setSourceValue(source)}
+                          className="px-3 py-1.5 text-xs font-medium text-au-grey-text bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                        >
+                          {source}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-sm font-medium text-au-grey-text">Creator Name</span>
+                  <span className="text-xs text-au-grey-text/60">Select or type a creator name for this publication.</span>
+                </div>
+
+                <div className="flex items-center gap-2 mb-3 min-h-[32px]">
+                  {creatorNameValue ? (
+                    <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium bg-au-green/10 text-au-green rounded-full">
+                      {creatorNameValue}
+                      <button
+                        type="button"
+                        onClick={() => setCreatorNameValue('')}
+                        className="hover:text-red-500 transition-colors"
+                        aria-label="Clear creator name"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-au-grey-text/60">No creator name selected yet.</span>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={creatorNameValue}
+                    onChange={(event) => setCreatorNameValue(event.target.value)}
+                    placeholder="Type or select a creator name"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-gold focus:border-au-gold outline-none transition-colors"
+                    disabled={isLoading}
+                  />
+                  {showCreatorNameSuggestions && (
+                    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                      {filteredCreatorNameSuggestions.map((creatorName) => (
+                        <button
+                          key={creatorName}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setCreatorNameValue(creatorName);
+                          }}
+                          className="w-full px-4 py-2 flex items-center justify-between text-sm text-au-grey-text hover:bg-gray-50 transition-colors"
+                        >
+                          <span>{creatorName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {!creatorNameValue.trim() && availableCreatorNames.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-au-grey-text/60 mb-2">Available creator names</p>
+                    <div className="flex flex-wrap gap-2">
+                      {availableCreatorNames.slice(0, 8).map((creatorName) => (
+                        <button
+                          key={creatorName}
+                          type="button"
+                          onClick={() => setCreatorNameValue(creatorName)}
+                          className="px-3 py-1.5 text-xs font-medium text-au-grey-text bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                        >
+                          {creatorName}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}

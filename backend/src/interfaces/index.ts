@@ -320,6 +320,8 @@ export interface PublicationEntity {
   isLeaderboard: boolean;
   likesCount: number;
   commentsCount: number;
+  source?: string;
+  creatorName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -467,6 +469,8 @@ export interface CreatePublicationData {
   isFeatured?: boolean;
   isLeaderboard?: boolean;
   tags?: string[];
+  source?: string;
+  creatorName?: string;
 }
 
 export interface UpdatePublicationData {
@@ -489,6 +493,8 @@ export interface UpdatePublicationData {
   isLeaderboard?: boolean;
   approvedBy?: string;
   tags?: string[];
+  source?: string;
+  creatorName?: string;
 }
 
 export interface ShareFileData {
@@ -574,6 +580,8 @@ export interface PublicationFilters {
   dateTo?: string; // ISO date string
   search?: string; // Search in title, description, meta fields
   tags?: string[];
+  source?: string;
+  creatorName?: string;
 }
 
 export interface ITagRepository {

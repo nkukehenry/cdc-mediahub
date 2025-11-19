@@ -28,6 +28,8 @@ interface PublicationDetailsModalProps {
       email?: string;
       username?: string;
     };
+    source?: string;
+    creatorName?: string;
     isFeatured?: boolean;
     isLeaderboard?: boolean;
   };

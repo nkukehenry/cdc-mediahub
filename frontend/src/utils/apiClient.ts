@@ -437,6 +437,8 @@ class ApiClient {
     isFeatured?: boolean;
     isLeaderboard?: boolean;
     tags?: string[];
+    source?: string;
+    creatorName?: string;
   }): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>('/api/admin/posts', {
       method: 'POST',
@@ -604,6 +606,8 @@ class ApiClient {
     isFeatured?: boolean;
     isLeaderboard?: boolean;
     tags?: string[];
+    source?: string;
+    creatorName?: string;
   }): Promise<ApiResponse<{ post: any }>> {
     return this.request<{ post: any }>(`/api/admin/posts/${id}`, {
       method: 'PUT',
@@ -957,6 +961,14 @@ class ApiClient {
     return this.request<{ tags: Array<{ id: string; name: string; slug: string; usageCount?: number }> }>(
       '/api/public/tags?includeUsage=true'
     );
+  }
+
+  async getSources(): Promise<ApiResponse<{ sources: string[] }>> {
+    return this.request<{ sources: string[] }>('/api/public/sources');
+  }
+
+  async getCreatorNames(): Promise<ApiResponse<{ creatorNames: string[] }>> {
+    return this.request<{ creatorNames: string[] }>('/api/public/creator-names');
   }
 }
 

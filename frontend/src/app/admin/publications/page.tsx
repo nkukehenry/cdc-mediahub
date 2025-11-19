@@ -42,6 +42,8 @@ interface Publication {
   uniqueHits: number;
   isFeatured: boolean;
   isLeaderboard: boolean;
+  source?: string;
+  creatorName?: string;
   createdAt: string;
   updatedAt: string;
 }
