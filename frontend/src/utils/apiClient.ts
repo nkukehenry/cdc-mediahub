@@ -143,6 +143,27 @@ class ApiClient {
     });
   }
 
+  async forgotPassword(email: string): Promise<ApiResponse> {
+    return this.request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(data: { token: string; newPassword: string }): Promise<ApiResponse> {
+    return this.request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async changePassword(data: { currentPassword: string; newPassword: string }): Promise<ApiResponse> {
+    return this.request('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateProfile(data: {
     firstName?: string;
     lastName?: string;
@@ -399,7 +420,7 @@ class ApiClient {
     tags?: string[];
   }, page?: number, limit?: number): Promise<ApiResponse<{ publications: Array<any>; pagination: { total: number; page: number; limit: number; totalPages: number } }>> {
     const params = new URLSearchParams();
-    
+
     if (filters) {
       if (filters.status) params.append('status', filters.status);
       if (filters.categoryId) params.append('categoryId', filters.categoryId);
@@ -412,10 +433,10 @@ class ApiClient {
         filters.tags.forEach(tag => params.append('tags', tag));
       }
     }
-    
+
     if (page) params.append('page', page.toString());
     if (limit) params.append('limit', limit.toString());
-    
+
     return this.request<{ publications: Array<any>; pagination: { total: number; page: number; limit: number; totalPages: number } }>(`/api/admin/posts?${params.toString()}`);
   }
 
@@ -468,7 +489,7 @@ class ApiClient {
     if (filters?.tags && filters.tags.length > 0) {
       filters.tags.forEach(tag => params.append('tags', tag));
     }
-    
+
     const queryString = params.toString();
     return this.request<{ posts: Array<any>; pagination?: { total: number; page: number; limit: number; totalPages: number } }>(`/api/public/posts${queryString ? `?${queryString}` : ''}`);
   }
@@ -521,7 +542,7 @@ class ApiClient {
     params.append('q', query);
     if (limit) params.append('limit', limit.toString());
     if (offset) params.append('offset', offset.toString());
-    
+
     return this.request<{ posts: Array<any> }>(`/api/public/posts/search?${params.toString()}`);
   }
 
@@ -629,24 +650,8 @@ class ApiClient {
   }
 
   // YouTube Live Events methods
-  async getYouTubeLiveEvents(): Promise<ApiResponse<{ events: Array<{
-    id: string;
-    title: string;
-    description: string;
-    thumbnailUrl: string;
-    channelTitle: string;
-    publishedAt: string;
-    scheduledStartTime?: string;
-    actualStartTime?: string;
-    actualEndTime?: string;
-    viewCount?: number;
-    concurrentViewers?: number;
-    videoUrl: string;
-    status: 'live' | 'upcoming' | 'recent_video';
-    isLive: boolean;
-    type: 'live' | 'upcoming' | 'recent_video' | '';
-  }> }>> {
-    return this.request<{ events: Array<{
+  async getYouTubeLiveEvents(): Promise<ApiResponse<{
+    events: Array<{
       id: string;
       title: string;
       description: string;
@@ -662,24 +667,48 @@ class ApiClient {
       status: 'live' | 'upcoming' | 'recent_video';
       isLive: boolean;
       type: 'live' | 'upcoming' | 'recent_video' | '';
-    }> }>('/api/public/youtube/live-events');
+    }>
+  }>> {
+    return this.request<{
+      events: Array<{
+        id: string;
+        title: string;
+        description: string;
+        thumbnailUrl: string;
+        channelTitle: string;
+        publishedAt: string;
+        scheduledStartTime?: string;
+        actualStartTime?: string;
+        actualEndTime?: string;
+        viewCount?: number;
+        concurrentViewers?: number;
+        videoUrl: string;
+        status: 'live' | 'upcoming' | 'recent_video';
+        isLive: boolean;
+        type: 'live' | 'upcoming' | 'recent_video' | '';
+      }>
+    }>('/api/public/youtube/live-events');
   }
 
   // Cache Management methods
-  async getCacheStats(): Promise<ApiResponse<{ stats: {
-    connected: boolean;
-    type: 'redis' | 'memory';
-    totalKeys: number;
-    memoryUsage: string | null;
-    uptime: number | null;
-  } }>> {
-    return this.request<{ stats: {
+  async getCacheStats(): Promise<ApiResponse<{
+    stats: {
       connected: boolean;
       type: 'redis' | 'memory';
       totalKeys: number;
       memoryUsage: string | null;
       uptime: number | null;
-    } }>('/api/admin/cache/stats');
+    }
+  }>> {
+    return this.request<{
+      stats: {
+        connected: boolean;
+        type: 'redis' | 'memory';
+        totalKeys: number;
+        memoryUsage: string | null;
+        uptime: number | null;
+      }
+    }>('/api/admin/cache/stats');
   }
 
   async getCacheKeys(pattern?: string, limit?: number): Promise<ApiResponse<{

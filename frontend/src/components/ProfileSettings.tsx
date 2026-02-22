@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Save, X } from 'lucide-react';
+import { Camera, Save, X, Lock, Eye, EyeOff } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/utils/apiClient';
@@ -48,6 +48,14 @@ export default function ProfileSettings({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
   const [showCropModal, setShowCropModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Password change states
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
 
   // Load user data
   useEffect(() => {
@@ -138,6 +146,42 @@ export default function ProfileSettings({
     } catch (error) {
       console.error('Error cropping image:', error);
       showError('Failed to crop image');
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (newPassword !== confirmPassword) {
+      showError('New passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      showError('New password must be at least 8 characters long');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      const response = await apiClient.changePassword({
+        currentPassword,
+        newPassword
+      });
+
+      if (response.success) {
+        showSuccess('Password changed successfully');
+        setShowPasswordModal(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        showError(response.error?.message || 'Failed to change password');
+      }
+    } catch (error: any) {
+      showError(error?.message || 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -347,6 +391,13 @@ export default function ProfileSettings({
 
           <div className="flex justify-end gap-4">
             <button
+              onClick={() => setShowPasswordModal(true)}
+              className="px-6 py-2 border border-gray-300 text-au-grey-text rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+            >
+              <Lock className="w-4 h-4" />
+              Change Password
+            </button>
+            <button
               onClick={handleSave}
               disabled={saving}
               className="px-6 py-2 bg-au-corporate-green text-white rounded-lg hover:bg-au-green transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -357,6 +408,127 @@ export default function ProfileSettings({
           </div>
         </div>
       </div>
+
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-au-corporate-green/10 flex items-center justify-center text-au-corporate-green">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-au-grey-text">Change Password</h2>
+                  <p className="text-sm text-au-grey-text/60">Secure your account</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPasswordModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                disabled={changingPassword}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-au-grey-text mb-1.5">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.current ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-corporate-green focus:border-transparent transition-all outline-none"
+                    placeholder="••••••••"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswords.current ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-au-grey-text mb-1.5">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.new ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-corporate-green focus:border-transparent transition-all outline-none"
+                    placeholder="Min. 8 characters"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswords.new ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-au-grey-text mb-1.5">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.confirm ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-au-corporate-green focus:border-transparent transition-all outline-none"
+                    placeholder="Repeat new password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswords.confirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  disabled={changingPassword}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-au-grey-text rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  className="flex-1 px-4 py-2.5 bg-au-corporate-green text-white rounded-lg hover:bg-au-green transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {changingPassword ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Password'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showCropModal && imageSrc && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">

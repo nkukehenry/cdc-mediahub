@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { showError } from '@/utils/errorHandler';
@@ -79,6 +80,14 @@ export default function PublicLoginForm() {
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-au-green focus:border-au-green"
               placeholder="Enter your password"
             />
+          </div>
+          <div className="flex justify-end mt-2">
+            <Link
+              href="/forgot-password"
+              className="text-sm font-medium text-au-green hover:text-au-corporate-green transition-colors"
+            >
+              Forgot password?
+            </Link>
           </div>
         </div>
       </div>
