@@ -60,11 +60,11 @@ async function fetchUnsplashImage(keywords: string[]): Promise<string> {
     const keyword = keywords[Math.floor(Math.random() * keywords.length)] || 'africa';
     const width = 800;
     const height = 600;
-    
+
     // Unsplash Source API format: https://source.unsplash.com/{width}x{height}/?{keyword}
     // This will redirect to a random image matching the keyword
     const imageUrl = `https://source.unsplash.com/${width}x${height}/?${keyword}`;
-    
+
     // We'll store the URL directly since we can't download and save files in seeding
     // The frontend will fetch from this URL
     return imageUrl;
@@ -107,7 +107,8 @@ export async function seedPublications(count: number = 30): Promise<void> {
       fileRepository,
       tagRepository,
       new PostLikeRepository(),
-      new PostCommentRepository()
+      new PostCommentRepository(),
+      { sendEmail: async () => true, sendPasswordResetEmail: async () => true, sendWelcomeEmail: async () => true, sendAccountBlockedEmail: async () => true, sendAccountUnblockedEmail: async () => true, sendPasswordChangedEmail: async () => true, sendPublicationRejectedEmail: async () => true } as any
     );
 
     // Get all categories
@@ -128,11 +129,11 @@ export async function seedPublications(count: number = 30): Promise<void> {
 
     // Get publications to create
     const publicationsToCreate = samplePublications.slice(0, Math.min(count, samplePublications.length));
-    
+
     // Check how many publications already exist
     const existingCount = await DatabaseUtils.findMany<any>('SELECT COUNT(*) as count FROM posts', []);
     const currentCount = existingCount[0]?.count || 0;
-    
+
     if (currentCount >= count) {
       logger.info(`Already have ${currentCount} publications. Skipping seeding.`);
       return;
@@ -147,16 +148,16 @@ export async function seedPublications(count: number = 30): Promise<void> {
 
     for (let i = 0; i < publicationsNeeded; i++) {
       const pubData = publicationsToCreate[i];
-      
+
       // Random category
       const category = categories[Math.floor(Math.random() * categories.length)];
-      
+
       // Random creator
       const creator = users[Math.floor(Math.random() * users.length)];
-      
+
       // Generate slug
       let slug = generateSlug(pubData.title);
-      
+
       // Check if slug exists and make it unique
       const existing = await postRepository.findBySlug(slug);
       if (existing) {
@@ -165,7 +166,7 @@ export async function seedPublications(count: number = 30): Promise<void> {
 
       // Fetch Unsplash image
       const coverImage = await fetchUnsplashImage(pubData.categoryKeywords);
-      
+
       // Random status (mostly approved for public display)
       const statuses: Array<'approved' | 'pending' | 'draft'> = ['approved', 'approved', 'approved', 'pending', 'draft'];
       const status = statuses[Math.floor(Math.random() * statuses.length)];
@@ -173,7 +174,7 @@ export async function seedPublications(count: number = 30): Promise<void> {
       // Random featured/leaderboard (some publications)
       const isFeatured = featuredCount < 5 && Math.random() > 0.7;
       const isLeaderboard = leaderboardCount < 5 && Math.random() > 0.7 && !isFeatured;
-      
+
       if (isFeatured) featuredCount++;
       if (isLeaderboard) leaderboardCount++;
 
@@ -200,7 +201,7 @@ export async function seedPublications(count: number = 30): Promise<void> {
         await postService.createPublication(publicationData);
         created++;
         logger.info(`Created publication: ${pubData.title} (${created}/${publicationsNeeded})`);
-        
+
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {

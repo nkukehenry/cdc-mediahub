@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { 
+import {
   Home as HomeIcon,
-  FolderTree, 
-  FileText, 
-  FolderOpen, 
-  Settings, 
+  FolderTree,
+  FileText,
+  FolderOpen,
+  Settings,
   User,
   Users,
   LogOut,
@@ -54,10 +54,10 @@ export default function AdminNav() {
 
   const navItems: NavItem[] = [
     { id: 'home', label: t('nav.home'), path: '/admin', icon: HomeIcon },
-    { 
-      id: 'categories', 
-      label: t('nav.categories'), 
-      path: '/admin/categories', 
+    {
+      id: 'categories',
+      label: t('nav.categories'),
+      path: '/admin/categories',
       icon: FolderOpen,
       subItems: [
         { label: t('nav.mainCategories'), path: '/admin/categories' },
@@ -65,10 +65,10 @@ export default function AdminNav() {
       ]
     },
     { id: 'files', label: t('nav.fileManager'), path: '/admin/files', icon: FolderTree },
-    { 
-      id: 'publications', 
-      label: t('nav.publications'), 
-      path: '/admin/publications', 
+    {
+      id: 'publications',
+      label: t('nav.publications'),
+      path: '/admin/publications',
       icon: FileText,
       subItems: [
         { label: t('nav.createPublication'), path: '/admin/publications/new' },
@@ -79,10 +79,10 @@ export default function AdminNav() {
         { label: t('nav.comments'), path: '/admin/publications/comments' },
       ]
     },
-    { 
-      id: 'configurations', 
-      label: t('nav.configurations'), 
-      path: '/admin/settings', 
+    {
+      id: 'configurations',
+      label: t('nav.configurations'),
+      path: '/admin/settings',
       icon: Settings,
       subItems: [
         { label: t('nav.users'), path: '/admin/users' },
@@ -188,10 +188,10 @@ export default function AdminNav() {
             <div className="flex-shrink-0 flex items-center">
               <Link href="/admin/files" className="flex items-center space-x-2">
                 <div className="flex items-center justify-center">
-                  <img 
-                    src="/logo.png" 
-                    alt="Media Hub Logo" 
-                    className="h-8 md:h-10 w-auto"
+                  <img
+                    src="/logo.png"
+                    alt="Media Hub Logo"
+                    className="h-8 md:h-10 w-auto logo-white"
                   />
                 </div>
                 <span className="text-sm md:text-base font-semibold text-white hidden sm:inline">{t('brand.name')}</span>
@@ -365,7 +365,7 @@ export default function AdminNav() {
       {isMobileMenuOpen && (
         <>
           {/* Backdrop */}
-          <div 
+          <div
             className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
             onClick={() => setIsMobileMenuOpen(false)}
           />
@@ -437,7 +437,7 @@ export default function AdminNav() {
                   </Link>
                 );
               })}
-              
+
               {/* User section */}
               {user && (
                 <div className="border-t border-gray-200 mt-4 pt-4">
@@ -480,7 +480,7 @@ export default function AdminNav() {
                     <LayoutDashboard className="h-4 w-4 mr-3" />
                     {t('nav.dashboard')}
                   </Link>
-                  <button 
+                  <button
                     onClick={() => {
                       setShowUserMenu(false);
                       setIsMobileMenuOpen(false);

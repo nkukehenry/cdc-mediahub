@@ -44,6 +44,7 @@ export interface IEmailService {
   sendAccountBlockedEmail(to: string, username: string): Promise<boolean>;
   sendAccountUnblockedEmail(to: string, username: string): Promise<boolean>;
   sendPasswordChangedEmail(to: string, username: string): Promise<boolean>;
+  sendPublicationRejectedEmail(to: string, username: string, postTitle: string, reason: string): Promise<boolean>;
 }
 
 export class EmailService implements IEmailService {
@@ -84,8 +85,8 @@ export class EmailService implements IEmailService {
         hasEXCHANGE_EMAIL_TENANT_ID: !!process.env.EXCHANGE_EMAIL_TENANT_ID,
         hasMICROSOFT_GRAPH_TENANT_ID: !!process.env.MICROSOFT_GRAPH_TENANT_ID,
       };
-      
-      this.logger.info('Initializing email service', { 
+
+      this.logger.info('Initializing email service', {
         provider: this.config.provider,
         enabled: this.config.enabled,
         hasGraphConfig: !!(this.config.graphClientId && this.config.graphClientSecret && this.config.graphTenantId),
@@ -106,8 +107,8 @@ export class EmailService implements IEmailService {
         }
       } else {
         // Provider is 'smtp' or not set
-        if (this.config.provider !== 'smtp' && 
-            this.config.graphClientId && this.config.graphClientSecret && this.config.graphTenantId) {
+        if (this.config.provider !== 'smtp' &&
+          this.config.graphClientId && this.config.graphClientSecret && this.config.graphTenantId) {
           // If provider is not explicitly set, but we have Graph config, use Graph
           this.logger.warn('Provider not explicitly set to microsoft-graph, but Graph config found. Using Microsoft Graph.');
           await this.initializeMicrosoftGraph();
@@ -140,7 +141,7 @@ export class EmailService implements IEmailService {
       if (!this.config.graphClientId) missing.push('CLIENT_ID');
       if (!this.config.graphClientSecret) missing.push('CLIENT_SECRET');
       if (!this.config.graphTenantId) missing.push('TENANT_ID');
-      
+
       throw new Error(`Microsoft Graph configuration incomplete. Missing: ${missing.join(', ')}. Please set one of: EXCHANGE_EMAIL_${missing[0]}, MICROSOFT_GRAPH_${missing[0]}, or GRAPH_${missing[0]} (and corresponding values for all three)`);
     }
 
@@ -237,9 +238,9 @@ export class EmailService implements IEmailService {
         return false;
       }
     } catch (error) {
-      this.logger.error('Failed to send email', error as Error, { 
-        to: options.to, 
-        subject: options.subject 
+      this.logger.error('Failed to send email', error as Error, {
+        to: options.to,
+        subject: options.subject
       });
       return false;
     }
@@ -286,9 +287,9 @@ export class EmailService implements IEmailService {
     );
 
     if (result) {
-      this.logger.info('Email sent successfully via Microsoft Graph API', { 
-        to: options.to, 
-        subject: options.subject 
+      this.logger.info('Email sent successfully via Microsoft Graph API', {
+        to: options.to,
+        subject: options.subject
       });
     }
 
@@ -301,7 +302,7 @@ export class EmailService implements IEmailService {
     }
 
     const mailOptions = {
-      from: this.config.fromName 
+      from: this.config.fromName
         ? `${this.config.fromName} <${this.config.fromEmail}>`
         : this.config.fromEmail,
       replyTo: this.config.replyTo || this.config.fromEmail,
@@ -315,10 +316,10 @@ export class EmailService implements IEmailService {
     };
 
     const info = await this.transporter.sendMail(mailOptions);
-    this.logger.info('Email sent successfully via SMTP', { 
-      to: options.to, 
+    this.logger.info('Email sent successfully via SMTP', {
+      to: options.to,
       subject: options.subject,
-      messageId: info.messageId 
+      messageId: info.messageId
     });
     return true;
   }
@@ -338,7 +339,7 @@ export class EmailService implements IEmailService {
       .trim();
   }
 
-  async sendPasswordResetEmail(to: string, username: string, tempPassword: string): Promise<boolean> {
+  async sendPasswordResetEmail(to: string, username: string, resetUrl: string): Promise<boolean> {
     const html = `
       <!DOCTYPE html>
       <html>
@@ -347,25 +348,28 @@ export class EmailService implements IEmailService {
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #0066cc; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; background-color: #f9f9f9; }
-          .password-box { background-color: #fff; border: 2px solid #0066cc; padding: 15px; margin: 20px 0; text-align: center; font-size: 18px; font-weight: bold; font-family: monospace; }
+          .header { background-color: #22c55e; color: white; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+          .content { padding: 30px; background-color: #f9f9f9; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+          .button { display: inline-block; padding: 12px 24px; background-color: #22c55e; color: #ffffff !important; text-decoration: none; border-radius: 4px; font-weight: bold; margin: 20px 0; }
           .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          .reset-link { word-break: break-all; color: #22c55e; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>Password Reset</h1>
+            <h1>Password Reset Request</h1>
           </div>
           <div class="content">
             <p>Hello ${username},</p>
-            <p>Your password has been reset. Please use the following temporary password to log in:</p>
-            <div class="password-box">
-              ${tempPassword}
+            <p>We received a request to reset your password for your <strong>CDC MediaHub</strong> account. If you didn't make this request, you can safely ignore this email.</p>
+            <p>To reset your password, click the button below:</p>
+            <div style="text-align: center;">
+              <a href="${resetUrl}" class="button">Reset Password</a>
             </div>
-            <p><strong>Important:</strong> Please change this password immediately after logging in for security purposes.</p>
-            <p>If you did not request this password reset, please contact support immediately.</p>
+            <p>Or copy and paste this link into your browser:</p>
+            <p class="reset-link">${resetUrl}</p>
+            <p>This link will expire in 1 hour.</p>
           </div>
           <div class="footer">
             <p>This is an automated message. Please do not reply to this email.</p>
@@ -377,13 +381,13 @@ export class EmailService implements IEmailService {
 
     return this.sendEmail({
       to,
-      subject: 'Password Reset - Temporary Password',
+      subject: 'Password Reset Request - CDC MediaHub',
       html,
     });
   }
 
   async sendWelcomeEmail(to: string, username: string, password?: string): Promise<boolean> {
-    const passwordSection = password 
+    const passwordSection = password
       ? `
         <p>Your account has been created with the following credentials:</p>
         <div class="password-box">
@@ -549,6 +553,51 @@ export class EmailService implements IEmailService {
     return this.sendEmail({
       to,
       subject: 'Password Changed',
+      html,
+    });
+  }
+
+  async sendPublicationRejectedEmail(to: string, username: string, postTitle: string, reason: string): Promise<boolean> {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #ef4444; color: white; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+          .content { padding: 30px; background-color: #f9f9f9; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+          .reason-box { background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; font-style: italic; }
+          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          .brand { color: #22c55e; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Publication Rejected</h1>
+          </div>
+          <div class="content">
+            <p>Hello ${username},</p>
+            <p>Thank you for your submission to <span class="brand">CDC MediaHub</span>.</p>
+            <p>We regret to inform you that your publication titled "<strong>${postTitle}</strong>" has been rejected for the following reason:</p>
+            <div class="reason-box">
+              ${reason}
+            </div>
+            <p>You can review and edit your publication to address these points and resubmit it for approval.</p>
+          </div>
+          <div class="footer">
+            <p>This is an automated message from CDC MediaHub. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return this.sendEmail({
+      to,
+      subject: `Publication Rejected: ${postTitle}`,
       html,
     });
   }

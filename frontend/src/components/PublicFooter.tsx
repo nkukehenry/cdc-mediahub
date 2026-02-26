@@ -70,7 +70,7 @@ export default function PublicFooter() {
   // Flickr icon as SVG since it's not in lucide-react
   const FlickrIcon = () => (
     <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M7.5 8.5c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5zm9 0c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5z"/>
+      <path d="M7.5 8.5c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5zm9 0c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5z" />
     </svg>
   );
 
@@ -83,10 +83,10 @@ export default function PublicFooter() {
             {/* Logo */}
             <div className="flex items-center mb-4">
               {settings?.logo ? (
-                <img 
-                  src={getImageUrl(settings.logo)} 
-                  alt={settings?.site?.name || 'Site Logo'} 
-                  className="h-12 md:h-16 w-auto mr-3 object-contain rounded-md"
+                <img
+                  src={getImageUrl(settings.logo)}
+                  alt={settings?.site?.name || 'Site Logo'}
+                  className="h-12 md:h-16 w-auto mr-3 object-contain rounded-md logo-white"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     if (!target.src.includes(PLACEHOLDER_IMAGE_PATH)) {
@@ -95,14 +95,14 @@ export default function PublicFooter() {
                   }}
                 />
               ) : (
-                <img 
-                  src="./logo.png" 
-                  alt="Site Logo" 
-                  className="h-12 md:h-16 w-auto mr-3 rounded-md"
+                <img
+                  src="./logo.png"
+                  alt="Site Logo"
+                  className="h-12 md:h-16 w-auto mr-3 rounded-md logo-white"
                 />
               )}
             </div>
-            
+
             {/* Descriptive Text */}
             <p className="text-gray-500 font-semibold text-sm md:text-base">
               {settings?.site?.name || settings?.site?.tagline || 'Africa CDC Digital Media Hub (DMH)'}

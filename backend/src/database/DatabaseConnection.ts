@@ -1,10 +1,10 @@
 import mysql from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
-import { 
-  IFileRepository, 
+import {
+  IFileRepository,
   IFolderRepository,
-  FileEntity, 
+  FileEntity,
   FolderEntity,
   CreateFileData,
   CreateFolderData
@@ -42,7 +42,8 @@ export class DatabaseConnection {
           connectionLimit: 10,
           queueLimit: 0,
           enableKeepAlive: true,
-          keepAliveInitialDelay: 0
+          keepAliveInitialDelay: 0,
+          timezone: 'Z'
         });
       } catch (error) {
         this.logger.error('Failed to parse connection string', error as Error);
@@ -59,7 +60,8 @@ export class DatabaseConnection {
         connectionLimit: 10,
         queueLimit: 0,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 0
+        keepAliveInitialDelay: 0,
+        timezone: 'Z'
       });
     }
     // Don't call initializeTables here - it will be called after DatabaseUtils.initialize()
@@ -101,12 +103,12 @@ export class DatabaseConnection {
       const foldersHasUserId = await this.columnExists('folders', 'user_id');
       const foldersHasAccessType = await this.columnExists('folders', 'access_type');
       const foldersHasIsPublic = await this.columnExists('folders', 'is_public');
-      
+
       if (!foldersHasUserId) {
         await DatabaseUtils.executeQuery(`ALTER TABLE folders ADD COLUMN user_id VARCHAR(36)`);
         this.logger.info('Added user_id column to folders table');
       }
-      
+
       if (!foldersHasAccessType) {
         await DatabaseUtils.executeQuery(`ALTER TABLE folders ADD COLUMN access_type VARCHAR(20) DEFAULT 'private'`);
         this.logger.info('Added access_type column to folders table');
@@ -119,12 +121,12 @@ export class DatabaseConnection {
       // Migrate files table
       const filesHasUserId = await this.columnExists('files', 'user_id');
       const filesHasAccessType = await this.columnExists('files', 'access_type');
-      
+
       if (!filesHasUserId) {
         await DatabaseUtils.executeQuery(`ALTER TABLE files ADD COLUMN user_id VARCHAR(36)`);
         this.logger.info('Added user_id column to files table');
       }
-      
+
       if (!filesHasAccessType) {
         await DatabaseUtils.executeQuery(`ALTER TABLE files ADD COLUMN access_type VARCHAR(20) DEFAULT 'private'`);
         this.logger.info('Added access_type column to files table');
@@ -755,7 +757,7 @@ export class DatabaseConnection {
       // Default roles (using fixed UUIDs)
       const adminRoleId = '00000000-0000-0000-0000-000000000001';
       const authorRoleId = '00000000-0000-0000-0000-000000000002';
-      
+
       await DatabaseUtils.executeQuery(`
         INSERT IGNORE INTO roles (id, name, slug, description, created_at, updated_at) VALUES
         (?, 'Admin', 'admin', 'Administrator with full access', NOW(), NOW()),
@@ -790,8 +792,8 @@ export class DatabaseConnection {
       }
 
       // Assign basic permissions to author role
-      const authorPerms = permissions.filter(p => 
-        p.slug.startsWith('posts:create') || 
+      const authorPerms = permissions.filter(p =>
+        p.slug.startsWith('posts:create') ||
         p.slug.startsWith('posts:edit') ||
         p.slug.startsWith('files:manage')
       );
@@ -805,13 +807,13 @@ export class DatabaseConnection {
       // Create default admin user (password: admin123)
       const adminUserId = '20000000-0000-0000-0000-000000000001';
       const adminPasswordHash = await bcrypt.hash('admin123', 10);
-      
+
       // Check if admin user already exists
       const existingAdmin = await DatabaseUtils.findOne<any>(
         'SELECT id FROM users WHERE id = ? OR email = ?',
         [adminUserId, 'admin@example.com']
       );
-      
+
       if (!existingAdmin) {
         // Use DatabaseUtils for parameterized queries
         await DatabaseUtils.executeQuery(
@@ -826,7 +828,7 @@ export class DatabaseConnection {
           (?, ?, ?, NOW())
         `, [userRoleId, adminUserId, adminRoleId]);
 
-        this.logger.info('Default admin user created with admin role (all permissions)', { 
+        this.logger.info('Default admin user created with admin role (all permissions)', {
           email: 'admin@example.com',
           username: 'admin',
           role: 'admin'
@@ -837,7 +839,7 @@ export class DatabaseConnection {
           'SELECT ur.id FROM user_roles ur WHERE ur.user_id = ? AND ur.role_id = ?',
           [adminUserId, adminRoleId]
         );
-        
+
         if (!existingRole) {
           const userRoleId = DatabaseUtils.generateId();
           await DatabaseUtils.executeQuery(`

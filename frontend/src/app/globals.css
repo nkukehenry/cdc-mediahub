@@ -137,6 +137,10 @@
   animation: loadingShimmer 1.5s ease-in-out infinite;
 }
 
+.logo-white {
+  filter: brightness(0) invert(1);
+}
+
 /* Custom scrollbar styles */
 .scrollbar-thin {
   scrollbar-width: thin;

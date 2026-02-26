@@ -59,7 +59,7 @@ export class FileManagerServer {
   private dbConnection!: DatabaseConnection;
   private cacheService: any;
   private cacheStrategy: FileManagerCacheStrategy;
-  
+
   // Repositories
   private fileRepository!: FileRepository;
   private folderRepository!: FolderRepository;
@@ -76,7 +76,7 @@ export class FileManagerServer {
   private folderShareRepository!: FolderShareRepository;
   private settingsRepository!: SettingsRepository;
   private tagRepository!: TagRepository;
-  
+
   // Services
   private fileService!: FileService;
   private folderService!: FolderService;
@@ -238,7 +238,11 @@ export class FileManagerServer {
     const appConfig = this.config.getConfig();
     this.logger.info('Upload config', { maxFileSize: appConfig.maxFileSize, allowedMimeTypes: appConfig.allowedMimeTypes });
     const jwtSecret = process.env.JWT_SECRET || 'default-secret-change-me';
-    
+
+    // Email Service
+    const emailConfig = this.config.getEmailConfig();
+    this.emailService = new EmailService(emailConfig);
+
     this.fileService = new FileService(
       appConfig.uploadPath,
       appConfig.thumbnailPath,
@@ -251,6 +255,7 @@ export class FileManagerServer {
       this.userRepository,
       this.roleRepository,
       this.permissionRepository,
+      this.emailService,
       jwtSecret
     );
     this.postService = new PostService(
@@ -260,7 +265,8 @@ export class FileManagerServer {
       this.fileRepository,
       this.tagRepository,
       this.postLikeRepository,
-      this.postCommentRepository
+      this.postCommentRepository,
+      this.emailService
     );
     this.categoryService = new CategoryService(this.categoryRepository);
     this.subcategoryService = new SubcategoryService(this.subcategoryRepository);
@@ -268,11 +274,9 @@ export class FileManagerServer {
     this.analyticsService = new AnalyticsService();
     this.youtubeService = new YouTubeService(this.cacheService);
     this.settingsService = new SettingsService(this.settingsRepository);
-    
-    // Email Service
-    const emailConfig = this.config.getEmailConfig();
-    this.emailService = new EmailService(emailConfig);
-    
+
+
+
     this.userService = new UserService(this.userRepository, this.roleRepository, this.emailService);
     this.recaptchaService = new RecaptchaService(this.config);
 
@@ -378,7 +382,7 @@ export class FileManagerServer {
   private setupRoutes(): void {
     try {
       this.logger.info('Setting up routes...');
-      
+
       // Verify controllers are initialized
       if (!this.authController) {
         throw new Error('AuthController is not initialized');
@@ -386,2547 +390,2554 @@ export class FileManagerServer {
       if (!this.authMiddleware) {
         throw new Error('AuthMiddleware is not initialized');
       }
-      
-    /**
-     * @swagger
-     * /health:
-     *   get:
-     *     summary: Health check
-     *     description: Check if the server is running and healthy
-     *     tags: [Health]
-     *     responses:
-     *       200:
-     *         description: Server is healthy
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/HealthResponse'
-     */
-    this.app.get('/health', (req, res) => {
-      res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-    });
 
-    // Serve static files from uploads directory
-    const appConfig = this.config.getConfig();
-    const uploadPath = path.resolve(appConfig.uploadPath);
-    
-    // Handle OPTIONS preflight requests for static files
-    this.app.options('/uploads/:filename(*)', (req, res) => {
-      const serverConfig = this.config.getServerConfig();
-      res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
-      res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
-      res.status(204).end();
-    });
+      /**
+       * @swagger
+       * /health:
+       *   get:
+       *     summary: Health check
+       *     description: Check if the server is running and healthy
+       *     tags: [Health]
+       *     responses:
+       *       200:
+       *         description: Server is healthy
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/HealthResponse'
+       */
+      this.app.get('/health', (req, res) => {
+        res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+      });
 
-    // Handle OPTIONS preflight requests for thumbnail files
-    this.app.options('/thumbnails/:filename(*)', (req, res) => {
-      const serverConfig = this.config.getServerConfig();
-      res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
-      res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
-      res.status(204).end();
-    });
+      // Serve static files from uploads directory
+      const appConfig = this.config.getConfig();
+      const uploadPath = path.resolve(appConfig.uploadPath);
 
-    // Serve static files from uploads directory
-    this.app.get('/uploads/:filename(*)', async (req, res): Promise<void> => {
-      try {
+      // Handle OPTIONS preflight requests for static files
+      this.app.options('/uploads/:filename(*)', (req, res) => {
         const serverConfig = this.config.getServerConfig();
-        const filename = req.params.filename;
-        const filePath = path.join(uploadPath, filename);
-        
-        // Security: Ensure the file path is within the uploads directory
-        const resolvedPath = path.resolve(filePath);
-        if (!resolvedPath.startsWith(path.resolve(uploadPath))) {
-          this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
-          res.status(403).json({ error: 'Access denied' });
-          return;
-        }
-        
-        // Check if file exists
-        try {
-          await fs.promises.access(filePath);
-        } catch {
-          this.logger.debug('File not found', { filePath });
-          res.status(404).json({ error: 'File not found' });
-          return;
-        }
-        
-        // Get file stats
-        const stats = await fs.promises.stat(filePath);
-        if (!stats.isFile()) {
-          res.status(404).json({ error: 'File not found' });
-          return;
-        }
-        
-        // Set CORS headers explicitly
         res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
-        if (serverConfig.cors.credentials) {
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-        }
-        
-        // Set appropriate headers
-        res.setHeader('Content-Type', this.getContentType(filename));
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
-        
-        // Send file
-        const fileStream = fs.createReadStream(filePath);
-        fileStream.on('error', (error) => {
-          this.logger.error('Error streaming file', error);
-          if (!res.headersSent) {
-            res.status(500).json({ error: 'Internal server error' });
-          }
-        });
-        fileStream.pipe(res);
-        
-        this.logger.debug('Served static file', { filename, filePath });
-      } catch (error) {
-        this.logger.error('Error serving static file', error as Error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Internal server error' });
-        }
-      }
-    });
+        res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
+        res.status(204).end();
+      });
 
-    // Serve static files from thumbnails directory (if separate from uploads)
-    this.app.get('/thumbnails/:filename(*)', async (req, res): Promise<void> => {
-      try {
+      // Handle OPTIONS preflight requests for thumbnail files
+      this.app.options('/thumbnails/:filename(*)', (req, res) => {
         const serverConfig = this.config.getServerConfig();
-        const appConfig = this.config.getConfig();
-        const thumbnailPath = appConfig.thumbnailPath;
-        const filename = req.params.filename;
-        const filePath = path.join(thumbnailPath, filename);
-        
-        // Security: Ensure the file path is within the thumbnails directory
-        const resolvedPath = path.resolve(filePath);
-        if (!resolvedPath.startsWith(path.resolve(thumbnailPath))) {
-          this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
-          res.status(403).json({ error: 'Access denied' });
-          return;
-        }
-        
-        // Check if file exists
-        try {
-          await fs.promises.access(filePath);
-        } catch {
-          this.logger.debug('Thumbnail file not found', { filePath });
-          res.status(404).json({ error: 'File not found' });
-          return;
-        }
-        
-        // Get file stats
-        const stats = await fs.promises.stat(filePath);
-        if (!stats.isFile()) {
-          res.status(404).json({ error: 'File not found' });
-          return;
-        }
-        
-        // Set CORS headers explicitly
         res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
-        if (serverConfig.cors.credentials) {
-          res.setHeader('Access-Control-Allow-Credentials', 'true');
-        }
-        
-        // Set appropriate headers
-        res.setHeader('Content-Type', this.getContentType(filename));
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
-        
-        // Send file
-        const fileStream = fs.createReadStream(filePath);
-        fileStream.on('error', (error) => {
-          this.logger.error('Error streaming thumbnail file', error);
+        res.setHeader('Access-Control-Allow-Credentials', serverConfig.cors.credentials ? 'true' : 'false');
+        res.status(204).end();
+      });
+
+      // Serve static files from uploads directory
+      this.app.get('/uploads/:filename(*)', async (req, res): Promise<void> => {
+        try {
+          const serverConfig = this.config.getServerConfig();
+          const filename = req.params.filename;
+          const filePath = path.join(uploadPath, filename);
+
+          // Security: Ensure the file path is within the uploads directory
+          const resolvedPath = path.resolve(filePath);
+          if (!resolvedPath.startsWith(path.resolve(uploadPath))) {
+            this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
+            res.status(403).json({ error: 'Access denied' });
+            return;
+          }
+
+          // Check if file exists
+          try {
+            await fs.promises.access(filePath);
+          } catch {
+            this.logger.debug('File not found', { filePath });
+            res.status(404).json({ error: 'File not found' });
+            return;
+          }
+
+          // Get file stats
+          const stats = await fs.promises.stat(filePath);
+          if (!stats.isFile()) {
+            res.status(404).json({ error: 'File not found' });
+            return;
+          }
+
+          // Set CORS headers explicitly
+          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+          if (serverConfig.cors.credentials) {
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+          }
+
+          // Set appropriate headers
+          res.setHeader('Content-Type', this.getContentType(filename));
+          res.setHeader('Content-Length', stats.size);
+          res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+          // Send file
+          const fileStream = fs.createReadStream(filePath);
+          fileStream.on('error', (error) => {
+            this.logger.error('Error streaming file', error);
+            if (!res.headersSent) {
+              res.status(500).json({ error: 'Internal server error' });
+            }
+          });
+          fileStream.pipe(res);
+
+          this.logger.debug('Served static file', { filename, filePath });
+        } catch (error) {
+          this.logger.error('Error serving static file', error as Error);
           if (!res.headersSent) {
             res.status(500).json({ error: 'Internal server error' });
           }
-        });
-        fileStream.pipe(res);
-        
-        this.logger.debug('Served thumbnail file', { filename, filePath });
-      } catch (error) {
-        this.logger.error('Error serving thumbnail file', error as Error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Internal server error' });
         }
-      }
-    });
+      });
 
-    // File routes
-    /**
-     * @swagger
-     * /api/files/upload:
-     *   post:
-     *     summary: Upload a file
-     *     description: Upload a file to the file system
-     *     tags: [Files]
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         multipart/form-data:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               file:
-     *                 type: string
-     *                 format: binary
-     *                 description: The file to upload
-     *               folderId:
-     *                 type: string
-     *                 format: uuid
-     *                 description: Optional folder ID to upload to
-     *             required:
-     *               - file
-     *     responses:
-     *       201:
-     *         description: File uploaded successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         file:
-     *                           $ref: '#/components/schemas/File'
-     *       400:
-     *         description: Validation error or file too large
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       422:
-     *         description: Upload error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    // File upload requires authentication
-    this.app.post('/api/files/upload', 
-      this.authMiddleware.authenticate,
-      (req, res) => {
-      this.handleFileUpload(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/{id}/download:
-     *   get:
-     *     summary: Download a file
-     *     description: Download a file by its ID
-     *     tags: [Files]
-     *     parameters:
-     *       - $ref: '#/components/parameters/FileId'
-     *     responses:
-     *       200:
-     *         description: File downloaded successfully
-     *         content:
-     *           application/octet-stream:
-     *             schema:
-     *               type: string
-     *               format: binary
-     *       404:
-     *         description: File not found
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    // File download - public endpoint (access control handled downstream if needed)
-    this.app.get('/api/files/:id/download',
-      (req, res) => {
-        this.handleFileDownload(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/extract-thumbnail:
-     *   post:
-     *     summary: Extract thumbnail from video
-     *     description: Extract a thumbnail frame from an uploaded video file or YouTube URL at a specific timestamp
-     *     tags: [Files]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               fileId:
-     *                 type: string
-     *                 description: ID of the uploaded video file
-     *               youtubeUrl:
-     *                 type: string
-     *                 description: YouTube video URL
-     *               timestamp:
-     *                 type: number
-     *                 description: Timestamp in seconds (default: 1)
-     *             oneOf:
-     *               - required: [fileId]
-     *               - required: [youtubeUrl]
-     *     responses:
-     *       200:
-     *         description: Thumbnail extracted successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         thumbnailPath:
-     *                           type: string
-     *                         thumbnailUrl:
-     *                           type: string
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       500:
-     *         description: Internal server error
-     */
-    this.app.post('/api/files/extract-thumbnail',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.handleExtractVideoThumbnail(req, res);
-      }
-    );
-
-    // File preview - public endpoint with token query param (for Google Docs viewer)
-    this.app.get('/api/files/:id/preview', 
-      (req, res) => {
-        this.handleFilePreview(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files:
-     *   get:
-     *     summary: List files
-     *     description: Get a list of files, optionally filtered by folder
-     *     tags: [Files]
-     *     parameters:
-     *       - $ref: '#/components/parameters/FolderIdQuery'
-     *     responses:
-     *       200:
-     *         description: List of files
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         files:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/File'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    // File list - public access (filters by access in service)
-    this.app.get('/api/files', 
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-      this.handleFileList(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/search:
-     *   get:
-     *     summary: Search files
-     *     description: Search files by name
-     *     tags: [Files]
-     *     parameters:
-     *       - $ref: '#/components/parameters/SearchQuery'
-     *     responses:
-     *       200:
-     *         description: Search results
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         files:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/File'
-     *       400:
-     *         description: Search query required
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    // File search - public access (filters by access in service)
-    this.app.get('/api/files/search', 
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-      this.handleFileSearch(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/shared:
-     *   get:
-     *     summary: Get files shared with the current user
-     *     description: Returns all files that have been explicitly shared with the authenticated user
-     *     tags: [Files]
-     *     security:
-     *       - bearerAuth: []
-     *     responses:
-     *       200:
-     *         description: List of shared files
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         files:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/File'
-     *       401:
-     *         description: Unauthorized
-     */
-    this.app.get('/api/files/shared', 
-      this.authMiddleware.authenticate,
-      async (req, res) => {
+      // Serve static files from thumbnails directory (if separate from uploads)
+      this.app.get('/thumbnails/:filename(*)', async (req, res): Promise<void> => {
         try {
-          const userId = (req as any).user?.userId;
-          if (!userId) {
-            return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+          const serverConfig = this.config.getServerConfig();
+          const appConfig = this.config.getConfig();
+          const thumbnailPath = appConfig.thumbnailPath;
+          const filename = req.params.filename;
+          const filePath = path.join(thumbnailPath, filename);
+
+          // Security: Ensure the file path is within the thumbnails directory
+          const resolvedPath = path.resolve(filePath);
+          if (!resolvedPath.startsWith(path.resolve(thumbnailPath))) {
+            this.logger.warn('Attempted path traversal attack', { requestedPath: filePath, resolvedPath });
+            res.status(403).json({ error: 'Access denied' });
+            return;
           }
 
-          const cacheId = 'shared';
-          const cached = await this.cacheGet<any[]>('files', cacheId, userId);
-          const files = cached ?? await this.fileService.getFilesSharedWithUser(userId);
-          // Resolve creators in batch
-          const ownerIds = Array.from(new Set(files.map(f => f.userId).filter(Boolean))) as string[];
-          const ownersMap: Record<string, any> = {};
-          for (const oid of ownerIds) {
-            const u = await this.userRepository.findById(oid);
-            if (u) ownersMap[oid] = u;
+          // Check if file exists
+          try {
+            await fs.promises.access(filePath);
+          } catch {
+            this.logger.debug('Thumbnail file not found', { filePath });
+            res.status(404).json({ error: 'File not found' });
+            return;
           }
-          const filesWithUrls = files.map(file => {
-            const owner = file.userId ? ownersMap[file.userId] : undefined;
-            return {
-              ...file,
-              createdBy: owner ? { id: owner.id, username: owner.username } : null,
-              sharedBy: owner ? { id: owner.id, username: owner.username } : null,
-              downloadUrl: `${req.protocol}://${req.get('host')}/api/files/${file.id}/download`,
-              thumbnailUrl: file.thumbnailPath ? `${req.protocol}://${req.get('host')}/${file.thumbnailPath.replace(/\\/g, '/')}` : null
-            };
+
+          // Get file stats
+          const stats = await fs.promises.stat(filePath);
+          if (!stats.isFile()) {
+            res.status(404).json({ error: 'File not found' });
+            return;
+          }
+
+          // Set CORS headers explicitly
+          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
+          if (serverConfig.cors.credentials) {
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+          }
+
+          // Set appropriate headers
+          res.setHeader('Content-Type', this.getContentType(filename));
+          res.setHeader('Content-Length', stats.size);
+          res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+          // Send file
+          const fileStream = fs.createReadStream(filePath);
+          fileStream.on('error', (error) => {
+            this.logger.error('Error streaming thumbnail file', error);
+            if (!res.headersSent) {
+              res.status(500).json({ error: 'Internal server error' });
+            }
           });
-          if (!cached) await this.cacheSet('files', cacheId, filesWithUrls, userId);
-          return res.json({ success: true, data: { files: filesWithUrls } });
+          fileStream.pipe(res);
+
+          this.logger.debug('Served thumbnail file', { filename, filePath });
         } catch (error) {
-          this.logger.error('Shared files fetch failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          this.logger.error('Error serving thumbnail file', error as Error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error' });
+          }
         }
-      }
-    );
+      });
 
-    /**
-     * @swagger
-     * /api/files/{id}/rename:
-     *   put:
-     *     summary: Rename a file
-     *     description: Update the display name of a file. Only the file owner or an administrator can rename a file.
-     *     tags: [Files]
-     *     security:
-     *       - bearerAuth: []
-     *     parameters:
-     *       - $ref: '#/components/parameters/FileId'
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               name:
-     *                 type: string
-     *                 description: New file name (extension optional)
-     *     responses:
-     *       200:
-     *         description: File renamed successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         file:
-     *                           $ref: '#/components/schemas/File'
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       404:
-     *         description: File not found
-     *       500:
-     *         description: Internal server error
-     */
-    this.app.put('/api/files/:id/rename',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.handleFileRename(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/{id}:
-     *   delete:
-     *     summary: Delete a file
-     *     description: Delete a file by its ID
-     *     tags: [Files]
-     *     parameters:
-     *       - $ref: '#/components/parameters/FileId'
-     *     responses:
-     *       200:
-     *         description: File deleted successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         deleted:
-     *                           type: boolean
-     *       404:
-     *         description: File not found
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    // File delete requires authentication and ownership
-    this.app.delete('/api/files/:id', 
-      this.authMiddleware.authenticate,
-      (req, res) => {
-      this.handleFileDelete(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/files/move:
-     *   post:
-     *     summary: Move files to a destination folder
-     *     description: Move one or more files to a destination folder. Pass null to move to root.
-     *     tags: [Files]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               fileIds:
-     *                 type: array
-     *                 items:
-     *                   type: string
-     *               destinationFolderId:
-     *                 type: string
-     *                 nullable: true
-     *     responses:
-     *       200:
-     *         description: Files moved successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         moved:
-     *                           type: number
-     *       400:
-     *         description: Validation error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       401:
-     *         description: Unauthorized
-     *       500:
-     *         description: Internal server error
-     */
-    /**
-     * @swagger
-     * /api/files/{id}/share:
-     *   post:
-     *     summary: Share file with multiple users
-     *     description: Share a file with one or more users
-     *     tags: [Files]
-     *     security:
-     *       - bearerAuth: []
-     *     parameters:
-     *       - $ref: '#/components/parameters/FileId'
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               userIds:
-     *                 type: array
-     *                 items:
-     *                   type: string
-     *               accessLevel:
-     *                 type: string
-     *                 enum: [read, write]
-     *                 default: read
-     *     responses:
-     *       200:
-     *         description: File shared successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         shares:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/FileShare'
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       500:
-     *         description: Internal server error
-     */
-    this.app.post('/api/files/:id/share', 
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const { id } = req.params;
-          const { userIds, accessLevel = 'read' } = req.body || {};
-          const userId = (req as any).user?.userId;
-
-          if (!userId) {
-            return res.status(401).json({
-              success: false,
-              error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
-            });
-          }
-
-          if (!Array.isArray(userIds) || userIds.length === 0) {
-            return res.status(400).json({
-              success: false,
-              error: { message: 'userIds must be a non-empty array', code: 'VALIDATION_ERROR' }
-            });
-          }
-
-          const shares = await this.fileService.shareFileWithUsers(id, userId, userIds, accessLevel);
-          
-          // Evict caches for owner and recipients
-          await this.cacheDelPattern('files', userId);
-          for (const recipientId of userIds) {
-            await this.cacheDelPattern('files', recipientId);
-          }
-
-          return res.json({
-            success: true,
-            data: { shares }
-          });
-        } catch (error) {
-          this.logger.error('File share failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+      // File routes
+      /**
+       * @swagger
+       * /api/files/upload:
+       *   post:
+       *     summary: Upload a file
+       *     description: Upload a file to the file system
+       *     tags: [Files]
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         multipart/form-data:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               file:
+       *                 type: string
+       *                 format: binary
+       *                 description: The file to upload
+       *               folderId:
+       *                 type: string
+       *                 format: uuid
+       *                 description: Optional folder ID to upload to
+       *             required:
+       *               - file
+       *     responses:
+       *       201:
+       *         description: File uploaded successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         file:
+       *                           $ref: '#/components/schemas/File'
+       *       400:
+       *         description: Validation error or file too large
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       422:
+       *         description: Upload error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      // File upload requires authentication
+      this.app.post('/api/files/upload',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.handleFileUpload(req, res);
         }
-      }
-    );
+      );
 
-    /**
-     * @swagger
-     * /api/folders/{id}/share:
-     *   post:
-     *     summary: Share folder with multiple users
-     *     description: Share a folder with one or more users (makes folder writable by invited users)
-     *     tags: [Folders]
-     *     security:
-     *       - bearerAuth: []
-     *     parameters:
-     *       - in: path
-     *         name: id
-     *         required: true
-     *         schema:
-     *           type: string
-     *         description: Folder ID
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               userIds:
-     *                 type: array
-     *                 items:
-     *                   type: string
-     *               accessLevel:
-     *                 type: string
-     *                 enum: [read, write]
-     *                 default: write
-     *     responses:
-     *       200:
-     *         description: Folder shared successfully
-     *       400:
-     *         description: Bad request
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden
-     *       500:
-     *         description: Internal server error
-     */
-    this.app.post('/api/folders/:id/share', 
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const { id } = req.params;
-          const { userIds, accessLevel = 'write' } = req.body || {};
-          const userId = (req as any).user?.userId;
-
-          if (!userId) {
-            return res.status(401).json({
-              success: false,
-              error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
-            });
-          }
-
-          if (!Array.isArray(userIds) || userIds.length === 0) {
-            return res.status(400).json({
-              success: false,
-              error: { message: 'userIds must be a non-empty array', code: 'VALIDATION_ERROR' }
-            });
-          }
-
-          const shares = await this.folderService.shareFolderWithUsers(id, userId, userIds, accessLevel);
-          
-          // Evict caches for owner and recipients
-          await this.cacheDelPattern('folders', userId);
-          await this.cacheDelPattern('folders-tree', userId);
-          for (const recipientId of userIds) {
-            await this.cacheDelPattern('folders', recipientId);
-            await this.cacheDelPattern('folders-tree', recipientId);
-          }
-
-          return res.json({
-            success: true,
-            data: { shares }
-          });
-        } catch (error) {
-          this.logger.error('Folder share failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+      /**
+       * @swagger
+       * /api/files/{id}/download:
+       *   get:
+       *     summary: Download a file
+       *     description: Download a file by its ID
+       *     tags: [Files]
+       *     parameters:
+       *       - $ref: '#/components/parameters/FileId'
+       *     responses:
+       *       200:
+       *         description: File downloaded successfully
+       *         content:
+       *           application/octet-stream:
+       *             schema:
+       *               type: string
+       *               format: binary
+       *       404:
+       *         description: File not found
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      // File download - public endpoint (access control handled downstream if needed)
+      this.app.get('/api/files/:id/download',
+        (req, res) => {
+          this.handleFileDownload(req, res);
         }
-      }
-    );
+      );
 
-    /**
-     * @swagger
-     * /api/folders/shared:
-     *   get:
-     *     summary: Get folders shared with the current user
-     *     description: Returns all folders that have been explicitly shared with the authenticated user
-     *     tags: [Folders]
-     *     security:
-     *       - bearerAuth: []
-     *     responses:
-     *       200:
-     *         description: List of shared folders
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         folders:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/Folder'
-     *       401:
-     *         description: Unauthorized
-     */
-    this.app.get('/api/folders/shared', 
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const userId = (req as any).user?.userId;
-          if (!userId) {
-            return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
-          }
-          const cacheId = 'shared';
-          const cached = await this.cacheGet<any[]>('folders', cacheId, userId);
-          const folders = cached ?? await this.folderService.getFoldersSharedWithUser(userId);
-          // Resolve creators in batch
-          const ownerIds = Array.from(new Set(folders.map((f: any) => f.userId).filter(Boolean))) as string[];
-          const ownersMap: Record<string, any> = {};
-          for (const oid of ownerIds) {
-            const u = await this.userRepository.findById(oid);
-            if (u) ownersMap[oid] = u;
-          }
-          const foldersEnriched = (folders as any[]).map((folder: any) => {
-            const owner = folder.userId ? ownersMap[folder.userId] : undefined;
-            return {
-              ...folder,
-              createdBy: owner ? { id: owner.id, username: owner.username } : null,
-              sharedBy: owner ? { id: owner.id, username: owner.username } : null
-            };
-          });
-          if (!cached) await this.cacheSet('folders', cacheId, foldersEnriched, userId);
-          return res.json({ success: true, data: { folders: foldersEnriched } });
-        } catch (error) {
-          this.logger.error('Shared folders fetch failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+      /**
+       * @swagger
+       * /api/files/extract-thumbnail:
+       *   post:
+       *     summary: Extract thumbnail from video
+       *     description: Extract a thumbnail frame from an uploaded video file or YouTube URL at a specific timestamp
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               fileId:
+       *                 type: string
+       *                 description: ID of the uploaded video file
+       *               youtubeUrl:
+       *                 type: string
+       *                 description: YouTube video URL
+       *               timestamp:
+       *                 type: number
+       *                 description: Timestamp in seconds (default: 1)
+       *             oneOf:
+       *               - required: [fileId]
+       *               - required: [youtubeUrl]
+       *     responses:
+       *       200:
+       *         description: Thumbnail extracted successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         thumbnailPath:
+       *                           type: string
+       *                         thumbnailUrl:
+       *                           type: string
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       500:
+       *         description: Internal server error
+       */
+      this.app.post('/api/files/extract-thumbnail',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.handleExtractVideoThumbnail(req, res);
         }
-      }
-    );
+      );
 
-    /**
-     * @swagger
-     * /api/users:
-     *   get:
-     *     summary: Get all users
-     *     description: Get list of all users for selection (admin only)
-     *     tags: [Users]
-     *     security:
-     *       - bearerAuth: []
-     *     responses:
-     *       200:
-     *         description: List of users
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         users:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/User'
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden
-     */
-    this.app.get('/api/users',
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const userId = (req as any).user?.userId;
-          if (!userId) {
-            return res.status(401).json({
-              success: false,
-              error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
-            });
-          }
-
-          // Get all users except current user
-          const allUsers = await this.userRepository.findAll();
-          const users = allUsers
-            .filter((u: UserEntity) => u.id !== userId)
-            .map((u: UserEntity) => ({
-              id: u.id,
-              username: u.username,
-              email: u.email,
-              firstName: u.firstName,
-              lastName: u.lastName,
-              avatar: u.avatar
-            }));
-
-          return res.json({
-            success: true,
-            data: { users }
-          });
-        } catch (error) {
-          this.logger.error('Get users failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+      // File preview - public endpoint with token query param (for Google Docs viewer)
+      this.app.get('/api/files/:id/preview',
+        (req, res) => {
+          this.handleFilePreview(req, res);
         }
-      }
-    );
+      );
 
-    this.app.post('/api/files/move', 
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const { fileIds, destinationFolderId } = req.body || {};
-          const userId = (req as any).user?.userId;
+      /**
+       * @swagger
+       * /api/files:
+       *   get:
+       *     summary: List files
+       *     description: Get a list of files, optionally filtered by folder
+       *     tags: [Files]
+       *     parameters:
+       *       - $ref: '#/components/parameters/FolderIdQuery'
+       *     responses:
+       *       200:
+       *         description: List of files
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         files:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/File'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      // File list - public access (filters by access in service)
+      this.app.get('/api/files',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.handleFileList(req, res);
+        }
+      );
 
-          if (!Array.isArray(fileIds) || fileIds.length === 0) {
-            return res.status(400).json({
-              success: false,
-              error: { message: 'fileIds must be a non-empty array', code: 'VALIDATION_ERROR' }
+      /**
+       * @swagger
+       * /api/files/search:
+       *   get:
+       *     summary: Search files
+       *     description: Search files by name
+       *     tags: [Files]
+       *     parameters:
+       *       - $ref: '#/components/parameters/SearchQuery'
+       *     responses:
+       *       200:
+       *         description: Search results
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         files:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/File'
+       *       400:
+       *         description: Search query required
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      // File search - public access (filters by access in service)
+      this.app.get('/api/files/search',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.handleFileSearch(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/files/shared:
+       *   get:
+       *     summary: Get files shared with the current user
+       *     description: Returns all files that have been explicitly shared with the authenticated user
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: List of shared files
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         files:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/File'
+       *       401:
+       *         description: Unauthorized
+       */
+      this.app.get('/api/files/shared',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const userId = (req as any).user?.userId;
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+
+            const cacheId = 'shared';
+            const cached = await this.cacheGet<any[]>('files', cacheId, userId);
+            const files = cached ?? await this.fileService.getFilesSharedWithUser(userId);
+            // Resolve creators in batch
+            const ownerIds = Array.from(new Set(files.map(f => f.userId).filter(Boolean))) as string[];
+            const ownersMap: Record<string, any> = {};
+            for (const oid of ownerIds) {
+              const u = await this.userRepository.findById(oid);
+              if (u) ownersMap[oid] = u;
+            }
+            const filesWithUrls = files.map(file => {
+              const owner = file.userId ? ownersMap[file.userId] : undefined;
+              return {
+                ...file,
+                createdBy: owner ? { id: owner.id, username: owner.username } : null,
+                sharedBy: owner ? { id: owner.id, username: owner.username } : null,
+                downloadUrl: `${req.protocol}://${req.get('host')}/api/files/${file.id}/download`,
+                thumbnailUrl: file.thumbnailPath ? `${req.protocol}://${req.get('host')}/${file.thumbnailPath.replace(/\\/g, '/')}` : null
+              };
             });
+            if (!cached) await this.cacheSet('files', cacheId, filesWithUrls, userId);
+            return res.json({ success: true, data: { files: filesWithUrls } });
+          } catch (error) {
+            this.logger.error('Shared files fetch failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
           }
+        }
+      );
 
-          // Validate destination folder if provided (must exist)
-          if (destinationFolderId) {
-            const dest = await this.folderRepository.findById(destinationFolderId);
-            if (!dest) {
-              return res.status(400).json({
+      /**
+       * @swagger
+       * /api/files/{id}/rename:
+       *   put:
+       *     summary: Rename a file
+       *     description: Update the display name of a file. Only the file owner or an administrator can rename a file.
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - $ref: '#/components/parameters/FileId'
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               name:
+       *                 type: string
+       *                 description: New file name (extension optional)
+       *     responses:
+       *       200:
+       *         description: File renamed successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         file:
+       *                           $ref: '#/components/schemas/File'
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       404:
+       *         description: File not found
+       *       500:
+       *         description: Internal server error
+       */
+      this.app.put('/api/files/:id/rename',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.handleFileRename(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/files/{id}:
+       *   delete:
+       *     summary: Delete a file
+       *     description: Delete a file by its ID
+       *     tags: [Files]
+       *     parameters:
+       *       - $ref: '#/components/parameters/FileId'
+       *     responses:
+       *       200:
+       *         description: File deleted successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         deleted:
+       *                           type: boolean
+       *       404:
+       *         description: File not found
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      // File delete requires authentication and ownership
+      this.app.delete('/api/files/:id',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.handleFileDelete(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/files/move:
+       *   post:
+       *     summary: Move files to a destination folder
+       *     description: Move one or more files to a destination folder. Pass null to move to root.
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               fileIds:
+       *                 type: array
+       *                 items:
+       *                   type: string
+       *               destinationFolderId:
+       *                 type: string
+       *                 nullable: true
+       *     responses:
+       *       200:
+       *         description: Files moved successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         moved:
+       *                           type: number
+       *       400:
+       *         description: Validation error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       401:
+       *         description: Unauthorized
+       *       500:
+       *         description: Internal server error
+       */
+      /**
+       * @swagger
+       * /api/files/{id}/share:
+       *   post:
+       *     summary: Share file with multiple users
+       *     description: Share a file with one or more users
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - $ref: '#/components/parameters/FileId'
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               userIds:
+       *                 type: array
+       *                 items:
+       *                   type: string
+       *               accessLevel:
+       *                 type: string
+       *                 enum: [read, write]
+       *                 default: read
+       *     responses:
+       *       200:
+       *         description: File shared successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         shares:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/FileShare'
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       500:
+       *         description: Internal server error
+       */
+      this.app.post('/api/files/:id/share',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id } = req.params;
+            const { userIds, accessLevel = 'read' } = req.body || {};
+            const userId = (req as any).user?.userId;
+
+            if (!userId) {
+              return res.status(401).json({
                 success: false,
-                error: { message: 'Destination folder not found', code: 'VALIDATION_ERROR' }
+                error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
               });
             }
-          }
 
-          let movedCount = 0;
-          for (const fileId of fileIds) {
-            const file = await this.fileRepository.findById(fileId);
-            if (!file) {
-              continue;
+            if (!Array.isArray(userIds) || userIds.length === 0) {
+              return res.status(400).json({
+                success: false,
+                error: { message: 'userIds must be a non-empty array', code: 'VALIDATION_ERROR' }
+              });
             }
-            // Ownership/permission check: user must own the file
-            // If access control includes user_id on files, verify it. Otherwise skip.
-            try {
-              await this.fileRepository.update(fileId, { folderId: destinationFolderId || null } as any);
-              movedCount++;
-            } catch (e) {
-              this.logger.warn('Failed to move file', e as Error);
+
+            const shares = await this.fileService.shareFileWithUsers(id, userId, userIds, accessLevel);
+
+            // Evict caches for owner and recipients
+            await this.cacheDelPattern('files', userId);
+            for (const recipientId of userIds) {
+              await this.cacheDelPattern('files', recipientId);
             }
+
+            return res.json({
+              success: true,
+              data: { shares }
+            });
+          } catch (error) {
+            this.logger.error('File share failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
           }
-
-          // Evict caches impacted by move
-          await this.cacheDelPattern('files', userId);
-          await this.cacheDelPattern('folders', userId);
-          await this.cacheDelPattern('folders-tree', userId);
-          await this.cacheDelPattern('files');
-          await this.cacheDelPattern('folders');
-          await this.cacheDelPattern('folders-tree');
-
-          return res.json({ success: true, data: { moved: movedCount } });
-        } catch (error) {
-          this.logger.error('Files move failed', error as Error);
-          return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
         }
-      }
-    );
+      );
 
-    // Folder routes
-    /**
-     * @swagger
-     * /api/folders:
-     *   post:
-     *     summary: Create a new folder
-     *     description: Create a new folder in the file system
-     *     tags: [Folders]
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             $ref: '#/components/schemas/CreateFolderRequest'
-     *     responses:
-     *       201:
-     *         description: Folder created successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         folder:
-     *                           $ref: '#/components/schemas/Folder'
-     *       400:
-     *         description: Validation error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.post('/api/folders', this.authMiddleware.authenticate, (req, res) => {
-      this.handleFolderCreate(req, res);
-    });
+      /**
+       * @swagger
+       * /api/folders/{id}/share:
+       *   post:
+       *     summary: Share folder with multiple users
+       *     description: Share a folder with one or more users (makes folder writable by invited users)
+       *     tags: [Folders]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: id
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: Folder ID
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               userIds:
+       *                 type: array
+       *                 items:
+       *                   type: string
+       *               accessLevel:
+       *                 type: string
+       *                 enum: [read, write]
+       *                 default: write
+       *     responses:
+       *       200:
+       *         description: Folder shared successfully
+       *       400:
+       *         description: Bad request
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden
+       *       500:
+       *         description: Internal server error
+       */
+      this.app.post('/api/folders/:id/share',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id } = req.params;
+            const { userIds, accessLevel = 'write' } = req.body || {};
+            const userId = (req as any).user?.userId;
 
-    /**
-     * @swagger
-     * /api/folders:
-     *   get:
-     *     summary: List folders
-     *     description: Get a list of folders, optionally filtered by parent folder
-     *     tags: [Folders]
-     *     parameters:
-     *       - $ref: '#/components/parameters/ParentIdQuery'
-     *     responses:
-     *       200:
-     *         description: List of folders
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         folders:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/Folder'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-        this.app.get('/api/folders', this.authMiddleware.authenticate, (req, res) => {
-          this.handleFolderList(req, res);
-        });
+            if (!userId) {
+              return res.status(401).json({
+                success: false,
+                error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
+              });
+            }
 
-        /**
-         * @swagger
-         * /api/folders/tree:
-         *   get:
-         *     summary: Get folder tree with nested files
-         *     description: Get a hierarchical tree of folders with their files and subfolders
-         *     tags: [Folders]
-         *     parameters:
-         *       - $ref: '#/components/parameters/ParentIdQuery'
-         *     responses:
-         *       200:
-         *         description: Folder tree with nested files
-         *         content:
-         *           application/json:
-         *             schema:
-         *               allOf:
-         *                 - $ref: '#/components/schemas/SuccessResponse'
-         *                 - type: object
-         *                   properties:
-         *                     data:
-         *                       type: object
-         *                       properties:
-         *                         folders:
-         *                           type: array
-         *                           items:
-         *                             $ref: '#/components/schemas/FolderWithFiles'
-         *       500:
-         *         description: Internal server error
-         *         content:
-         *           application/json:
-         *             schema:
-         *               $ref: '#/components/schemas/ErrorResponse'
-         */
-        this.app.get('/api/folders/tree', this.authMiddleware.authenticate, (req, res) => {
-          this.handleFolderTree(req, res);
-        });
+            if (!Array.isArray(userIds) || userIds.length === 0) {
+              return res.status(400).json({
+                success: false,
+                error: { message: 'userIds must be a non-empty array', code: 'VALIDATION_ERROR' }
+              });
+            }
 
-    /**
-     * @swagger
-     * /api/folders/{id}:
-     *   put:
-     *     summary: Update folder
-     *     description: Update folder name
-     *     tags: [Folders]
-     *     parameters:
-     *       - $ref: '#/components/parameters/FolderId'
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             $ref: '#/components/schemas/UpdateFolderRequest'
-     *     responses:
-     *       200:
-     *         description: Folder updated successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         folder:
-     *                           $ref: '#/components/schemas/Folder'
-     *       404:
-     *         description: Folder not found
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.put('/api/folders/:id', this.authMiddleware.authenticate, (req, res) => {
-      this.handleFolderUpdate(req, res);
-    });
+            const shares = await this.folderService.shareFolderWithUsers(id, userId, userIds, accessLevel);
 
-    /**
-     * @swagger
-     * /api/folders/{id}:
-     *   delete:
-     *     summary: Delete folder
-     *     description: Delete a folder (must be empty)
-     *     tags: [Folders]
-     *     parameters:
-     *       - $ref: '#/components/parameters/FolderId'
-     *     responses:
-     *       200:
-     *         description: Folder deleted successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         deleted:
-     *                           type: boolean
-     *       400:
-     *         description: Folder not empty or validation error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       404:
-     *         description: Folder not found
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       500:
-     *         description: Internal server error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.delete('/api/folders/:id', this.authMiddleware.authenticate, (req, res) => {
-      this.handleFolderDelete(req, res);
-    });
+            // Evict caches for owner and recipients
+            await this.cacheDelPattern('folders', userId);
+            await this.cacheDelPattern('folders-tree', userId);
+            for (const recipientId of userIds) {
+              await this.cacheDelPattern('folders', recipientId);
+              await this.cacheDelPattern('folders-tree', recipientId);
+            }
 
-    // ========================================
-    // Authentication Routes (Public)
-    // ========================================
-    /**
-     * @swagger
-     * /api/auth/register:
-     *   post:
-     *     summary: Register a new user
-     *     description: Create a new user account
-     *     tags: [Authentication]
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             $ref: '#/components/schemas/RegisterRequest'
-     *     responses:
-     *       201:
-     *         description: User registered successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/AuthResponse'
-     *       400:
-     *         description: Validation error
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.post('/api/auth/register', (req, res) => {
-      this.authController.register(req, res);
-    });
+            return res.json({
+              success: true,
+              data: { shares }
+            });
+          } catch (error) {
+            this.logger.error('Folder share failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
 
-    /**
-     * @swagger
-     * /api/auth/login:
-     *   post:
-     *     summary: User login
-     *     description: Authenticate user and return JWT token
-     *     tags: [Authentication]
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             $ref: '#/components/schemas/LoginRequest'
-     *     responses:
-     *       200:
-     *         description: Login successful
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/AuthResponse'
-     *       401:
-     *         description: Invalid credentials
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.post('/api/auth/login', (req, res) => {
-      this.authController.login(req, res);
-    });
+      /**
+       * @swagger
+       * /api/folders/shared:
+       *   get:
+       *     summary: Get folders shared with the current user
+       *     description: Returns all folders that have been explicitly shared with the authenticated user
+       *     tags: [Folders]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: List of shared folders
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         folders:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/Folder'
+       *       401:
+       *         description: Unauthorized
+       */
+      this.app.get('/api/folders/shared',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const userId = (req as any).user?.userId;
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+            const cacheId = 'shared';
+            const cached = await this.cacheGet<any[]>('folders', cacheId, userId);
+            const folders = cached ?? await this.folderService.getFoldersSharedWithUser(userId);
+            // Resolve creators in batch
+            const ownerIds = Array.from(new Set(folders.map((f: any) => f.userId).filter(Boolean))) as string[];
+            const ownersMap: Record<string, any> = {};
+            for (const oid of ownerIds) {
+              const u = await this.userRepository.findById(oid);
+              if (u) ownersMap[oid] = u;
+            }
+            const foldersEnriched = (folders as any[]).map((folder: any) => {
+              const owner = folder.userId ? ownersMap[folder.userId] : undefined;
+              return {
+                ...folder,
+                createdBy: owner ? { id: owner.id, username: owner.username } : null,
+                sharedBy: owner ? { id: owner.id, username: owner.username } : null
+              };
+            });
+            if (!cached) await this.cacheSet('folders', cacheId, foldersEnriched, userId);
+            return res.json({ success: true, data: { folders: foldersEnriched } });
+          } catch (error) {
+            this.logger.error('Shared folders fetch failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
 
-    /**
-     * @swagger
-     * /api/auth/me:
-     *   get:
-     *     summary: Get current user
-     *     description: Get authenticated user's information
-     *     tags: [Authentication]
-     *     security:
-     *       - bearerAuth: []
-     *     responses:
-     *       200:
-     *         description: User information
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         user:
-     *                           $ref: '#/components/schemas/User'
-     *                         roles:
-     *                           type: array
-     *                           items:
-     *                             type: string
-     *                         permissions:
-     *                           type: array
-     *                           items:
-     *                             type: string
-     *       401:
-     *         description: Unauthorized
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.get('/api/auth/me',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.authController.getMe(req, res);
-      }
-    );
+      /**
+       * @swagger
+       * /api/users:
+       *   get:
+       *     summary: Get all users
+       *     description: Get list of all users for selection (admin only)
+       *     tags: [Users]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: List of users
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         users:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/User'
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden
+       */
+      this.app.get('/api/users',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const userId = (req as any).user?.userId;
+            if (!userId) {
+              return res.status(401).json({
+                success: false,
+                error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
+              });
+            }
 
-    /**
-     * @swagger
-     * /api/auth/language:
-     *   put:
-     *     summary: Update user language preference
-     *     description: Update the authenticated user's language preference
-     *     tags: [Authentication]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             required:
-     *               - language
-     *             properties:
-     *               language:
-     *                 type: string
-     *                 enum: [ar, en, fr, pt, es, sw]
-     *                 description: Language code
-     *     responses:
-     *       200:
-     *         description: Language updated successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/SuccessResponse'
-     *       400:
-     *         description: Invalid language code
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     *       401:
-     *         description: Unauthorized
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    /**
-     * @swagger
-     * /api/auth/profile:
-     *   put:
-     *     summary: Update user profile
-     *     description: Update the authenticated user's profile information
-     *     tags: [Authentication]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               firstName:
-     *                 type: string
-     *               lastName:
-     *                 type: string
-     *               email:
-     *                 type: string
-     *               avatar:
-     *                 type: string
-     *               phone:
-     *                 type: string
-     *               jobTitle:
-     *                 type: string
-     *               organization:
-     *                 type: string
-     *               bio:
-     *                 type: string
-     *     responses:
-     *       200:
-     *         description: Profile updated successfully
-     *       401:
-     *         description: Unauthorized
-     */
-    this.app.put('/api/auth/profile',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.authController.updateProfile(req, res);
-      }
-    );
+            // Get all users except current user
+            const allUsers = await this.userRepository.findAll();
+            const users = allUsers
+              .filter((u: UserEntity) => u.id !== userId)
+              .map((u: UserEntity) => ({
+                id: u.id,
+                username: u.username,
+                email: u.email,
+                firstName: u.firstName,
+                lastName: u.lastName,
+                avatar: u.avatar
+              }));
 
-    this.app.put('/api/auth/language',
-      this.authMiddleware.authenticate,
-      async (req, res) => {
-        try {
-          const userId = (req as any).user?.userId;
-          if (!userId) {
-            return res.status(401).json({
+            return res.json({
+              success: true,
+              data: { users }
+            });
+          } catch (error) {
+            this.logger.error('Get users failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      this.app.post('/api/files/move',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { fileIds, destinationFolderId } = req.body || {};
+            const userId = (req as any).user?.userId;
+
+            if (!Array.isArray(fileIds) || fileIds.length === 0) {
+              return res.status(400).json({
+                success: false,
+                error: { message: 'fileIds must be a non-empty array', code: 'VALIDATION_ERROR' }
+              });
+            }
+
+            // Validate destination folder if provided (must exist)
+            if (destinationFolderId) {
+              const dest = await this.folderRepository.findById(destinationFolderId);
+              if (!dest) {
+                return res.status(400).json({
+                  success: false,
+                  error: { message: 'Destination folder not found', code: 'VALIDATION_ERROR' }
+                });
+              }
+            }
+
+            let movedCount = 0;
+            for (const fileId of fileIds) {
+              const file = await this.fileRepository.findById(fileId);
+              if (!file) {
+                continue;
+              }
+              // Ownership/permission check: user must own the file
+              // If access control includes user_id on files, verify it. Otherwise skip.
+              try {
+                await this.fileRepository.update(fileId, { folderId: destinationFolderId || null } as any);
+                movedCount++;
+              } catch (e) {
+                this.logger.warn('Failed to move file', e as Error);
+              }
+            }
+
+            // Evict caches impacted by move
+            await this.cacheDelPattern('files', userId);
+            await this.cacheDelPattern('folders', userId);
+            await this.cacheDelPattern('folders-tree', userId);
+            await this.cacheDelPattern('files');
+            await this.cacheDelPattern('folders');
+            await this.cacheDelPattern('folders-tree');
+
+            return res.json({ success: true, data: { moved: movedCount } });
+          } catch (error) {
+            this.logger.error('Files move failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      // Folder routes
+      /**
+       * @swagger
+       * /api/folders:
+       *   post:
+       *     summary: Create a new folder
+       *     description: Create a new folder in the file system
+       *     tags: [Folders]
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             $ref: '#/components/schemas/CreateFolderRequest'
+       *     responses:
+       *       201:
+       *         description: Folder created successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         folder:
+       *                           $ref: '#/components/schemas/Folder'
+       *       400:
+       *         description: Validation error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.post('/api/folders', this.authMiddleware.authenticate, (req, res) => {
+        this.handleFolderCreate(req, res);
+      });
+
+      /**
+       * @swagger
+       * /api/folders:
+       *   get:
+       *     summary: List folders
+       *     description: Get a list of folders, optionally filtered by parent folder
+       *     tags: [Folders]
+       *     parameters:
+       *       - $ref: '#/components/parameters/ParentIdQuery'
+       *     responses:
+       *       200:
+       *         description: List of folders
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         folders:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/Folder'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.get('/api/folders', this.authMiddleware.authenticate, (req, res) => {
+        this.handleFolderList(req, res);
+      });
+
+      /**
+       * @swagger
+       * /api/folders/tree:
+       *   get:
+       *     summary: Get folder tree with nested files
+       *     description: Get a hierarchical tree of folders with their files and subfolders
+       *     tags: [Folders]
+       *     parameters:
+       *       - $ref: '#/components/parameters/ParentIdQuery'
+       *     responses:
+       *       200:
+       *         description: Folder tree with nested files
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         folders:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/FolderWithFiles'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.get('/api/folders/tree', this.authMiddleware.authenticate, (req, res) => {
+        this.handleFolderTree(req, res);
+      });
+
+      /**
+       * @swagger
+       * /api/folders/{id}:
+       *   put:
+       *     summary: Update folder
+       *     description: Update folder name
+       *     tags: [Folders]
+       *     parameters:
+       *       - $ref: '#/components/parameters/FolderId'
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             $ref: '#/components/schemas/UpdateFolderRequest'
+       *     responses:
+       *       200:
+       *         description: Folder updated successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         folder:
+       *                           $ref: '#/components/schemas/Folder'
+       *       404:
+       *         description: Folder not found
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.put('/api/folders/:id', this.authMiddleware.authenticate, (req, res) => {
+        this.handleFolderUpdate(req, res);
+      });
+
+      /**
+       * @swagger
+       * /api/folders/{id}:
+       *   delete:
+       *     summary: Delete folder
+       *     description: Delete a folder (must be empty)
+       *     tags: [Folders]
+       *     parameters:
+       *       - $ref: '#/components/parameters/FolderId'
+       *     responses:
+       *       200:
+       *         description: Folder deleted successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         deleted:
+       *                           type: boolean
+       *       400:
+       *         description: Folder not empty or validation error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       404:
+       *         description: Folder not found
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       500:
+       *         description: Internal server error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.delete('/api/folders/:id', this.authMiddleware.authenticate, (req, res) => {
+        this.handleFolderDelete(req, res);
+      });
+
+      // ========================================
+      // Authentication Routes (Public)
+      // ========================================
+      /**
+       * @swagger
+       * /api/auth/register:
+       *   post:
+       *     summary: Register a new user
+       *     description: Create a new user account
+       *     tags: [Authentication]
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             $ref: '#/components/schemas/RegisterRequest'
+       *     responses:
+       *       201:
+       *         description: User registered successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/AuthResponse'
+       *       400:
+       *         description: Validation error
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.post('/api/auth/register', (req, res) => {
+        this.authController.register(req, res);
+      });
+
+      /**
+       * @swagger
+       * /api/auth/login:
+       *   post:
+       *     summary: User login
+       *     description: Authenticate user and return JWT token
+       *     tags: [Authentication]
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             $ref: '#/components/schemas/LoginRequest'
+       *     responses:
+       *       200:
+       *         description: Login successful
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/AuthResponse'
+       *       401:
+       *         description: Invalid credentials
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.post('/api/auth/login', (req, res) => {
+        this.authController.login(req, res);
+      });
+
+      this.app.post('/api/auth/forgot-password', (req, res) => {
+        this.authController.forgotPassword(req, res);
+      });
+
+      this.app.post('/api/auth/reset-password', (req, res) => this.authController.resetPassword(req, res));
+      this.app.post('/api/auth/change-password', this.authMiddleware.authenticate, (req, res) => this.authController.changePassword(req, res));
+
+      /**
+       * @swagger
+       * /api/auth/me:
+       *   get:
+       *     summary: Get current user
+       *     description: Get authenticated user's information
+       *     tags: [Authentication]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: User information
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         user:
+       *                           $ref: '#/components/schemas/User'
+       *                         roles:
+       *                           type: array
+       *                           items:
+       *                             type: string
+       *                         permissions:
+       *                           type: array
+       *                           items:
+       *                             type: string
+       *       401:
+       *         description: Unauthorized
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.get('/api/auth/me',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.authController.getMe(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/auth/language:
+       *   put:
+       *     summary: Update user language preference
+       *     description: Update the authenticated user's language preference
+       *     tags: [Authentication]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             required:
+       *               - language
+       *             properties:
+       *               language:
+       *                 type: string
+       *                 enum: [ar, en, fr, pt, es, sw]
+       *                 description: Language code
+       *     responses:
+       *       200:
+       *         description: Language updated successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/SuccessResponse'
+       *       400:
+       *         description: Invalid language code
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       *       401:
+       *         description: Unauthorized
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      /**
+       * @swagger
+       * /api/auth/profile:
+       *   put:
+       *     summary: Update user profile
+       *     description: Update the authenticated user's profile information
+       *     tags: [Authentication]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               firstName:
+       *                 type: string
+       *               lastName:
+       *                 type: string
+       *               email:
+       *                 type: string
+       *               avatar:
+       *                 type: string
+       *               phone:
+       *                 type: string
+       *               jobTitle:
+       *                 type: string
+       *               organization:
+       *                 type: string
+       *               bio:
+       *                 type: string
+       *     responses:
+       *       200:
+       *         description: Profile updated successfully
+       *       401:
+       *         description: Unauthorized
+       */
+      this.app.put('/api/auth/profile',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.authController.updateProfile(req, res);
+        }
+      );
+
+      this.app.put('/api/auth/language',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const userId = (req as any).user?.userId;
+            if (!userId) {
+              return res.status(401).json({
+                success: false,
+                error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
+              });
+            }
+
+            const { language } = req.body;
+            const validLanguages = ['ar', 'en', 'fr', 'pt', 'es', 'sw'];
+
+            if (!language || !validLanguages.includes(language)) {
+              return res.status(400).json({
+                success: false,
+                error: { message: 'Invalid language code', code: 'VALIDATION_ERROR' }
+              });
+            }
+
+            await this.userRepository.update(userId, { language: language as any });
+
+            return res.json({
+              success: true,
+              data: { language }
+            });
+          } catch (error) {
+            this.logger.error('Failed to update language', error as Error);
+            return res.status(500).json({
               success: false,
-              error: { message: 'Unauthorized', code: 'UNAUTHORIZED' }
+              error: { message: 'Failed to update language', code: 'INTERNAL_ERROR' }
             });
           }
+        }
+      );
 
-          const { language } = req.body;
-          const validLanguages = ['ar', 'en', 'fr', 'pt', 'es', 'sw'];
-          
-          if (!language || !validLanguages.includes(language)) {
-            return res.status(400).json({
-              success: false,
-              error: { message: 'Invalid language code', code: 'VALIDATION_ERROR' }
-            });
-          }
-
-          await this.userRepository.update(userId, { language: language as any });
-          
-          return res.json({
-            success: true,
-            data: { language }
+      // ========================================
+      // Post Routes (Public - Featured & Leaderboard)
+      // ========================================
+      /**
+       * @swagger
+       * /api/public/posts/featured:
+       *   get:
+       *     summary: Get featured posts
+       *     description: Get list of featured posts for the featured slider
+       *     tags: [Posts (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/Limit'
+       *     responses:
+       *       200:
+       *         description: Featured posts
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         posts:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/PostWithRelations'
+       */
+      this.app.get('/api/public/posts/featured',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+          const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+          const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+          const cacheNamespace = 'public-posts';
+          const cacheId = this.buildCacheId('featured', {
+            limit: limit ?? null,
+            userId: req.user?.userId ?? null,
           });
-        } catch (error) {
-          this.logger.error('Failed to update language', error as Error);
-          return res.status(500).json({
-            success: false,
-            error: { message: 'Failed to update language', code: 'INTERNAL_ERROR' }
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+          if (cached) {
+            return res.json(cached);
+          }
+
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+            }
+            return originalJson(body);
+          };
+
+          return this.postController.getFeatured(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/public/posts/leaderboard:
+       *   get:
+       *     summary: Get leaderboard posts
+       *     description: Get list of posts marked for leaderboard (Leadership slider)
+       *     tags: [Posts (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/Limit'
+       *     responses:
+       *       200:
+       *         description: Leaderboard posts
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         posts:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/PostWithRelations'
+       */
+      this.app.get('/api/public/posts/leaderboard',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+          const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+          const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+          const cacheNamespace = 'public-posts';
+          const cacheId = this.buildCacheId('leaderboard', {
+            limit: limit ?? null,
+            userId: req.user?.userId ?? null,
           });
-        }
-      }
-    );
-
-    // ========================================
-    // Post Routes (Public - Featured & Leaderboard)
-    // ========================================
-    /**
-     * @swagger
-     * /api/public/posts/featured:
-     *   get:
-     *     summary: Get featured posts
-     *     description: Get list of featured posts for the featured slider
-     *     tags: [Posts (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/Limit'
-     *     responses:
-     *       200:
-     *         description: Featured posts
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         posts:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/PostWithRelations'
-     */
-    this.app.get('/api/public/posts/featured',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
-        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
-        const cacheNamespace = 'public-posts';
-        const cacheId = this.buildCacheId('featured', {
-          limit: limit ?? null,
-          userId: req.user?.userId ?? null,
-        });
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
-        if (cached) {
-          return res.json(cached);
-        }
-
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+          if (cached) {
+            return res.json(cached);
           }
-          return originalJson(body);
-        };
 
-        return this.postController.getFeatured(req, res);
-      }
-    );
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+            }
+            return originalJson(body);
+          };
 
-    /**
-     * @swagger
-     * /api/public/posts/leaderboard:
-     *   get:
-     *     summary: Get leaderboard posts
-     *     description: Get list of posts marked for leaderboard (Leadership slider)
-     *     tags: [Posts (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/Limit'
-     *     responses:
-     *       200:
-     *         description: Leaderboard posts
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         posts:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/PostWithRelations'
-     */
-    this.app.get('/api/public/posts/leaderboard',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
-        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
-        const cacheNamespace = 'public-posts';
-        const cacheId = this.buildCacheId('leaderboard', {
-          limit: limit ?? null,
-          userId: req.user?.userId ?? null,
-        });
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
-        if (cached) {
-          return res.json(cached);
+          return this.postController.getLeaderboard(req, res);
         }
+      );
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+      /**
+       * @swagger
+       * /api/public/posts:
+       *   get:
+       *     summary: Get published posts
+       *     description: Get list of published and approved posts
+       *     tags: [Posts (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/Limit'
+       *       - $ref: '#/components/parameters/Offset'
+       *     responses:
+       *       200:
+       *         description: Published posts
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         posts:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/PostWithRelations'
+       */
+      this.app.get('/api/public/posts',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : undefined;
+          const subcategoryId = typeof req.query.subcategoryId === 'string' ? req.query.subcategoryId : undefined;
+
+          const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+          const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+          const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+
+          const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
+          const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
+          const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
+
+          const tagsParam = req.query.tags;
+          const tags = (Array.isArray(tagsParam) ? tagsParam : tagsParam ? [tagsParam] : [])
+            .filter((tag): tag is string => typeof tag === 'string')
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0)
+            .sort();
+
+          const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+
+          const cacheNamespace = 'public-posts';
+          const cacheId = this.buildCacheId('published', {
+            categoryId: categoryId ?? null,
+            subcategoryId: subcategoryId ?? null,
+            limit: limit ?? null,
+            offset: offset ?? null,
+            tags,
+            search: searchQuery ?? null,
+            userId: req.user?.userId ?? null,
+          });
+
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+          if (cached) {
+            return res.json(cached);
           }
-          return originalJson(body);
-        };
 
-        return this.postController.getLeaderboard(req, res);
-      }
-    );
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+            }
+            return originalJson(body);
+          };
 
-    /**
-     * @swagger
-     * /api/public/posts:
-     *   get:
-     *     summary: Get published posts
-     *     description: Get list of published and approved posts
-     *     tags: [Posts (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/Limit'
-     *       - $ref: '#/components/parameters/Offset'
-     *     responses:
-     *       200:
-     *         description: Published posts
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         posts:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/PostWithRelations'
-     */
-    this.app.get('/api/public/posts',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : undefined;
-        const subcategoryId = typeof req.query.subcategoryId === 'string' ? req.query.subcategoryId : undefined;
-
-        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
-        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
-
-        const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
-        const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
-        const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
-
-        const tagsParam = req.query.tags;
-        const tags = (Array.isArray(tagsParam) ? tagsParam : tagsParam ? [tagsParam] : [])
-          .filter((tag): tag is string => typeof tag === 'string')
-          .map(tag => tag.trim())
-          .filter(tag => tag.length > 0)
-          .sort();
-
-        const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
-
-        const cacheNamespace = 'public-posts';
-        const cacheId = this.buildCacheId('published', {
-          categoryId: categoryId ?? null,
-          subcategoryId: subcategoryId ?? null,
-          limit: limit ?? null,
-          offset: offset ?? null,
-          tags,
-          search: searchQuery ?? null,
-          userId: req.user?.userId ?? null,
-        });
-
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
-        if (cached) {
-          return res.json(cached);
+          return this.postController.getPublished(req, res);
         }
+      );
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+      /**
+       * @swagger
+       * /api/public/posts/search:
+       *   get:
+       *     summary: Search posts
+       *     description: Search published posts by title, description, or content
+       *     tags: [Posts (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/SearchQuery'
+       *       - $ref: '#/components/parameters/Limit'
+       *       - $ref: '#/components/parameters/Offset'
+       *     responses:
+       *       200:
+       *         description: Search results
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         posts:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/PostWithRelations'
+       */
+      this.app.get('/api/public/posts/search',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const queryParam = Array.isArray(req.query.q) ? req.query.q[0] : req.query.q;
+          const searchTerm = typeof queryParam === 'string' ? queryParam.trim() : undefined;
+
+          if (!searchTerm) {
+            return this.postController.search(req, res);
           }
-          return originalJson(body);
-        };
 
-        return this.postController.getPublished(req, res);
-      }
-    );
+          const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+          const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
+          const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
 
-    /**
-     * @swagger
-     * /api/public/posts/search:
-     *   get:
-     *     summary: Search posts
-     *     description: Search published posts by title, description, or content
-     *     tags: [Posts (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/SearchQuery'
-     *       - $ref: '#/components/parameters/Limit'
-     *       - $ref: '#/components/parameters/Offset'
-     *     responses:
-     *       200:
-     *         description: Search results
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         posts:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/PostWithRelations'
-     */
-    this.app.get('/api/public/posts/search',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const queryParam = Array.isArray(req.query.q) ? req.query.q[0] : req.query.q;
-        const searchTerm = typeof queryParam === 'string' ? queryParam.trim() : undefined;
+          const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
+          const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
+          const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
 
-        if (!searchTerm) {
+          const cacheNamespace = 'public-posts';
+          const cacheId = this.buildCacheId('search', {
+            q: searchTerm,
+            limit: limit ?? null,
+            offset: offset ?? null,
+            userId: req.user?.userId ?? null,
+          });
+
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+          if (cached) {
+            return res.json(cached);
+          }
+
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+            }
+            return originalJson(body);
+          };
+
           return this.postController.search(req, res);
         }
+      );
 
-        const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-        const parsedLimit = limitParam ? parseInt(limitParam as string, 10) : undefined;
-        const limit = typeof parsedLimit === 'number' && Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+      /**
+       * @swagger
+       * /api/public/posts/{slug}:
+       *   get:
+       *     summary: Get post by slug
+       *     description: Get a single published post by its slug (tracks view)
+       *     tags: [Posts (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/PostSlug'
+       *     responses:
+       *       200:
+       *         description: Post details
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         post:
+       *                           $ref: '#/components/schemas/PostWithRelations'
+       *       404:
+       *         description: Post not found
+       *         content:
+       *           application/json:
+       *             schema:
+       *               $ref: '#/components/schemas/ErrorResponse'
+       */
+      this.app.get('/api/public/posts/:slug',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const slug = req.params.slug;
+          const cacheNamespace = 'public-posts';
+          const cacheId = this.buildCacheId('slug', {
+            slug,
+            userId: req.user?.userId ?? null,
+          });
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
+          if (cached) {
+            return res.json(cached);
+          }
 
-        const offsetParam = Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset;
-        const parsedOffset = offsetParam ? parseInt(offsetParam as string, 10) : undefined;
-        const offset = typeof parsedOffset === 'number' && Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
+            }
+            return originalJson(body);
+          };
 
-        const cacheNamespace = 'public-posts';
-        const cacheId = this.buildCacheId('search', {
-          q: searchTerm,
-          limit: limit ?? null,
-          offset: offset ?? null,
-          userId: req.user?.userId ?? null,
-        });
+          return this.postController.getBySlug(req, res);
+        }
+      );
 
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
-        if (cached) {
-          return res.json(cached);
+      this.app.post('/api/public/posts/:id/like',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.postController.like(req, res);
+        }
+      );
+
+      this.app.delete('/api/public/posts/:id/like',
+        this.authMiddleware.authenticate,
+        (req, res) => {
+          this.postController.unlike(req, res);
+        }
+      );
+
+      this.app.get('/api/public/posts/:id/comments',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.postController.getComments(req, res);
+        }
+      );
+
+      this.app.post('/api/public/posts/:id/comments',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const publicationId = req.params.id;
+          const actorUserId = req.user?.userId;
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.refreshPublicationCache(publicationId, actorUserId);
+            }
+            return originalJson(body);
+          };
+
+          return this.postController.createComment(req, res);
+        }
+      );
+
+      // ========================================
+      // Post Routes (Admin/Author - Protected)
+      // ========================================
+      const ensureCanDeleteComments: RequestHandler = (req, res, next) => {
+        const roles: string[] = Array.isArray(req.user?.roles) ? (req.user?.roles as string[]) : [];
+        const permissions: string[] = Array.isArray(req.user?.permissions) ? (req.user?.permissions as string[]) : [];
+        const canDelete = roles.includes('admin') || permissions.includes('posts:delete') || permissions.includes('posts:manage');
+
+        if (!canDelete) {
+          res.status(403).json({
+            success: false,
+            error: {
+              type: 'FORBIDDEN',
+              message: 'You do not have permission to delete comments',
+              timestamp: new Date().toISOString()
+            }
+          });
+          return;
         }
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
-          }
-          return originalJson(body);
-        };
+        next();
+      };
 
-        return this.postController.search(req, res);
-      }
-    );
+      /**
+       * @swagger
+       * /api/admin/posts:
+       *   post:
+       *     summary: Create a new post
+       *     description: Create a new post (requires author or admin role)
+       *     tags: [Posts (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             $ref: '#/components/schemas/CreatePostRequest'
+       *     responses:
+       *       201:
+       *         description: Post created successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         post:
+       *                           $ref: '#/components/schemas/Post'
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires author or admin role
+       */
+      this.app.post('/api/admin/posts',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireAnyRole(['admin', 'author']),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('public-posts');
+            }
+            return originalJson(body);
+          };
 
-    /**
-     * @swagger
-     * /api/public/posts/{slug}:
-     *   get:
-     *     summary: Get post by slug
-     *     description: Get a single published post by its slug (tracks view)
-     *     tags: [Posts (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/PostSlug'
-     *     responses:
-     *       200:
-     *         description: Post details
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         post:
-     *                           $ref: '#/components/schemas/PostWithRelations'
-     *       404:
-     *         description: Post not found
-     *         content:
-     *           application/json:
-     *             schema:
-     *               $ref: '#/components/schemas/ErrorResponse'
-     */
-    this.app.get('/api/public/posts/:slug',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const slug = req.params.slug;
-        const cacheNamespace = 'public-posts';
-        const cacheId = this.buildCacheId('slug', {
-          slug,
-          userId: req.user?.userId ?? null,
-        });
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId, req.user?.userId);
-        if (cached) {
-          return res.json(cached);
+          await this.postController.create(req, res);
         }
+      );
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body, req.user?.userId);
-          }
-          return originalJson(body);
-        };
-
-        return this.postController.getBySlug(req, res);
-      }
-    );
-
-    this.app.post('/api/public/posts/:id/like',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.postController.like(req, res);
-      }
-    );
-
-    this.app.delete('/api/public/posts/:id/like',
-      this.authMiddleware.authenticate,
-      (req, res) => {
-        this.postController.unlike(req, res);
-      }
-    );
-
-    this.app.get('/api/public/posts/:id/comments',
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.postController.getComments(req, res);
-      }
-    );
-
-    this.app.post('/api/public/posts/:id/comments',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const publicationId = req.params.id;
-        const actorUserId = req.user?.userId;
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.refreshPublicationCache(publicationId, actorUserId);
-          }
-          return originalJson(body);
-        };
-
-        return this.postController.createComment(req, res);
-      }
-    );
-
-    // ========================================
-    // Post Routes (Admin/Author - Protected)
-    // ========================================
-    const ensureCanDeleteComments: RequestHandler = (req, res, next) => {
-      const roles: string[] = Array.isArray(req.user?.roles) ? (req.user?.roles as string[]) : [];
-      const permissions: string[] = Array.isArray(req.user?.permissions) ? (req.user?.permissions as string[]) : [];
-      const canDelete = roles.includes('admin') || permissions.includes('posts:delete') || permissions.includes('posts:manage');
-
-      if (!canDelete) {
-        res.status(403).json({
-          success: false,
-          error: {
-            type: 'FORBIDDEN',
-            message: 'You do not have permission to delete comments',
-            timestamp: new Date().toISOString()
-          }
-        });
-        return;
-      }
-
-      next();
-    };
-
-    /**
-     * @swagger
-     * /api/admin/posts:
-     *   post:
-     *     summary: Create a new post
-     *     description: Create a new post (requires author or admin role)
-     *     tags: [Posts (Admin)]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             $ref: '#/components/schemas/CreatePostRequest'
-     *     responses:
-     *       201:
-     *         description: Post created successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         post:
-     *                           $ref: '#/components/schemas/Post'
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden - Requires author or admin role
-     */
-    this.app.post('/api/admin/posts',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('public-posts');
-          }
-          return originalJson(body);
-        };
-
-        await this.postController.create(req, res);
-      }
-    );
-
-    this.app.get('/api/admin/posts',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      (req, res) => {
-        this.postController.getAll(req, res);
-      }
-    );
-
-    this.app.get('/api/admin/posts/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      (req, res) => {
-        this.postController.getById(req, res);
-      }
-    );
-
-    this.app.put('/api/admin/posts/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('public-posts');
-          }
-          return originalJson(body);
-        };
-
-        await this.postController.update(req, res);
-      }
-    );
-
-    this.app.delete('/api/admin/posts/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireAnyRole(['admin', 'author']),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('public-posts');
-          }
-          return originalJson(body);
-        };
-
-        await this.postController.delete(req, res);
-      }
-    );
-
-    this.app.post('/api/admin/posts/:id/approve',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('public-posts');
-          }
-          return originalJson(body);
-        };
-
-        await this.postController.approve(req, res);
-      }
-    );
-
-    this.app.post('/api/admin/posts/:id/reject',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('public-posts');
-          }
-          return originalJson(body);
-        };
-
-        await this.postController.reject(req, res);
-      }
-    );
-
-    // Get recent comments (Admin)
-    this.app.get('/api/admin/comments/recent',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.postController.getRecentComments(req, res);
-      }
-    );
-
-    this.app.get('/api/admin/publications/counts-by-status',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      (req, res) => {
-        this.postController.getPublicationCountsByStatus(req, res);
-      }
-    );
-
-    this.app.delete('/api/admin/posts/:id/comments/:commentId',
-      this.authMiddleware.authenticate,
-      ensureCanDeleteComments,
-      async (req, res) => {
-        const actorUserId = req.user?.userId;
-
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success && body?.data?.postId) {
-            void this.refreshPublicationCache(body.data.postId, actorUserId);
-          }
-          return originalJson(body);
-        };
-
-        return this.postController.deleteComment(req, res);
-      }
-    );
-
-    // ========================================
-    // Category Routes (Public)
-    // ========================================
-    /**
-     * @swagger
-     * /api/public/categories:
-     *   get:
-     *     summary: Get all categories
-     *     description: Get list of all categories (Videos, Audios, Photos, etc.)
-     *     tags: [Categories (Public)]
-     *     responses:
-     *       200:
-     *         description: List of categories
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         categories:
-     *                           type: array
-     *                           items:
-     *                             $ref: '#/components/schemas/Category'
-     */
-    this.app.get('/api/public/categories',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const cacheNamespace = 'categories';
-        const cacheId = 'all';
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
-        if (cached) {
-          return res.json(cached);
+      this.app.get('/api/admin/posts',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireAnyRole(['admin', 'author']),
+        (req, res) => {
+          this.postController.getAll(req, res);
         }
+      );
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body);
-          }
-          return originalJson(body);
-        };
-
-        return this.categoryController.getAll(req, res);
-      }
-    );
-
-    /**
-     * @swagger
-     * /api/public/categories/{id}:
-     *   get:
-     *     summary: Get category by ID
-     *     description: Get a single category by its ID
-     *     tags: [Categories (Public)]
-     *     parameters:
-     *       - $ref: '#/components/parameters/CategoryId'
-     *     responses:
-     *       200:
-     *         description: Category details
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         category:
-     *                           $ref: '#/components/schemas/Category'
-     *       404:
-     *         description: Category not found
-     */
-    this.app.get('/api/public/categories/:id',
-      this.authMiddleware.optionalAuthenticate,
-      async (req, res) => {
-        const cacheNamespace = 'categories';
-        const categoryId = req.params.id;
-        const cacheId = categoryId || 'unknown';
-        const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
-        if (cached) {
-          return res.json(cached);
+      this.app.get('/api/admin/posts/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireAnyRole(['admin', 'author']),
+        (req, res) => {
+          this.postController.getById(req, res);
         }
+      );
 
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheSet(cacheNamespace, cacheId, body);
+      this.app.put('/api/admin/posts/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireAnyRole(['admin', 'author']),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('public-posts');
+            }
+            return originalJson(body);
+          };
+
+          await this.postController.update(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/posts/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireAnyRole(['admin', 'author']),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('public-posts');
+            }
+            return originalJson(body);
+          };
+
+          await this.postController.delete(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/posts/:id/approve',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('public-posts');
+            }
+            return originalJson(body);
+          };
+
+          await this.postController.approve(req, res);
+        }
+      );
+
+      this.app.post('/api/admin/posts/:id/reject',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('public-posts');
+            }
+            return originalJson(body);
+          };
+
+          await this.postController.reject(req, res);
+        }
+      );
+
+      // Get recent comments (Admin)
+      this.app.get('/api/admin/comments/recent',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.postController.getRecentComments(req, res);
+        }
+      );
+
+      this.app.get('/api/admin/publications/counts-by-status',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        (req, res) => {
+          this.postController.getPublicationCountsByStatus(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/posts/:id/comments/:commentId',
+        this.authMiddleware.authenticate,
+        ensureCanDeleteComments,
+        async (req, res) => {
+          const actorUserId = req.user?.userId;
+
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success && body?.data?.postId) {
+              void this.refreshPublicationCache(body.data.postId, actorUserId);
+            }
+            return originalJson(body);
+          };
+
+          return this.postController.deleteComment(req, res);
+        }
+      );
+
+      // ========================================
+      // Category Routes (Public)
+      // ========================================
+      /**
+       * @swagger
+       * /api/public/categories:
+       *   get:
+       *     summary: Get all categories
+       *     description: Get list of all categories (Videos, Audios, Photos, etc.)
+       *     tags: [Categories (Public)]
+       *     responses:
+       *       200:
+       *         description: List of categories
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         categories:
+       *                           type: array
+       *                           items:
+       *                             $ref: '#/components/schemas/Category'
+       */
+      this.app.get('/api/public/categories',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const cacheNamespace = 'categories';
+          const cacheId = 'all';
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
+          if (cached) {
+            return res.json(cached);
           }
-          return originalJson(body);
-        };
 
-        return this.categoryController.getById(req, res);
-      }
-    );
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body);
+            }
+            return originalJson(body);
+          };
 
-    // ========================================
-    // Category Routes (Admin - Protected)
-    // ========================================
-    /**
-     * @swagger
-     * /api/admin/categories:
-     *   post:
-     *     summary: Create a new category
-     *     description: Create a new category (requires admin role)
-     *     tags: [Categories (Admin)]
-     *     security:
-     *       - bearerAuth: []
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             required:
-     *               - name
-     *               - slug
-     *             properties:
-     *               name:
-     *                 type: string
-     *                 example: Videos
-     *               slug:
-     *                 type: string
-     *                 example: videos
-     *               description:
-     *                 type: string
-     *                 example: Video content category
-     *     responses:
-     *       201:
-     *         description: Category created successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         category:
-     *                           $ref: '#/components/schemas/Category'
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden - Requires admin role
-     */
-    this.app.post('/api/admin/categories',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
+          return this.categoryController.getAll(req, res);
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/public/categories/{id}:
+       *   get:
+       *     summary: Get category by ID
+       *     description: Get a single category by its ID
+       *     tags: [Categories (Public)]
+       *     parameters:
+       *       - $ref: '#/components/parameters/CategoryId'
+       *     responses:
+       *       200:
+       *         description: Category details
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         category:
+       *                           $ref: '#/components/schemas/Category'
+       *       404:
+       *         description: Category not found
+       */
+      this.app.get('/api/public/categories/:id',
+        this.authMiddleware.optionalAuthenticate,
+        async (req, res) => {
+          const cacheNamespace = 'categories';
+          const categoryId = req.params.id;
+          const cacheId = categoryId || 'unknown';
+          const cached = await this.cacheGet<any>(cacheNamespace, cacheId);
+          if (cached) {
+            return res.json(cached);
           }
-          return originalJson(body);
-        };
 
-        await this.categoryController.create(req, res);
-      }
-    );
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheSet(cacheNamespace, cacheId, body);
+            }
+            return originalJson(body);
+          };
 
-    /**
-     * @swagger
-     * /api/admin/categories/{id}:
-     *   put:
-     *     summary: Update a category
-     *     description: Update an existing category (requires admin role)
-     *     tags: [Categories (Admin)]
-     *     security:
-     *       - bearerAuth: []
-     *     parameters:
-     *       - $ref: '#/components/parameters/CategoryId'
-     *     requestBody:
-     *       required: true
-     *       content:
-     *         application/json:
-     *           schema:
-     *             type: object
-     *             properties:
-     *               name:
-     *                 type: string
-     *                 example: Videos
-     *               slug:
-     *                 type: string
-     *                 example: videos
-     *               description:
-     *                 type: string
-     *                 example: Video content category
-     *     responses:
-     *       200:
-     *         description: Category updated successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         category:
-     *                           $ref: '#/components/schemas/Category'
-     *       400:
-     *         description: Validation error
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden - Requires admin role
-     *       404:
-     *         description: Category not found
-     */
-    this.app.put('/api/admin/categories/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
-          }
-          return originalJson(body);
-        };
+          return this.categoryController.getById(req, res);
+        }
+      );
 
-        await this.categoryController.update(req, res);
-      }
-    );
+      // ========================================
+      // Category Routes (Admin - Protected)
+      // ========================================
+      /**
+       * @swagger
+       * /api/admin/categories:
+       *   post:
+       *     summary: Create a new category
+       *     description: Create a new category (requires admin role)
+       *     tags: [Categories (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             required:
+       *               - name
+       *               - slug
+       *             properties:
+       *               name:
+       *                 type: string
+       *                 example: Videos
+       *               slug:
+       *                 type: string
+       *                 example: videos
+       *               description:
+       *                 type: string
+       *                 example: Video content category
+       *     responses:
+       *       201:
+       *         description: Category created successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         category:
+       *                           $ref: '#/components/schemas/Category'
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.post('/api/admin/categories',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    /**
-     * @swagger
-     * /api/admin/categories/{id}:
-     *   delete:
-     *     summary: Delete a category
-     *     description: Delete an existing category (requires admin role)
-     *     tags: [Categories (Admin)]
-     *     security:
-     *       - bearerAuth: []
-     *     parameters:
-     *       - $ref: '#/components/parameters/CategoryId'
-     *     responses:
-     *       200:
-     *         description: Category deleted successfully
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         deleted:
-     *                           type: boolean
-     *                           example: true
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden - Requires admin role
-     *       404:
-     *         description: Category not found
-     */
-    this.app.delete('/api/admin/categories/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
-          }
-          return originalJson(body);
-        };
+          await this.categoryController.create(req, res);
+        }
+      );
 
-        await this.categoryController.delete(req, res);
-      }
-    );
+      /**
+       * @swagger
+       * /api/admin/categories/{id}:
+       *   put:
+       *     summary: Update a category
+       *     description: Update an existing category (requires admin role)
+       *     tags: [Categories (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - $ref: '#/components/parameters/CategoryId'
+       *     requestBody:
+       *       required: true
+       *       content:
+       *         application/json:
+       *           schema:
+       *             type: object
+       *             properties:
+       *               name:
+       *                 type: string
+       *                 example: Videos
+       *               slug:
+       *                 type: string
+       *                 example: videos
+       *               description:
+       *                 type: string
+       *                 example: Video content category
+       *     responses:
+       *       200:
+       *         description: Category updated successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         category:
+       *                           $ref: '#/components/schemas/Category'
+       *       400:
+       *         description: Validation error
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       *       404:
+       *         description: Category not found
+       */
+      this.app.put('/api/admin/categories/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    // ========================================
-    // Subcategory Routes (Public)
-    // ========================================
-    this.app.get('/api/public/subcategories',
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.subcategoryController.getAll(req, res);
-      }
-    );
+          await this.categoryController.update(req, res);
+        }
+      );
 
-    this.app.get('/api/public/subcategories/:id',
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.subcategoryController.getById(req, res);
-      }
-    );
+      /**
+       * @swagger
+       * /api/admin/categories/{id}:
+       *   delete:
+       *     summary: Delete a category
+       *     description: Delete an existing category (requires admin role)
+       *     tags: [Categories (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - $ref: '#/components/parameters/CategoryId'
+       *     responses:
+       *       200:
+       *         description: Category deleted successfully
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         deleted:
+       *                           type: boolean
+       *                           example: true
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       *       404:
+       *         description: Category not found
+       */
+      this.app.delete('/api/admin/categories/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    // ========================================
-    // Subcategory Routes (Admin - Protected)
-    // ========================================
-    this.app.post('/api/admin/subcategories',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
-          }
-          return originalJson(body);
-        };
+          await this.categoryController.delete(req, res);
+        }
+      );
 
-        await this.subcategoryController.create(req, res);
-      }
-    );
+      // ========================================
+      // Subcategory Routes (Public)
+      // ========================================
+      this.app.get('/api/public/subcategories',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.subcategoryController.getAll(req, res);
+        }
+      );
 
-    this.app.put('/api/admin/subcategories/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
-          }
-          return originalJson(body);
-        };
+      this.app.get('/api/public/subcategories/:id',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.subcategoryController.getById(req, res);
+        }
+      );
 
-        await this.subcategoryController.update(req, res);
-      }
-    );
+      // ========================================
+      // Subcategory Routes (Admin - Protected)
+      // ========================================
+      this.app.post('/api/admin/subcategories',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    this.app.delete('/api/admin/subcategories/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requireRole('admin'),
-      async (req, res) => {
-        const originalJson = res.json.bind(res);
-        res.json = (body: any) => {
-          if (body?.success) {
-            void this.cacheDelPattern('categories');
-          }
-          return originalJson(body);
-        };
+          await this.subcategoryController.create(req, res);
+        }
+      );
 
-        await this.subcategoryController.delete(req, res);
-      }
-    );
+      this.app.put('/api/admin/subcategories/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    // ========================================
-    // Nav Link Routes (Public)
-    // ========================================
-    this.app.get('/api/public/nav-links',
-      this.authMiddleware.optionalAuthenticate,
-      (req, res) => {
-        this.navLinkController.getActive(req, res);
-      }
-    );
+          await this.subcategoryController.update(req, res);
+        }
+      );
 
-    // ========================================
-    // Nav Link Routes (Admin - Protected)
-    // ========================================
-    this.app.get('/api/admin/nav-links',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requirePermission('nav-links:manage'),
-      (req, res) => {
-        this.navLinkController.getAll(req, res);
-      }
-    );
+      this.app.delete('/api/admin/subcategories/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requireRole('admin'),
+        async (req, res) => {
+          const originalJson = res.json.bind(res);
+          res.json = (body: any) => {
+            if (body?.success) {
+              void this.cacheDelPattern('categories');
+            }
+            return originalJson(body);
+          };
 
-    this.app.get('/api/admin/nav-links/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requirePermission('nav-links:manage'),
-      (req, res) => {
-        this.navLinkController.getById(req, res);
-      }
-    );
+          await this.subcategoryController.delete(req, res);
+        }
+      );
 
-    this.app.post('/api/admin/nav-links',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requirePermission('nav-links:manage'),
-      (req, res) => {
-        this.navLinkController.create(req, res);
-      }
-    );
+      // ========================================
+      // Nav Link Routes (Public)
+      // ========================================
+      this.app.get('/api/public/nav-links',
+        this.authMiddleware.optionalAuthenticate,
+        (req, res) => {
+          this.navLinkController.getActive(req, res);
+        }
+      );
 
-    this.app.put('/api/admin/nav-links/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requirePermission('nav-links:manage'),
-      (req, res) => {
-        this.navLinkController.update(req, res);
-      }
-    );
+      // ========================================
+      // Nav Link Routes (Admin - Protected)
+      // ========================================
+      this.app.get('/api/admin/nav-links',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requirePermission('nav-links:manage'),
+        (req, res) => {
+          this.navLinkController.getAll(req, res);
+        }
+      );
 
-    this.app.delete('/api/admin/nav-links/:id',
-      this.authMiddleware.authenticate,
-      this.rbacMiddleware.requirePermission('nav-links:manage'),
-      (req, res) => {
-        this.navLinkController.delete(req, res);
-      }
-    );
+      this.app.get('/api/admin/nav-links/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requirePermission('nav-links:manage'),
+        (req, res) => {
+          this.navLinkController.getById(req, res);
+        }
+      );
 
-    // ========================================
-    // Analytics Routes (Admin - Protected)
-    // ========================================
-    /**
-     * @swagger
-     * /api/admin/analytics/dashboard:
-     *   get:
-     *     summary: Get dashboard analytics
-     *     description: Get comprehensive dashboard analytics including posts, users, categories, and visitor metrics
-     *     tags: [Analytics (Admin)]
-     *     security:
-     *       - bearerAuth: []
-     *     responses:
-     *       200:
-     *         description: Dashboard analytics
-     *         content:
-     *           application/json:
-     *             schema:
-     *               allOf:
-     *                 - $ref: '#/components/schemas/SuccessResponse'
-     *                 - type: object
-     *                   properties:
-     *                     data:
-     *                       type: object
-     *                       properties:
-     *                         analytics:
-     *                           type: object
-     *                           properties:
-     *                             overview:
-     *                               type: object
-     *                               properties:
-     *                                 totalUsers:
-     *                                   type: number
-     *                                 totalPosts:
-     *                                   type: number
-     *                                 totalCategories:
-     *                                   type: number
-     *                                 totalSubcategories:
-     *                                   type: number
-     *                                 totalViews:
-     *                                   type: number
-     *                                 totalUniqueHits:
-     *                                   type: number
-     *                             publicationStats:
-     *                               type: object
-     *                               properties:
-     *                                 byStatus:
-     *                                   type: array
-     *                                   items:
-     *                                     type: object
-     *                                     properties:
-     *                                       status:
-     *                                         type: string
-     *                                       count:
-     *                                         type: number
-     *                                 byCategory:
-     *                                   type: array
-     *                                   items:
-     *                                     type: object
-     *                                     properties:
-     *                                       categoryName:
-     *                                         type: string
-     *                                       count:
-     *                                         type: number
-     *                                 featured:
-     *                                   type: number
-     *                                 leaderboard:
-     *                                   type: number
-     *                             monthlyVisitorStats:
-     *                               type: array
-     *                               items:
-     *                                 type: object
-     *                                 properties:
-     *                                   month:
-     *                                     type: string
-     *                                   views:
-     *                                     type: number
-     *                                   uniqueHits:
-     *                                     type: number
-     *                             topPosts:
-     *                               type: array
-     *                               items:
-     *                                 type: object
-     *                                 properties:
-     *                                   id:
-     *                                     type: string
-     *                                   title:
-     *                                     type: string
-     *                                   views:
-     *                                     type: number
-     *                                   uniqueHits:
-     *                                     type: number
-     *                                   categoryName:
-     *                                     type: string
-     *                             topCategories:
-     *                               type: array
-     *                               items:
-     *                                 type: object
-     *                                 properties:
-     *                                   categoryId:
-     *                                     type: string
-     *                                   categoryName:
-     *                                     type: string
-     *                                   publicationCount:
-     *                                     type: number
-     *                                   totalViews:
-     *                                     type: number
-     *                             userActivity:
-     *                               type: object
-     *                               properties:
-     *                                 totalActiveUsers:
-     *                                   type: number
-     *                                 newUsersThisMonth:
-     *                                   type: number
-     *                                 newUsersThisYear:
-     *                                   type: number
-     *       401:
-     *         description: Unauthorized
-     *       403:
-     *         description: Forbidden - Requires admin role
-     */
-          this.app.get('/api/admin/analytics/dashboard',
+      this.app.post('/api/admin/nav-links',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requirePermission('nav-links:manage'),
+        (req, res) => {
+          this.navLinkController.create(req, res);
+        }
+      );
+
+      this.app.put('/api/admin/nav-links/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requirePermission('nav-links:manage'),
+        (req, res) => {
+          this.navLinkController.update(req, res);
+        }
+      );
+
+      this.app.delete('/api/admin/nav-links/:id',
+        this.authMiddleware.authenticate,
+        this.rbacMiddleware.requirePermission('nav-links:manage'),
+        (req, res) => {
+          this.navLinkController.delete(req, res);
+        }
+      );
+
+      // ========================================
+      // Analytics Routes (Admin - Protected)
+      // ========================================
+      /**
+       * @swagger
+       * /api/admin/analytics/dashboard:
+       *   get:
+       *     summary: Get dashboard analytics
+       *     description: Get comprehensive dashboard analytics including posts, users, categories, and visitor metrics
+       *     tags: [Analytics (Admin)]
+       *     security:
+       *       - bearerAuth: []
+       *     responses:
+       *       200:
+       *         description: Dashboard analytics
+       *         content:
+       *           application/json:
+       *             schema:
+       *               allOf:
+       *                 - $ref: '#/components/schemas/SuccessResponse'
+       *                 - type: object
+       *                   properties:
+       *                     data:
+       *                       type: object
+       *                       properties:
+       *                         analytics:
+       *                           type: object
+       *                           properties:
+       *                             overview:
+       *                               type: object
+       *                               properties:
+       *                                 totalUsers:
+       *                                   type: number
+       *                                 totalPosts:
+       *                                   type: number
+       *                                 totalCategories:
+       *                                   type: number
+       *                                 totalSubcategories:
+       *                                   type: number
+       *                                 totalViews:
+       *                                   type: number
+       *                                 totalUniqueHits:
+       *                                   type: number
+       *                             publicationStats:
+       *                               type: object
+       *                               properties:
+       *                                 byStatus:
+       *                                   type: array
+       *                                   items:
+       *                                     type: object
+       *                                     properties:
+       *                                       status:
+       *                                         type: string
+       *                                       count:
+       *                                         type: number
+       *                                 byCategory:
+       *                                   type: array
+       *                                   items:
+       *                                     type: object
+       *                                     properties:
+       *                                       categoryName:
+       *                                         type: string
+       *                                       count:
+       *                                         type: number
+       *                                 featured:
+       *                                   type: number
+       *                                 leaderboard:
+       *                                   type: number
+       *                             monthlyVisitorStats:
+       *                               type: array
+       *                               items:
+       *                                 type: object
+       *                                 properties:
+       *                                   month:
+       *                                     type: string
+       *                                   views:
+       *                                     type: number
+       *                                   uniqueHits:
+       *                                     type: number
+       *                             topPosts:
+       *                               type: array
+       *                               items:
+       *                                 type: object
+       *                                 properties:
+       *                                   id:
+       *                                     type: string
+       *                                   title:
+       *                                     type: string
+       *                                   views:
+       *                                     type: number
+       *                                   uniqueHits:
+       *                                     type: number
+       *                                   categoryName:
+       *                                     type: string
+       *                             topCategories:
+       *                               type: array
+       *                               items:
+       *                                 type: object
+       *                                 properties:
+       *                                   categoryId:
+       *                                     type: string
+       *                                   categoryName:
+       *                                     type: string
+       *                                   publicationCount:
+       *                                     type: number
+       *                                   totalViews:
+       *                                     type: number
+       *                             userActivity:
+       *                               type: object
+       *                               properties:
+       *                                 totalActiveUsers:
+       *                                   type: number
+       *                                 newUsersThisMonth:
+       *                                   type: number
+       *                                 newUsersThisYear:
+       *                                   type: number
+       *       401:
+       *         description: Unauthorized
+       *       403:
+       *         description: Forbidden - Requires admin role
+       */
+      this.app.get('/api/admin/analytics/dashboard',
         this.authMiddleware.authenticate,
         this.rbacMiddleware.requireRole('admin'),
         (req, res) => {
@@ -3698,15 +3709,15 @@ export class FileManagerServer {
         try {
           const posts = await this.postRepository.findAll();
           const sourceSet = new Set<string>();
-          
+
           posts.forEach(post => {
             if (post.source && typeof post.source === 'string' && post.source.trim()) {
               sourceSet.add(post.source.trim());
             }
           });
-          
+
           const sources = Array.from(sourceSet).sort();
-          
+
           res.json({
             success: true,
             data: { sources }
@@ -3746,15 +3757,15 @@ export class FileManagerServer {
         try {
           const posts = await this.postRepository.findAll();
           const creatorNameSet = new Set<string>();
-          
+
           posts.forEach(post => {
             if (post.creatorName && typeof post.creatorName === 'string' && post.creatorName.trim()) {
               creatorNameSet.add(post.creatorName.trim());
             }
           });
-          
+
           const creatorNames = Array.from(creatorNameSet).sort();
-          
+
           res.json({
             success: true,
             data: { creatorNames }
@@ -3764,7 +3775,7 @@ export class FileManagerServer {
           res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
         }
       });
-  
+
       this.logger.info('Routes setup completed');
     } catch (error) {
       this.logger.error('Error setting up routes', error as Error);
@@ -3847,7 +3858,7 @@ export class FileManagerServer {
 
       res.setHeader('Content-Type', fileInfo.mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileInfo.fileName}"`);
-      
+
       // Ensure the file path is absolute
       const absolutePath = path.resolve(fileInfo.filePath);
       res.sendFile(absolutePath);
@@ -3874,7 +3885,7 @@ export class FileManagerServer {
       }
 
       const { fileId, youtubeUrl, timestamp } = req.body;
-      
+
       if (!fileId && !youtubeUrl) {
         res.status(400).json({
           success: false,
@@ -3888,7 +3899,7 @@ export class FileManagerServer {
       }
 
       const timestampSeconds = timestamp ? parseFloat(String(timestamp)) : 1;
-      
+
       let thumbnailPath: string;
       let thumbnailUrl: string;
 
@@ -3951,7 +3962,7 @@ export class FileManagerServer {
       const appConfig = this.config.getConfig();
       const uploadPathResolved = path.resolve(appConfig.uploadPath).replace(/\\/g, '/');
       const thumbnailPathResolved = path.resolve(appConfig.thumbnailPath).replace(/\\/g, '/');
-      
+
       // Resolve thumbnailPath to absolute path (in case it's relative)
       // If relative, it might be relative to current working directory or relative to thumbnailPath config
       let thumbnailPathAbsolute: string;
@@ -3970,22 +3981,22 @@ export class FileManagerServer {
         }
       }
       let normalizedPath = thumbnailPathAbsolute.replace(/\\/g, '/');
-      
+
       // Extract relative path from absolute path
       let relativeThumbnailPath: string;
-      
+
       // Check if the thumbnailPath is within the uploadPath directory
       if (normalizedPath.includes(uploadPathResolved)) {
         // Extract relative path from uploadPath
         const relativeFromUploads = normalizedPath.substring(normalizedPath.indexOf(uploadPathResolved) + uploadPathResolved.length);
-        relativeThumbnailPath = relativeFromUploads.startsWith('/') 
+        relativeThumbnailPath = relativeFromUploads.startsWith('/')
           ? `uploads${relativeFromUploads}`
           : `uploads/${relativeFromUploads}`;
       } else if (normalizedPath.includes(thumbnailPathResolved)) {
         // Thumbnail path is separate from uploadPath - check if it's directly in "thumbnails" directory
         const relativeFromThumbnails = normalizedPath.substring(normalizedPath.indexOf(thumbnailPathResolved) + thumbnailPathResolved.length);
         const filename = path.basename(normalizedPath);
-        
+
         // Check if thumbnailPath directory name is "thumbnails" (not under uploads)
         const thumbnailPathName = path.basename(thumbnailPathResolved);
         if (thumbnailPathName === 'thumbnails' || thumbnailPathResolved.endsWith('/thumbnails') || thumbnailPathResolved.endsWith('\\thumbnails')) {
@@ -3999,7 +4010,7 @@ export class FileManagerServer {
         // Try to find "uploads/" or "thumbnails/" in the path
         const uploadsIndex = normalizedPath.indexOf('uploads/');
         const thumbnailsIndex = normalizedPath.indexOf('thumbnails/');
-        
+
         if (uploadsIndex >= 0) {
           relativeThumbnailPath = normalizedPath.substring(uploadsIndex);
         } else if (thumbnailsIndex >= 0) {
@@ -4023,7 +4034,7 @@ export class FileManagerServer {
           }
         }
       }
-      
+
       // Verify the file exists at the original location (before normalization)
       // Retry a few times in case of file system delay (especially for yt-dlp downloads)
       let fileExists = false;
@@ -4031,10 +4042,10 @@ export class FileManagerServer {
         try {
           await fs.promises.access(thumbnailPath);
           fileExists = true;
-          this.logger.debug('Thumbnail file verified at original path', { 
-            thumbnailPath, 
-            relativeThumbnailPath, 
-            attempt: attempt + 1 
+          this.logger.debug('Thumbnail file verified at original path', {
+            thumbnailPath,
+            relativeThumbnailPath,
+            attempt: attempt + 1
           });
           break;
         } catch (error) {
@@ -4043,9 +4054,9 @@ export class FileManagerServer {
             const delay = attempt === 0 ? 200 : attempt === 1 ? 500 : attempt === 2 ? 1000 : 2000;
             await new Promise(resolve => setTimeout(resolve, delay));
           } else {
-            this.logger.error('Thumbnail file not found at original path after retries', 
+            this.logger.error('Thumbnail file not found at original path after retries',
               error instanceof Error ? error : new Error(String(error)),
-              { 
+              {
                 thumbnailPath,
                 relativeThumbnailPath,
                 uploadPath: appConfig.uploadPath,
@@ -4056,16 +4067,16 @@ export class FileManagerServer {
           }
         }
       }
-      
+
       if (!fileExists) {
         // File doesn't exist - check if it's in a different location
         // List files in thumbnail directory for debugging
         try {
           const thumbnailDir = appConfig.thumbnailPath;
           const files = await fs.promises.readdir(thumbnailDir);
-          this.logger.error('Thumbnail file does not exist after extraction', 
+          this.logger.error('Thumbnail file does not exist after extraction',
             new Error('Thumbnail file missing'),
-            { 
+            {
               thumbnailPath,
               relativeThumbnailPath,
               thumbnailDir,
@@ -4074,15 +4085,15 @@ export class FileManagerServer {
             }
           );
         } catch (listError) {
-          this.logger.error('Thumbnail file does not exist after extraction', 
+          this.logger.error('Thumbnail file does not exist after extraction',
             listError instanceof Error ? listError : new Error(String(listError)),
-            { 
+            {
               thumbnailPath,
               relativeThumbnailPath
             }
           );
         }
-        
+
         // Don't return a path for a non-existent file - return error instead
         res.status(500).json({
           success: false,
@@ -4098,10 +4109,10 @@ export class FileManagerServer {
       // Generate URL for the thumbnail
       thumbnailUrl = `${req.protocol}://${req.get('host')}/${relativeThumbnailPath}`;
 
-      this.logger.debug('Thumbnail extraction response', { 
-        originalPath: thumbnailPath, 
-        relativePath: relativeThumbnailPath, 
-        thumbnailUrl 
+      this.logger.debug('Thumbnail extraction response', {
+        originalPath: thumbnailPath,
+        relativePath: relativeThumbnailPath,
+        thumbnailUrl
       });
 
       res.json({
@@ -4121,7 +4132,7 @@ export class FileManagerServer {
     try {
       const { id } = req.params;
       const rangeHeader = req.headers.range;
-  
+
       const file = await this.fileRepository.findById(id);
       if (!file) {
         res.status(404).json(this.errorHandler.formatErrorResponse(
@@ -4129,7 +4140,7 @@ export class FileManagerServer {
         ));
         return;
       }
-  
+
       try {
         await fs.promises.access(file.filePath);
       } catch (error) {
@@ -4139,27 +4150,27 @@ export class FileManagerServer {
         ));
         return;
       }
-  
+
       const absolutePath = path.resolve(file.filePath);
       const stat = await fs.promises.stat(absolutePath);
       const fileSize = stat.size;
-  
+
       const headers: Record<string, string> = {
         'Content-Type': file.mimeType,
         'Content-Disposition': `inline; filename="${file.originalName}"`,
         'Accept-Ranges': 'bytes'
       };
-  
+
       if (rangeHeader) {
         const parts = rangeHeader.replace(/bytes=/, '').split('-');
         const start = parseInt(parts[0], 10);
         const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-  
+
         if (isNaN(start) || isNaN(end) || start >= fileSize || end >= fileSize) {
           res.status(416).set(headers).end();
           return;
         }
-  
+
         const chunkSize = (end - start) + 1;
         headers['Content-Range'] = `bytes ${start}-${end}/${fileSize}`;
         headers['Content-Length'] = String(chunkSize);
@@ -4204,10 +4215,10 @@ export class FileManagerServer {
       const filesWithUrls = files.map(file => {
         const owner = file.userId ? ownersMap[file.userId] : undefined;
         return {
-        ...file,
+          ...file,
           createdBy: owner ? { id: owner.id, username: owner.username } : null,
-        downloadUrl: `${req.protocol}://${req.get('host')}/api/files/${file.id}/download`,
-        thumbnailUrl: file.thumbnailPath ? `${req.protocol}://${req.get('host')}/${file.thumbnailPath.replace(/\\/g, '/')}` : null
+          downloadUrl: `${req.protocol}://${req.get('host')}/api/files/${file.id}/download`,
+          thumbnailUrl: file.thumbnailPath ? `${req.protocol}://${req.get('host')}/${file.thumbnailPath.replace(/\\/g, '/')}` : null
         };
       });
 
@@ -4332,7 +4343,7 @@ export class FileManagerServer {
     try {
       const { name, parentId } = req.body;
       const userId = (req as any).user?.userId;
-      
+
       if (!userId) {
         res.status(401).json({
           success: false,
@@ -4340,7 +4351,7 @@ export class FileManagerServer {
         });
         return;
       }
-      
+
       if (!name || typeof name !== 'string') {
         throw this.errorHandler.createValidationError('Folder name is required');
       }
@@ -4466,7 +4477,7 @@ export class FileManagerServer {
       // Convert empty string to undefined for root folders
       const folderParentId = parentId && parentId !== '' ? parentId as string : undefined;
       const userId = (req as any).user?.userId;
-      
+
       if (!userId) {
         res.status(401).json({
           success: false,

@@ -156,7 +156,7 @@ export class FileManagerError extends Error {
     this.type = type;
     this.context = context;
     this.timestamp = new Date();
-    
+
     // Maintains proper stack trace for where our error was thrown
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, FileManagerError);
@@ -509,6 +509,7 @@ export interface IUserRepository {
   findById(id: string): Promise<UserEntity | null>;
   findByEmail(email: string): Promise<UserEntity | null>;
   findByUsername(username: string): Promise<UserEntity | null>;
+  findByResetToken(token: string): Promise<UserEntity | null>;
   findAll(includeInactive?: boolean): Promise<UserEntity[]>;
   update(id: string, data: Partial<UserEntity>): Promise<UserEntity>;
   delete(id: string): Promise<boolean>;

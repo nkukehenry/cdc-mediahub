@@ -32,7 +32,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
       const fetchFile = async () => {
         try {
           const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-          
+
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           };
@@ -50,12 +50,12 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
 
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
-          
+
           // Clean up previous blob URL
           if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
           }
-          
+
           blobUrlRef.current = url;
           setBlobUrl(url);
           setIsLoading(false);
@@ -81,10 +81,10 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
 
   const handleDownload = async () => {
     if (!file) return;
-    
+
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-      
+
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
@@ -117,7 +117,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
 
   const getFileIcon = () => {
     if (!file) return <FileIcon size={48} className="text-gray-400" />;
-    
+
     if (isImageFile(file.mimeType)) return <Image size={48} className="text-au-green" />;
     if (isVideoFile(file.mimeType)) return <Video size={48} className="text-au-green" />;
     if (isAudioFile(file.mimeType)) return <Music size={48} className="text-au-green" />;
@@ -126,60 +126,60 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     if (isExcelDocument(file.mimeType)) return <FileSpreadsheet size={48} className="text-au-green" />;
     if (isTextFile(file.mimeType)) return <FileCode size={48} className="text-au-grey-text" />;
     if (isArchiveFile(file.mimeType)) return <Archive size={48} className="text-au-gold" />;
-    
+
     return <FileIcon size={48} className="text-au-grey-text/50" />;
   };
 
   // File type detection functions
   const isWordDocument = (mimeType: string) => {
-    return mimeType.includes('word') || 
-           mimeType.includes('document') || 
-           mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-           mimeType === 'application/msword';
+    return mimeType.includes('word') ||
+      mimeType.includes('document') ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mimeType === 'application/msword';
   };
 
   const isExcelDocument = (mimeType: string) => {
-    return mimeType.includes('excel') || 
-           mimeType.includes('spreadsheet') ||
-           mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-           mimeType === 'application/vnd.ms-excel' ||
-           mimeType === 'application/vnd.oasis.opendocument.spreadsheet';
+    return mimeType.includes('excel') ||
+      mimeType.includes('spreadsheet') ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.ms-excel' ||
+      mimeType === 'application/vnd.oasis.opendocument.spreadsheet';
   };
 
   const isPowerPointDocument = (mimeType: string) => {
     return mimeType.includes('powerpoint') ||
-           mimeType.includes('presentation') ||
-           mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-           mimeType === 'application/vnd.ms-powerpoint' ||
-           mimeType === 'application/vnd.oasis.opendocument.presentation';
+      mimeType.includes('presentation') ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint' ||
+      mimeType === 'application/vnd.oasis.opendocument.presentation';
   };
 
   const isOfficeDocument = (mimeType: string) => {
-    return isWordDocument(mimeType) || 
-           isExcelDocument(mimeType) || 
-           isPowerPointDocument(mimeType) ||
-           mimeType === 'application/vnd.oasis.opendocument.text' ||
-           mimeType === 'application/rtf' ||
-           mimeType === 'application/msword' ||
-           mimeType === 'application/vnd.ms-office';
+    return isWordDocument(mimeType) ||
+      isExcelDocument(mimeType) ||
+      isPowerPointDocument(mimeType) ||
+      mimeType === 'application/vnd.oasis.opendocument.text' ||
+      mimeType === 'application/rtf' ||
+      mimeType === 'application/msword' ||
+      mimeType === 'application/vnd.ms-office';
   };
 
   const isTextFile = (mimeType: string) => {
-    return mimeType.startsWith('text/') || 
-           mimeType === 'application/json' ||
-           mimeType === 'application/xml' ||
-           mimeType === 'text/plain' ||
-           mimeType === 'text/html' ||
-           mimeType === 'text/css' ||
-           mimeType === 'text/javascript';
+    return mimeType.startsWith('text/') ||
+      mimeType === 'application/json' ||
+      mimeType === 'application/xml' ||
+      mimeType === 'text/plain' ||
+      mimeType === 'text/html' ||
+      mimeType === 'text/css' ||
+      mimeType === 'text/javascript';
   };
 
   const isArchiveFile = (mimeType: string) => {
-    return mimeType.includes('zip') || 
-           mimeType.includes('rar') ||
-           mimeType.includes('7z') ||
-           mimeType.includes('tar') ||
-           mimeType.includes('gz');
+    return mimeType.includes('zip') ||
+      mimeType.includes('rar') ||
+      mimeType.includes('7z') ||
+      mimeType.includes('tar') ||
+      mimeType.includes('gz');
   };
 
   const renderPreview = () => {
@@ -211,7 +211,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Image preview
     if (isImageFile(file.mimeType)) {
       return (
-        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden", isFullscreen ? "w-full h-full" : "h-64") }>
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden", isFullscreen ? "w-full h-full" : "h-64")}>
           <img
             src={blobUrl}
             alt={file.originalName}
@@ -228,7 +228,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Video preview
     if (isVideoFile(file.mimeType)) {
       return (
-        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "w-full h-full" : "h-96") }>
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "w-full h-full" : "h-96")}>
           <video
             controls
             className={cn(isFullscreen ? "w-full h-full" : "max-w-full max-h-full")}
@@ -244,7 +244,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Audio preview
     if (isAudioFile(file.mimeType)) {
       return (
-        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "h-full" : "h-32 py-8") }>
+        <div className={cn("flex items-center justify-center bg-gray-50 rounded-lg", isFullscreen ? "h-full" : "h-32 py-8")}>
           <audio
             controls
             className={cn(isFullscreen ? "w-full" : "w-full max-w-md")}
@@ -260,7 +260,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // PDF preview (using iframe with blob URL) - larger for documents
     if (isPdfFile(file.mimeType)) {
       return (
-        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden")}>
           <iframe
             src={`${blobUrl}#toolbar=1&navpanes=1&scrollbar=1`}
             className={cn("w-full h-full")}
@@ -274,7 +274,7 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
     // Text file preview - larger for documents
     if (isTextFile(file.mimeType)) {
       return (
-        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden")}>
           <iframe
             src={blobUrl}
             className={cn("w-full h-full")}
@@ -296,9 +296,9 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
       // Use preview endpoint with token for Google Docs viewer
       const previewUrl = `${API_BASE_URL}/api/files/${file.id}/preview?token=${encodeURIComponent(token)}`;
       const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(previewUrl)}&embedded=true`;
-      
+
       return (
-        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden") }>
+        <div className={cn(isFullscreen ? "w-full h-full" : "h-[calc(95vh-300px)] min-h-[600px]", "bg-gray-50 rounded-lg overflow-hidden")}>
           <iframe
             src={googleViewerUrl}
             className={cn("w-full h-full")}
@@ -333,26 +333,26 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
   if (!isOpen || !file) return null;
 
   // Determine if this is a document type that needs larger modal
-  const isDocumentType = isPdfFile(file.mimeType) || 
-                         isTextFile(file.mimeType) || 
-                         isOfficeDocument(file.mimeType);
-  
+  const isDocumentType = isPdfFile(file.mimeType) ||
+    isTextFile(file.mimeType) ||
+    isOfficeDocument(file.mimeType);
+
   const modalSizeClass = isFullscreen
     ? "w-screen h-screen max-w-none max-h-none m-0"
-    : (isDocumentType 
+    : (isDocumentType
       ? "max-w-5xl w-full mx-4 max-h-[100vh]"
       : "max-w-2xl w-full mx-4 max-h-[95vh]");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Translucent backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
         onClick={onClose}
       />
-      
+
       {/* Modal */}
-      <div className={cn("relative bg-white", isFullscreen ? 'rounded-none flex flex-col' : 'rounded-lg', "shadow-xl", modalSizeClass, className, "overflow-hidden")}>
+      <div className={cn("relative bg-white flex flex-col", isFullscreen ? 'rounded-none' : 'rounded-lg', "shadow-xl", modalSizeClass, className, "overflow-hidden")}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
@@ -380,9 +380,9 @@ export default function FilePreviewModal({ isOpen, onClose, file, className }: F
         </div>
 
         {/* Content */}
-        <div className={cn(isFullscreen ? "h-[calc(100vh-80px)] overflow-auto p-0" : "p-6") }>
+        <div className={cn("flex-1 overflow-y-auto", isFullscreen ? "h-[calc(100vh-80px)] p-0" : "p-6")}>
           {/* Preview Area */}
-          <div className={cn(isFullscreen ? "h-full" : "mb-6") }>
+          <div className={cn(isFullscreen ? "h-full" : "mb-6")}>
             {renderPreview()}
           </div>
 

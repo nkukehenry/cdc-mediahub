@@ -8,7 +8,7 @@ export class AuthController {
   private logger = getLogger('AuthController');
   private errorHandler = getErrorHandler();
 
-  constructor(private authService: AuthService, private recaptchaService: RecaptchaService) {}
+  constructor(private authService: AuthService, private recaptchaService: RecaptchaService) { }
 
   async register(req: Request, res: Response): Promise<void> {
     try {
@@ -115,7 +115,7 @@ export class AuthController {
       });
     } catch (error) {
       this.logger.error('Login failed', error as Error);
-      
+
       // Check if it's a validation error (invalid credentials)
       if ((error as any).type === 'VALIDATION_ERROR') {
         res.status(401).json(this.errorHandler.formatErrorResponse(error as Error));
@@ -140,7 +140,7 @@ export class AuthController {
       }
 
       const user = await this.authService.getUserById(req.user.userId);
-      
+
       if (!user) {
         res.status(404).json({
           success: false,
@@ -210,6 +210,99 @@ export class AuthController {
       });
     } catch (error) {
       this.logger.error('Update profile failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async forgotPassword(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          error: {
+            type: 'VALIDATION_ERROR',
+            message: 'Email is required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      await this.authService.requestPasswordReset(email);
+
+      res.json({
+        success: true,
+        message: 'If an account with that email exists, a reset link has been sent.'
+      });
+    } catch (error) {
+      this.logger.error('Forgot password failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+
+  async resetPassword(req: Request, res: Response): Promise<void> {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) {
+        res.status(400).json({
+          success: false,
+          error: {
+            type: 'VALIDATION_ERROR',
+            message: 'Token and new password are required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      await this.authService.resetPassword(token, newPassword);
+
+      res.json({
+        success: true,
+        message: 'Password has been reset successfully.'
+      });
+    } catch (error) {
+      this.logger.error('Reset password failed', error as Error);
+      res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+    }
+  }
+  async changePassword(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: {
+            type: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        res.status(400).json({
+          success: false,
+          error: {
+            type: 'VALIDATION_ERROR',
+            message: 'Current and new passwords are required',
+            timestamp: new Date().toISOString()
+          }
+        });
+        return;
+      }
+
+      await this.authService.changePassword(req.user.userId, currentPassword, newPassword);
+
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
+      });
+    } catch (error) {
+      this.logger.error('Change password failed', error as Error);
       res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
     }
   }

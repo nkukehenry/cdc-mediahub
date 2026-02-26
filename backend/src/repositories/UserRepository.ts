@@ -12,10 +12,10 @@ export class UserRepository implements IUserRepository {
     try {
       const id = DatabaseUtils.generateId();
       const now = DatabaseUtils.getCurrentTimestamp();
-      
+
       // Hash password
       const hashedPassword = await bcrypt.hash(userData.password, 10);
-      
+
       const user: UserEntity = {
         id,
         username: userData.username,
@@ -58,7 +58,7 @@ export class UserRepository implements IUserRepository {
       );
 
       this.logger.debug('User created', { userId: id });
-      
+
       // Return user without password
       const { password, ...userWithoutPassword } = user;
       return user as UserEntity; // Keep type but will exclude password in service layer
@@ -104,6 +104,24 @@ export class UserRepository implements IUserRepository {
     }
   }
 
+  async findByResetToken(token: string): Promise<UserEntity | null> {
+    try {
+      const user = await DatabaseUtils.findOne<any>(
+        'SELECT * FROM users WHERE password_reset_token = ?',
+        [token]
+      );
+
+      if (!user) {
+        return null;
+      }
+
+      return this.mapToUserEntity(user);
+    } catch (error) {
+      this.logger.error('Find user by reset token failed', error as Error);
+      throw this.errorHandler.createDatabaseError('Find user by reset token failed', 'select', 'users');
+    }
+  }
+
   async findByUsername(username: string): Promise<UserEntity | null> {
     try {
       const user = await DatabaseUtils.findOne<any>(
@@ -125,7 +143,7 @@ export class UserRepository implements IUserRepository {
   // Get all users (including inactive for admin)
   async findAll(includeInactive: boolean = false): Promise<UserEntity[]> {
     try {
-      const query = includeInactive 
+      const query = includeInactive
         ? 'SELECT * FROM users ORDER BY created_at DESC'
         : 'SELECT * FROM users WHERE is_active = 1 ORDER BY created_at DESC';
       const users = await DatabaseUtils.findMany<any>(query);
@@ -139,12 +157,12 @@ export class UserRepository implements IUserRepository {
   async update(id: string, data: Partial<UserEntity>): Promise<UserEntity> {
     try {
       const updateData: any = { ...data };
-      
+
       // Hash password if being updated
       if (updateData.password) {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
-      
+
       updateData.updated_at = DatabaseUtils.getCurrentTimestamp();
 
       // Convert camelCase to snake_case
@@ -163,13 +181,13 @@ export class UserRepository implements IUserRepository {
       if (updateData.emailVerified !== undefined) dbData.email_verified = updateData.emailVerified ? 1 : 0;
       if (updateData.language !== undefined) dbData.language = updateData.language;
       if (updateData.lastLogin !== undefined) {
-        dbData.last_login = updateData.lastLogin instanceof Date ? updateData.lastLogin.toISOString() : (updateData.lastLogin === null ? null : updateData.lastLogin);
+        dbData.last_login = updateData.lastLogin instanceof Date ? DatabaseUtils.formatDateTime(updateData.lastLogin) : (updateData.lastLogin === null ? null : updateData.lastLogin);
       }
       if (updateData.passwordResetToken !== undefined) {
         dbData.password_reset_token = updateData.passwordResetToken === null ? null : updateData.passwordResetToken;
       }
       if (updateData.passwordResetExpires !== undefined) {
-        dbData.password_reset_expires = updateData.passwordResetExpires instanceof Date ? updateData.passwordResetExpires.toISOString() : (updateData.passwordResetExpires === null ? null : updateData.passwordResetExpires);
+        dbData.password_reset_expires = updateData.passwordResetExpires instanceof Date ? DatabaseUtils.formatDateTime(updateData.passwordResetExpires) : (updateData.passwordResetExpires === null ? null : updateData.passwordResetExpires);
       }
       dbData.updated_at = updateData.updated_at;
 
@@ -211,6 +229,15 @@ export class UserRepository implements IUserRepository {
   }
 
   private mapToUserEntity(dbUser: any): UserEntity {
+    const parseDate = (date: any) => {
+      if (!date) return undefined;
+      if (date instanceof Date) return date;
+      // Handle MySQL DATETIME format by ensuring it's treated as UTC
+      const dateStr = String(date);
+      if (dateStr.includes('T') || dateStr.includes('Z')) return new Date(dateStr);
+      return new Date(dateStr.replace(' ', 'T') + 'Z');
+    };
+
     return {
       id: dbUser.id,
       username: dbUser.username,
@@ -226,11 +253,11 @@ export class UserRepository implements IUserRepository {
       isActive: Boolean(dbUser.is_active),
       emailVerified: Boolean(dbUser.email_verified),
       language: (dbUser.language || 'en') as 'ar' | 'en' | 'fr' | 'pt' | 'es' | 'sw',
-      lastLogin: dbUser.last_login ? new Date(dbUser.last_login) : undefined,
+      lastLogin: parseDate(dbUser.last_login),
       passwordResetToken: dbUser.password_reset_token || undefined,
-      passwordResetExpires: dbUser.password_reset_expires ? new Date(dbUser.password_reset_expires) : undefined,
-      createdAt: new Date(dbUser.created_at),
-      updatedAt: new Date(dbUser.updated_at)
+      passwordResetExpires: parseDate(dbUser.password_reset_expires),
+      createdAt: parseDate(dbUser.created_at) || new Date(),
+      updatedAt: parseDate(dbUser.updated_at) || new Date()
     };
   }
 }

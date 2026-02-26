@@ -1,6 +1,7 @@
 import { IPublicationService, IPublicationRepository, ICategoryRepository, IUserRepository, IFileRepository, PublicationWithRelations, CreatePublicationData, UpdatePublicationData, PublicationEntity, PublicationStatus, PublicationFilters, ITagRepository, TagEntity, IPostLikeRepository, IPostCommentRepository, PostCommentEntity, CreatePostCommentData } from '../interfaces';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
+import { IEmailService } from './EmailService';
 
 export class PostService implements IPublicationService {
   private logger = getLogger('PostService');
@@ -13,8 +14,9 @@ export class PostService implements IPublicationService {
     private fileRepository: IFileRepository,
     private tagRepository: ITagRepository,
     private postLikeRepository: IPostLikeRepository,
-    private postCommentRepository: IPostCommentRepository
-  ) {}
+    private postCommentRepository: IPostCommentRepository,
+    private emailService: IEmailService
+  ) { }
 
   async createPublication(postData: CreatePublicationData): Promise<PublicationEntity> {
     try {
@@ -49,7 +51,7 @@ export class PostService implements IPublicationService {
       const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
       const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
       const hasYouTubeUrl = postData.youtubeUrl && postData.youtubeUrl.trim() !== '';
-      
+
       // If YouTube URL is provided, skip attachment validation for video categories
       if (isVideoCategory && hasYouTubeUrl) {
         // YouTube URL is provided, attachments and cover image are optional
@@ -69,7 +71,7 @@ export class PostService implements IPublicationService {
             }
           }
         }
-        
+
         if (!hasMatchingAttachment) {
           const categoryType = isAudioCategory ? 'audio' : 'video';
           throw this.errorHandler.createValidationError(
@@ -132,27 +134,27 @@ export class PostService implements IPublicationService {
       if (!post) {
         return null;
       }
-      
+
       // For public access, only return approved publications that are not scheduled (publication_date <= now)
       // Admin users can access all publications through admin endpoints, but public endpoints should filter
       if (post.status !== 'approved') {
         // Not approved - return null for public access
         return null;
       }
-      
+
       // Check if publication is scheduled (publication_date in the future)
       if (post.publicationDate) {
         const now = new Date();
-        const publicationDate = post.publicationDate instanceof Date 
-          ? post.publicationDate 
+        const publicationDate = post.publicationDate instanceof Date
+          ? post.publicationDate
           : new Date(post.publicationDate);
-        
+
         if (publicationDate > now) {
           // Publication is scheduled for future - return null for public access
           return null;
         }
       }
-      
+
       const withRelations = await this.postRepository.getWithRelations(post.id);
       if (!withRelations) {
         return null;
@@ -335,17 +337,17 @@ export class PostService implements IPublicationService {
     try {
       const finalLimit = limit || 20;
       const finalOffset = offset || 0;
-      
+
       // Get total count for pagination
       const total = await this.postRepository.countPublished(categoryId, subcategoryId, tags, search);
-      
+
       // Get publications with pagination
       const posts = await this.postRepository.findPublished(categoryId, subcategoryId, finalLimit, finalOffset, tags, search);
       const postsWithRelations = await Promise.all(
         posts.map((post: PublicationEntity) => this.postRepository.getWithRelations(post.id))
       );
       const publications = postsWithRelations.filter((p): p is PublicationWithRelations => p !== null);
-      
+
       const page = Math.floor(finalOffset / finalLimit) + 1;
       const totalPages = Math.ceil(total / finalLimit);
 
@@ -379,7 +381,7 @@ export class PostService implements IPublicationService {
 
       // Get total count for pagination
       const total = await this.postRepository.countAll(finalFilters);
-      
+
       // Get publications with filters and pagination
       const posts = await this.postRepository.findAll(finalFilters, limit, offset);
 
@@ -387,7 +389,7 @@ export class PostService implements IPublicationService {
       const postsWithRelations = await Promise.all(
         posts.map((post: PublicationEntity) => this.postRepository.getWithRelations(post.id))
       );
-      
+
       const publications = postsWithRelations.filter((p): p is PublicationWithRelations => p !== null);
       const page = Math.floor(offset / limit) + 1;
       const totalPages = Math.ceil(total / limit);
@@ -434,7 +436,7 @@ export class PostService implements IPublicationService {
             permissions: userContext.permissions
           });
         } else {
-        throw this.errorHandler.createValidationError('You do not have permission to update this post');
+          throw this.errorHandler.createValidationError('You do not have permission to update this post');
         }
       }
 
@@ -456,7 +458,7 @@ export class PostService implements IPublicationService {
         const categorySlugLower = category.slug.toLowerCase();
         const isAudioCategory = categoryNameLower.includes('audio') || categorySlugLower.includes('audio');
         const isVideoCategory = categoryNameLower.includes('video') || categorySlugLower.includes('video');
-        
+
         // Check for YouTube URL - use updated one if provided, otherwise get existing
         let youtubeUrl: string | undefined = undefined;
         if (data.youtubeUrl !== undefined) {
@@ -465,7 +467,7 @@ export class PostService implements IPublicationService {
           youtubeUrl = existingPost.youtubeUrl;
         }
         const hasYouTubeUrl = youtubeUrl && youtubeUrl.trim() !== '';
-        
+
         if (isAudioCategory || isVideoCategory) {
           // If YouTube URL is provided, skip attachment validation for video categories
           if (isVideoCategory && hasYouTubeUrl) {
@@ -479,7 +481,7 @@ export class PostService implements IPublicationService {
               const existingPostWithRelations = await this.postRepository.getWithRelations(id);
               attachmentFileIds = existingPostWithRelations?.attachments?.map(a => a.id) || [];
             }
-            
+
             if (attachmentFileIds.length > 0) {
               // Check if at least one attachment matches the category type
               let hasMatchingAttachment = false;
@@ -496,7 +498,7 @@ export class PostService implements IPublicationService {
                   }
                 }
               }
-              
+
               if (!hasMatchingAttachment) {
                 const categoryType = isAudioCategory ? 'audio' : 'video';
                 throw this.errorHandler.createValidationError(
@@ -629,6 +631,24 @@ export class PostService implements IPublicationService {
         rejectionReason: rejectionReason?.trim() || undefined
       });
 
+      // Send rejection email notification
+      if (rejectionReason?.trim()) {
+        try {
+          const creator = await this.userRepository.findById(post.creatorId);
+          if (creator && creator.email) {
+            await this.emailService.sendPublicationRejectedEmail(
+              creator.email,
+              creator.firstName || creator.username || 'User',
+              post.title,
+              rejectionReason.trim()
+            );
+          }
+        } catch (emailError) {
+          // Log but don't fail the rejection if email fails
+          this.logger.error('Failed to send rejection email', emailError as Error, { postId: id, creatorId: post.creatorId });
+        }
+      }
+
       this.logger.info('Post rejected successfully', { postId: id, approverId, hasReason: !!rejectionReason });
       return updatedPost;
     } catch (error) {
@@ -652,7 +672,7 @@ export class PostService implements IPublicationService {
       }
 
       await this.postRepository.incrementViews(id);
-      
+
       this.logger.debug('Post view tracked', { postId: id, userId, ipAddress });
     } catch (error) {
       this.logger.error('Failed to track post view', error as Error, { postId: id });

@@ -122,7 +122,7 @@ export class ConfigurationService {
   getDatabaseConfig() {
     // Support both DATABASE_URL (for connection string) and individual MySQL config
     const databaseUrl = process.env.DATABASE_URL;
-    
+
     if (databaseUrl) {
       return {
         connectionString: databaseUrl,
@@ -160,21 +160,25 @@ export class ConfigurationService {
   // Email configuration
   getEmailConfig() {
     // Check for Microsoft Graph credentials with multiple naming conventions
-    const graphClientId = process.env.EXCHANGE_EMAIL_CLIENT_ID || 
-                          process.env.MICROSOFT_GRAPH_CLIENT_ID || 
-                          process.env.MS_GRAPH_CLIENT_ID ||
-                          process.env.GRAPH_CLIENT_ID ||
-                          process.env.AZURE_CLIENT_ID;
-    const graphClientSecret = process.env.EXCHANGE_EMAIL_CLIENT_SECRET || 
-                              process.env.MICROSOFT_GRAPH_CLIENT_SECRET || 
-                              process.env.MS_GRAPH_CLIENT_SECRET ||
-                              process.env.GRAPH_CLIENT_SECRET ||
-                              process.env.AZURE_CLIENT_SECRET;
-    const graphTenantId = process.env.EXCHANGE_EMAIL_TENANT_ID || 
-                          process.env.MICROSOFT_GRAPH_TENANT_ID || 
-                          process.env.MS_GRAPH_TENANT_ID ||
-                          process.env.GRAPH_TENANT_ID ||
-                          process.env.AZURE_TENANT_ID;
+    const graphClientId = process.env.EXCHANGE_EMAIL_CLIENT_ID ||
+      process.env.MICROSOFT_GRAPH_CLIENT_ID ||
+      process.env.MS_GRAPH_CLIENT_ID ||
+      process.env.GRAPH_CLIENT_ID ||
+      process.env.AZURE_CLIENT_ID;
+    const graphClientSecret = process.env.EXCHANGE_EMAIL_CLIENT_SECRET ||
+      process.env.MICROSOFT_GRAPH_CLIENT_SECRET ||
+      process.env.EXCHANGE_CLIENT_SECRET ||
+      process.env.CLIENT_SEC_VALUE ||
+      process.env.MS_GRAPH_CLIENT_SECRET ||
+      process.env.GRAPH_CLIENT_SECRET ||
+      process.env.AZURE_CLIENT_SECRET;
+    const graphTenantId = process.env.EXCHANGE_EMAIL_TENANT_ID ||
+      process.env.MICROSOFT_GRAPH_TENANT_ID ||
+      process.env.EXCHANGE_TENANT_ID ||
+      process.env.TENANT_ID ||
+      process.env.MS_GRAPH_TENANT_ID ||
+      process.env.GRAPH_TENANT_ID ||
+      process.env.AZURE_TENANT_ID;
 
     return {
       enabled: process.env.EMAIL_ENABLED === 'true',
