@@ -24,17 +24,17 @@ export default function LanguageSelector() {
   const [currentLang, setCurrentLang] = useState<LanguageCode>(language);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const googleTranslateRef = useRef<HTMLDivElement>(null);
-  
+
   // Check if we're on a public page (not admin)
   const isPublicPage = !pathname?.startsWith('/admin');
-  
+
   // Get current Google Translate language from cookie
   useEffect(() => {
     if (!isPublicPage) {
       setCurrentLang(language);
       return;
     }
-    
+
     // Check cookie for Google Translate language
     const cookieMatch = document.cookie.match(/googtrans=([^;]+)/);
     if (cookieMatch) {
@@ -63,7 +63,7 @@ export default function LanguageSelector() {
         console.log('Google Translate already initialized');
         return;
       }
-      
+
       if (!googleTranslateRef.current) {
         console.warn('Google Translate ref not available');
         return;
@@ -90,30 +90,30 @@ export default function LanguageSelector() {
           visibility: container.style.visibility,
           position: container.style.position,
         };
-        
+
         // Temporarily make visible for initialization
         container.style.display = 'block';
         container.style.visibility = 'visible';
         container.style.position = 'static';
-        
+
         // Initialize Google Translate
         new (window as any).google.translate.TranslateElement(
           {
             pageLanguage: 'en',
             includedLanguages: 'en,ar,fr,pt,es,sw',
-            layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE,
+            layout: (window as any).google?.translate?.TranslateElement?.InlineLayout?.SIMPLE || 0,
             autoDisplay: false,
           },
           container
         );
-        
+
         // Restore hidden styles after initialization
         setTimeout(() => {
           container.style.display = originalStyles.display || 'none';
           container.style.visibility = originalStyles.visibility || 'hidden';
           container.style.position = originalStyles.position || 'absolute';
         }, 500);
-        
+
         isInitialized = true;
         console.log('Google Translate initialized successfully');
         return true;
@@ -141,7 +141,7 @@ export default function LanguageSelector() {
           clearInterval(checkInterval);
         }
       }, 200);
-      
+
       return () => clearInterval(checkInterval);
     }
 
@@ -151,7 +151,7 @@ export default function LanguageSelector() {
     script.type = 'text/javascript';
     script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
     script.async = true;
-    
+
     // Set up global callback (Google Translate expects this specific name)
     (window as any).googleTranslateElementInit = () => {
       console.log('Google Translate script loaded');
@@ -169,11 +169,11 @@ export default function LanguageSelector() {
         }, 200);
       }, 300);
     };
-    
+
     script.onerror = () => {
       console.error('Failed to load Google Translate script');
     };
-    
+
     document.head.appendChild(script);
 
     return () => {
@@ -194,7 +194,7 @@ export default function LanguageSelector() {
           const langCode = Object.entries(googleTranslateCodes).find(
             ([, code]) => code === googleLang
           )?.[0] as LanguageCode;
-          
+
           if (langCode && langCode !== language) {
             // Update our language state to match Google Translate
             // But don't trigger API call for public pages
@@ -278,11 +278,11 @@ export default function LanguageSelector() {
       // For public pages, trigger Google Translate
       try {
         const googleLangCode = googleTranslateCodes[lang];
-        
+
         // Update current language state immediately for UI feedback
         setCurrentLang(lang);
         setIsOpen(false);
-        
+
         const applyLanguage = () => {
           const select = document.querySelector<HTMLSelectElement>('.goog-te-combo');
           if (!select) {
@@ -366,7 +366,7 @@ export default function LanguageSelector() {
         display: none !important;
       }
     `;
-    
+
     // Only add if not already added
     if (!document.getElementById('google-translate-hide-styles')) {
       document.head.appendChild(style);
@@ -381,19 +381,19 @@ export default function LanguageSelector() {
     <div className="relative" ref={dropdownRef}>
       {/* Hidden Google Translate element for public pages - must be in DOM for initialization */}
       {isPublicPage && (
-        <div 
-          id="google_translate_element" 
+        <div
+          id="google_translate_element"
           ref={googleTranslateRef}
           aria-hidden="true"
         />
       )}
-      
+
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center space-x-2 px-3 py-2 text-sm text-white hover:text-white hover:bg-au-corporate-green/80 rounded-lg transition-colors"
       >
         <Globe className="h-4 w-4" />
-        <span className="hidden sm:inline">{languageNames[isPublicPage ? currentLang : language]}</span>
+        <span className="hidden sm:inline notranslate">{languageNames[isPublicPage ? currentLang : language]}</span>
         <ChevronDown className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-180')} />
       </button>
 
@@ -412,7 +412,8 @@ export default function LanguageSelector() {
                   'w-full text-left px-4 py-2 text-sm transition-colors',
                   isSelected
                     ? 'bg-au-gold/20 text-au-green font-medium'
-                    : 'text-au-grey-text hover:bg-au-gold/5'
+                    : 'text-au-grey-text hover:bg-au-gold/5',
+                  'notranslate'
                 )}
               >
                 {languageNames[lang]}
