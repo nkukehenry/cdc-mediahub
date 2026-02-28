@@ -113,12 +113,12 @@ export class UserController {
   async update(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const { roleIds, ...updateData } = req.body;
 
       // Don't allow password updates through this endpoint
       delete updateData.password;
 
-      const user = await this.userService.updateUser(id, updateData);
+      const user = await this.userService.updateUser(id, updateData, roleIds);
 
       res.json({
         success: true,

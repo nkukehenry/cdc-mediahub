@@ -37,7 +37,7 @@ function UsersPageContent() {
   const { handleError, showSuccess: showSuccessMessage } = useErrorHandler();
   const { user: currentUser } = useAuth();
   const router = useRouter();
-  
+
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,21 +123,21 @@ function UsersPageContent() {
     try {
       setLoading(true);
       const response = await apiClient.getUsers(includeInactive);
-      
+
       if (response.success && response.data) {
         let filteredUsers = response.data.users;
-        
+
         // Filter by search query
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase();
-          filteredUsers = filteredUsers.filter((u: User) => 
+          filteredUsers = filteredUsers.filter((u: User) =>
             u.username.toLowerCase().includes(query) ||
             u.email.toLowerCase().includes(query) ||
             (u.firstName && u.firstName.toLowerCase().includes(query)) ||
             (u.lastName && u.lastName.toLowerCase().includes(query))
           );
         }
-        
+
         setUsers(filteredUsers);
       } else {
         handleError(new Error('Failed to load users'));
@@ -457,13 +457,14 @@ function UsersPageContent() {
             <p className="text-sm md:text-base text-au-grey-text/70">No users found</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden min-h-[300px]">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Roles</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
@@ -471,7 +472,7 @@ function UsersPageContent() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
+                  {users.map((user, index) => (
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center">
@@ -512,6 +513,22 @@ function UsersPageContent() {
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex flex-wrap gap-1 max-w-[150px]">
+                          {user.roles && user.roles.length > 0 ? (
+                            user.roles.map((role) => (
+                              <span
+                                key={role.id}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-au-gold/10 text-au-green border border-au-gold/20"
+                              >
+                                {role.name}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {user.isActive ? (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             Active
@@ -537,7 +554,10 @@ function UsersPageContent() {
                             <MoreVertical size={18} className="text-gray-400" />
                           </button>
                           {actionMenuOpen === user.id && (
-                            <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                            <div className={cn(
+                              "absolute right-0 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[100]",
+                              index === users.length - 1 && users.length <= 3 ? "bottom-full mb-1" : "mt-1"
+                            )}>
                               {user.isActive ? (
                                 <button
                                   onClick={() => handleBlock(user.id)}
