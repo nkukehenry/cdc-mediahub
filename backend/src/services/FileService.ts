@@ -3,7 +3,20 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
+// @ts-ignore
+import ffmpegPath from 'ffmpeg-static';
+// @ts-ignore
+import ffprobePath from 'ffprobe-static';
+import { pdf } from 'pdf-to-img';
 import { IFileService, IFileShareRepository, FileEntity, CreateFileData, ShareFileData, FileShareEntity, AccessLevel } from '../interfaces';
+
+// Configure ffmpeg to use static binaries
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
+}
+if (ffprobePath) {
+  ffmpeg.setFfprobePath(ffprobePath);
+}
 import { DatabaseUtils } from '../utils/DatabaseUtils';
 import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
@@ -55,7 +68,7 @@ export class FileService implements IFileService {
       const fileId = uuidv4();
       const fileExtension = this.getFileExtension(file.originalname);
       const filename = `${fileId}${fileExtension}`;
-      
+
       // Determine the correct file path based on folder
       let filePath: string;
       if (folderId) {
@@ -85,8 +98,8 @@ export class FileService implements IFileService {
       // This would be injected from the repository - now includes userId
       const savedFile = await this.saveFileToDatabase(fileData, userId);
 
-      this.logger.info('File uploaded successfully', { 
-        fileId: savedFile.id, 
+      this.logger.info('File uploaded successfully', {
+        fileId: savedFile.id,
         originalName: file.originalname,
         fileSize: file.size,
         userId
@@ -130,24 +143,81 @@ export class FileService implements IFileService {
 
   async generateThumbnail(filePath: string, mimeType: string): Promise<string> {
     try {
-      if (!this.isImageFile(mimeType)) {
-        return '';
-      }
-
       const filename = path.basename(filePath);
-      const thumbnailFilename = `thumb_${filename}`;
+      const thumbnailFilename = `thumb_${filename}.jpg`;
       const thumbnailPath = path.join(this.thumbnailPath, thumbnailFilename);
 
-      await sharp(filePath)
-        .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toFile(thumbnailPath);
+      if (this.isImageFile(mimeType)) {
+        try {
+          await sharp(filePath)
+            .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toFile(thumbnailPath);
 
-      this.logger.debug('Thumbnail generated', { filePath, thumbnailPath });
-      return thumbnailPath;
+          this.logger.debug('Image thumbnail generated', { filePath, thumbnailPath });
+          return thumbnailPath;
+        } catch (err) {
+          this.logger.warn('Image thumbnail generation failed, falling back to icon', { filePath, error: (err as Error).message });
+          return '';
+        }
+      }
+
+      if (mimeType.startsWith('video/')) {
+        try {
+          // Extract frame at 1 second mark
+          const framePath = await this.extractVideoFrame(filePath, 1);
+
+          // Resize the extracted frame to standard thumbnail size
+          const standardThumbnailPath = path.join(this.thumbnailPath, `thumb_${path.basename(framePath)}`);
+
+          await sharp(framePath)
+            .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toFile(standardThumbnailPath);
+
+          // Clean up the full-sized frame if different from standard
+          if (framePath !== standardThumbnailPath) {
+            try { await fs.unlink(framePath); } catch { }
+          }
+
+          this.logger.debug('Video thumbnail generated', { filePath, standardThumbnailPath });
+          return standardThumbnailPath;
+        } catch (err) {
+          this.logger.warn('Video thumbnail generation failed, falling back to icon', { filePath, error: (err as Error).message });
+          return '';
+        }
+      }
+
+      if (mimeType === 'application/pdf') {
+        try {
+          const pages = await pdf(filePath, { scale: 1.0 });
+          let firstPageBuffer: Buffer | null = null;
+
+          for await (const img of pages) {
+            firstPageBuffer = img;
+            break; // Just need the first page
+          }
+
+          if (firstPageBuffer) {
+            await sharp(firstPageBuffer)
+              .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 80 })
+              .toFile(thumbnailPath);
+
+            this.logger.debug('PDF thumbnail generated', { filePath, thumbnailPath });
+            return thumbnailPath;
+          }
+        } catch (err) {
+          this.logger.warn('PDF thumbnail generation failed, falling back to icon', { filePath, error: (err as Error).message });
+          return '';
+        }
+      }
+
+      return '';
     } catch (error) {
-      this.logger.error('Thumbnail generation failed', error as Error, { filePath });
-      throw this.errorHandler.createThumbnailError('Failed to generate thumbnail', filePath);
+      // Global fallback to empty path if anything fails
+      this.logger.warn('Thumbnail generation failed completely, falling back to icon', { filePath, error: (error as Error).message });
+      return '';
     }
   }
 
@@ -222,12 +292,12 @@ export class FileService implements IFileService {
         // Use yt-dlp to download a short segment
         // yt-dlp -f "best[height<=720]" -ss START -t DURATION URL -o OUTPUT
         const ytdlpCommand = `yt-dlp -f "best[height<=720]/best" --no-playlist --no-warnings --quiet -ss ${startTime} -t ${duration} "${youtubeUrl}" -o "${tempVideoPath}"`;
-        
-        this.logger.debug('Attempting to download YouTube segment with yt-dlp', { 
-          youtubeUrl, 
-          startTime, 
+
+        this.logger.debug('Attempting to download YouTube segment with yt-dlp', {
+          youtubeUrl,
+          startTime,
           duration,
-          tempVideoPath 
+          tempVideoPath
         });
 
         await execAsync(ytdlpCommand, { timeout: 60000 }); // 60 second timeout
@@ -254,9 +324,9 @@ export class FileService implements IFileService {
                 await fs.unlink(tempVideoPath);
                 this.logger.debug('Temporary video file deleted', { tempVideoPath });
               } catch (cleanupError) {
-                this.logger.warn('Failed to delete temporary video file', { 
+                this.logger.warn('Failed to delete temporary video file', {
                   error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-                  tempVideoPath 
+                  tempVideoPath
                 });
               }
 
@@ -271,9 +341,9 @@ export class FileService implements IFileService {
                 // Ignore cleanup errors
               }
 
-              this.logger.warn('Frame extraction from downloaded segment failed, using thumbnail API fallback', { 
-                youtubeUrl, 
-                error: err.message 
+              this.logger.warn('Frame extraction from downloaded segment failed, using thumbnail API fallback', {
+                youtubeUrl,
+                error: err.message
               });
 
               // Fallback to YouTube's thumbnail API (doesn't support custom timestamps)
@@ -297,8 +367,8 @@ export class FileService implements IFileService {
         }
 
         // If yt-dlp fails, fallback to YouTube thumbnail API
-        this.logger.warn('yt-dlp download failed, using thumbnail API fallback', { 
-          youtubeUrl, 
+        this.logger.warn('yt-dlp download failed, using thumbnail API fallback', {
+          youtubeUrl,
           videoId,
           timestampSeconds,
           thumbnailPath,
@@ -309,12 +379,12 @@ export class FileService implements IFileService {
         try {
           const fallbackUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
           await this.downloadYouTubeThumbnail(fallbackUrl, thumbnailPath);
-          
+
           // Verify the fallback thumbnail was saved
           if (!(await this.fileExists(thumbnailPath))) {
             throw new Error('Fallback thumbnail was not saved successfully');
           }
-          
+
           this.logger.debug('YouTube thumbnail saved via fallback API', { thumbnailPath });
           return thumbnailPath;
         } catch (fallbackError) {
@@ -347,12 +417,12 @@ export class FileService implements IFileService {
       }
       const buffer = Buffer.from(await response.arrayBuffer());
       await fs.writeFile(outputPath, buffer);
-      
+
       // Verify file was written
       if (!(await this.fileExists(outputPath))) {
         throw new Error('Thumbnail file was not created after write');
       }
-      
+
       this.logger.debug('YouTube thumbnail downloaded and saved', { url, outputPath, size: buffer.length });
     } catch (error) {
       this.logger.error('Failed to download YouTube thumbnail', error as Error, { url, outputPath });
@@ -365,14 +435,14 @@ export class FileService implements IFileService {
       /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
       /youtube\.com\/.*[?&]v=([^&\n?#]+)/
     ];
-    
+
     for (const pattern of patterns) {
       const match = url.match(pattern);
       if (match && match[1]) {
         return match[1];
       }
     }
-    
+
     return null;
   }
 
@@ -410,7 +480,7 @@ export class FileService implements IFileService {
         }
         // Remove post attachments referencing this file
         await DatabaseUtils.executeQuery('DELETE FROM post_attachments WHERE file_id = ?', [id]);
-      } catch {}
+      } catch { }
 
       // Delete from database
       const deleted = await this.deleteFileFromDatabase(id);
@@ -471,7 +541,7 @@ export class FileService implements IFileService {
   async getFiles(folderId: string | null, userId?: string): Promise<FileEntity[]> {
     try {
       const files = await this.findFilesByFolder(folderId);
-      
+
       // Filter files based on access
       const accessibleFiles = await Promise.all(
         files.map(async (file) => {
@@ -481,7 +551,7 @@ export class FileService implements IFileService {
       );
 
       const filteredFiles = accessibleFiles.filter((f): f is FileEntity => f !== null);
-      
+
       this.logger.debug('Files retrieved', { folderId, count: filteredFiles.length, userId });
       return filteredFiles;
     } catch (error) {
@@ -493,7 +563,7 @@ export class FileService implements IFileService {
   async searchFiles(query: string, userId?: string): Promise<FileEntity[]> {
     try {
       const files = await this.searchFilesInDatabase(query);
-      
+
       // Filter files based on access
       const accessibleFiles = await Promise.all(
         files.map(async (file) => {
@@ -503,7 +573,7 @@ export class FileService implements IFileService {
       );
 
       const filteredFiles = accessibleFiles.filter((f): f is FileEntity => f !== null);
-      
+
       this.logger.debug('Files searched', { query, count: filteredFiles.length, userId });
       return filteredFiles;
     } catch (error) {
@@ -620,7 +690,7 @@ export class FileService implements IFileService {
           return true;
         }
       }
-    } catch {}
+    } catch { }
 
     // Check sharing if repository is available
     if (this.fileShareRepository) {

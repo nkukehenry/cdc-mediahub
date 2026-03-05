@@ -21,12 +21,12 @@ import MoveModal from './MoveModal';
 import RenameFileModal from './RenameFileModal';
 import EmptyState from './EmptyState';
 import FileManagerNav from './file-manager/FileManagerNav';
-import { 
-  Upload, 
-  RefreshCw, 
-  Share2, 
-  User, 
-  Settings, 
+import {
+  Upload,
+  RefreshCw,
+  Share2,
+  User,
+  Settings,
   Search,
   Grid3X3,
   List,
@@ -75,10 +75,10 @@ const filterFilesForPicker = (files: FileWithUrls[] = [], allowedMimeTypes?: str
   return files.filter(file => matchesAllowedMimeTypes(file, allowedMimeTypes));
 };
 
-export default function FileManager({ 
-  config, 
-  onFileSelect, 
-  onFolderSelect, 
+export default function FileManager({
+  config,
+  onFileSelect,
+  onFolderSelect,
   onUpload,
   className,
   mode = 'manager',
@@ -88,14 +88,14 @@ export default function FileManager({
   const dispatch = useDispatch<AppDispatch>();
   const { t } = useTranslation();
   const { showWarning, showSuccess } = useErrorHandler();
-  const { 
-    folders, 
-    currentFolder, 
-    currentPath, 
-    viewMode, 
-    loading, 
+  const {
+    folders,
+    currentFolder,
+    currentPath,
+    viewMode,
+    loading,
     error,
-    selectedFiles 
+    selectedFiles
   } = useSelector((state: RootState) => state.fileManager);
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -123,7 +123,7 @@ export default function FileManager({
   const [renameTargetFile, setRenameTargetFile] = useState<FileWithUrls | null>(null);
 
   // Helper function to find a folder by ID in the tree structure
-  const findFolderById = (folders: FolderWithFiles[] =[], folderId: string): FolderWithFiles | null => {
+  const findFolderById = (folders: FolderWithFiles[] = [], folderId: string): FolderWithFiles | null => {
     for (const folder of folders) {
       if (folder.id === folderId) {
         return folder;
@@ -138,22 +138,22 @@ export default function FileManager({
   const rootFolders = folders.filter(f => !f.parentId);
   // Public link removed; 'Public' is now part of the tree and appears first.
   const [rootFiles, setRootFiles] = useState<FileWithUrls[]>([]);
-  
+
   // Get current folder files and folders from Redux state or shared folders
-  const currentFolderData = currentFolder 
+  const currentFolderData = currentFolder
     ? (findFolderById(folders, currentFolder) || findFolderById(sharedFolders, currentFolder))
     : null;
   const currentFolderFiles = filterFilesForPicker(currentFolderData?.files || [], allowedMimeTypes, mode);
   const currentFolderSubfolders = currentFolderData?.subfolders || [];
-  
+
   // Get all files for recent section (from all folders)
   const allFiles = filterFilesForPicker(folders.flatMap(folder => folder.files), allowedMimeTypes, mode);
-  
+
   // Sort files by updatedAt for recent section
   const recentFiles = allFiles
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 5);
-  
+
   // Combine files and folders for display based on current folder and view
   const allItems = activeView === 'shared' ? [
     // Shared folders first
@@ -340,7 +340,7 @@ export default function FileManager({
       });
     };
     collectFoldersWithSubfolders(folders);
-    
+
     // Only expand if we have folders with subfolders and no folders are currently expanded
     if (foldersWithSubfolders.size > 0 && expandedFolders.size === 0) {
       setExpandedFolders(foldersWithSubfolders);
@@ -386,7 +386,7 @@ export default function FileManager({
       } catch (refreshError) {
         // If silent refresh fails, fallback to regular refresh
         console.error('Silent refresh failed, falling back to regular refresh:', refreshError);
-      dispatch(fetchFolderTree(null));
+        dispatch(fetchFolderTree(null));
       }
     } catch (error) {
       console.error('Folder creation failed:', error);
@@ -442,20 +442,20 @@ export default function FileManager({
     });
     console.log('FileManager - Mode:', mode);
     console.log('FileManager - onFileSelect exists:', !!onFileSelect);
-    
+
     // Validate file object
     if (!file || !file.id) {
       console.error('FileManager - Invalid file object in handleFileClick:', file);
       return;
     }
-    
+
     // In picker mode, clicking a file selects it and calls onFileSelect
     if (mode === 'picker') {
       console.log('FileManager - Picker mode, calling onFileSelect with file:', file);
       onFileSelect?.(file);
       return;
     }
-    
+
     // In manager mode, open preview modal
     setSelectedFile(file);
     setPreviewFile(file);
@@ -489,7 +489,7 @@ export default function FileManager({
 
   const handleConfirmDelete = async () => {
     if (selectedFileIds.size === 0) return;
-    
+
     // Split selection into files and folders
     const allItemsMap = new Map(allItems.map(item => [item.id, item]));
     const selectedFiles = Array.from(selectedFileIds).filter(id => {
@@ -500,7 +500,7 @@ export default function FileManager({
       const item = allItemsMap.get(id);
       return item && item.isFolder;
     });
-    
+
     try {
       let failures: any[] = [];
       let successesCount = 0;
@@ -523,11 +523,11 @@ export default function FileManager({
         failures = failures.concat(_fail);
         successesCount += _succ.length;
       }
-      
+
       if (failures.length > 0) {
         showWarning(`${failures.length} ${t('errors.itemsFailedToDelete')}`);
       }
-      
+
       setSelectedFileIds(new Set());
       // Always fetch from root to get the complete tree
       await dispatch(fetchFolderTree(null));
@@ -572,7 +572,7 @@ export default function FileManager({
           if (res.success && res.data?.files) {
             setRootFiles(res.data.files as FileWithUrls[]);
           }
-        } catch {}
+        } catch { }
       }
 
       if (activeView === 'shared') {
@@ -590,7 +590,7 @@ export default function FileManager({
             }));
             setSharedFolders(foldersWithFiles);
           }
-        } catch {}
+        } catch { }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t('errors.failedToRenameFile');
@@ -603,7 +603,7 @@ export default function FileManager({
   const handleShareSelected = () => {
     const selectedIds = Array.from(selectedFileIds);
     if (selectedIds.length === 0) return;
-    
+
     // Check what's selected
     const allItemsMap = new Map(allItems.map(item => [item.id, item]));
     const selectedFiles = selectedIds.filter(id => {
@@ -614,7 +614,7 @@ export default function FileManager({
       const item = allItemsMap.get(id);
       return item && item.isFolder;
     });
-    
+
     if (selectedFiles.length > 0 && selectedFolders.length > 0) {
       showWarning(t('errors.selectFilesOrFoldersOnly'));
       return;
@@ -682,8 +682,10 @@ export default function FileManager({
 
   const hasSelectedFiles = selectedFileIds.size > 0;
 
-  const getFileIcon = (item: any) => {
-    const iconSize = 14; // compact rows
+  const getFileIcon = (item: any, size: 'sm' | 'lg' = 'sm') => {
+    const isLarge = size === 'lg';
+    const iconSize = isLarge ? 48 : 14;
+
     // Folder
     if (item.isFolder || item.icon === 'folder') {
       return <Folder size={iconSize} className="text-au-green" />;
@@ -696,7 +698,12 @@ export default function FileManager({
 
     // Archives
     if (m.includes('zip') || m.includes('rar') || m.includes('7z') || m.includes('tar') || m.includes('gz')) {
-      return <FileArchive size={iconSize} className="text-au-gold" />;
+      return (
+        <div className="flex flex-col items-center">
+          <FileArchive size={iconSize} className="text-au-gold" />
+          {isLarge && <span className="text-[10px] font-bold mt-2 text-au-gold uppercase px-1.5 py-0.5 bg-au-gold/10 rounded">ZIP</span>}
+        </div>
+      );
     }
 
     // Explicit categories
@@ -705,10 +712,36 @@ export default function FileManager({
     if (top === 'audio') return <FileAudio size={iconSize} className="text-au-green" />;
 
     // Documents
-    if (m.includes('pdf')) return <FileText size={iconSize} className="text-au-red" />;
-    if (m.includes('spreadsheet') || m.includes('excel') || m.includes('sheet')) return <FileSpreadsheet size={iconSize} className="text-au-green" />;
+    if (m.includes('pdf')) {
+      return (
+        <div className="flex flex-col items-center">
+          <FileText size={iconSize} className="text-au-red" />
+          {isLarge && <span className="text-[10px] font-bold mt-2 text-au-red uppercase px-1.5 py-0.5 bg-au-red/10 rounded">PDF</span>}
+        </div>
+      );
+    }
+
+    if (m.includes('spreadsheet') || m.includes('excel') || m.includes('sheet')) {
+      return (
+        <div className="flex flex-col items-center">
+          <FileSpreadsheet size={iconSize} className="text-au-green" />
+          {isLarge && <span className="text-[10px] font-bold mt-2 text-au-green uppercase px-1.5 py-0.5 bg-au-green/10 rounded">XLSX</span>}
+        </div>
+      );
+    }
+
     if (m.includes('word') || m.includes('document') || m.includes('rtf') || m.includes('presentation') || m.includes('powerpoint') || m.includes('text')) {
-      return <FileText size={iconSize} className="text-au-green" />;
+      const isWord = m.includes('word') || m.includes('document');
+      const isPPT = m.includes('presentation') || m.includes('powerpoint');
+      const colorClass = isWord ? "text-blue-600" : isPPT ? "text-orange-600" : "text-au-green";
+      const label = isWord ? "DOCX" : isPPT ? "PPTX" : "TXT";
+
+      return (
+        <div className="flex flex-col items-center">
+          <FileText size={iconSize} className={colorClass} />
+          {isLarge && <span className={`text-[10px] font-bold mt-2 ${colorClass} uppercase px-1.5 py-0.5 bg-current opacity-20 rounded`} style={{ backgroundColor: 'rgba(0,0,0,0.05)' }}>{label}</span>}
+        </div>
+      );
     }
 
     // Fallback
@@ -744,12 +777,12 @@ export default function FileManager({
           ) : (
             <div className="w-5 mr-2" />
           )}
-          
+
           {/* Folder Icon */}
           <div className="mr-3">
             <Folder size={16} className={currentFolder === folder.id ? "text-au-green" : "text-au-green"} />
           </div>
-          
+
           {/* Folder Name */}
           <span className={cn(
             "text-sm font-medium flex-1",
@@ -758,7 +791,7 @@ export default function FileManager({
             {folder.name}
           </span>
         </div>
-        
+
         {/* Render subfolders if expanded */}
         {expandedFolders.has(folder.id) && folder?.subfolders && folder?.subfolders?.length > 0 && (
           <div className="ml-2">
@@ -814,7 +847,7 @@ export default function FileManager({
           {/* Breadcrumb Navigation */}
           <div className="mb-4">
             <nav className="flex items-center space-x-2 text-sm">
-              <button 
+              <button
                 onClick={() => dispatch(setCurrentFolder(null))}
                 className="text-au-green hover:text-au-corporate-green font-medium"
               >
@@ -833,56 +866,56 @@ export default function FileManager({
 
           {/* Action Buttons and View Options */}
           {mode !== 'picker' && (
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            {/* Action Buttons - Hidden in picker mode */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+              {/* Action Buttons - Hidden in picker mode */}
               <div className="flex flex-wrap items-center gap-2">
-                <button 
+                <button
                   onClick={() => setIsUploadModalOpen(true)}
                   className="px-2.5 py-1.5 text-xs bg-au-green text-au-white rounded-lg hover:bg-au-corporate-green transition-colors flex items-center space-x-1.5"
                 >
                   <Upload size={14} />
                   <span className="hidden sm:inline">{t('fileManager.upload')}</span>
                 </button>
-                <button 
+                <button
                   onClick={() => setIsCreateFolderModalOpen(true)}
                   className="px-2.5 py-1.5 text-xs bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1.5"
                 >
                   <Folder size={14} />
                   <span className="hidden sm:inline">{t('fileManager.createFolder')}</span>
                 </button>
-                <button 
+                <button
                   onClick={handleShareSelected}
                   disabled={!hasSelectedFiles}
                   className={cn(
                     "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
-                    hasSelectedFiles 
-                      ? "hover:bg-au-green/10 hover:text-au-green hover:border-au-green cursor-pointer" 
+                    hasSelectedFiles
+                      ? "hover:bg-au-green/10 hover:text-au-green hover:border-au-green cursor-pointer"
                       : "opacity-50 cursor-not-allowed"
                   )}
                 >
                   <Share2 size={14} />
                   <span className="hidden sm:inline">{t('fileManager.share')}</span>
                 </button>
-                <button 
+                <button
                   onClick={handleMoveSelected}
                   disabled={!hasSelectedFiles}
                   className={cn(
                     "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
-                    hasSelectedFiles 
-                      ? "hover:bg-au-gold/5 cursor-pointer" 
+                    hasSelectedFiles
+                      ? "hover:bg-au-gold/5 cursor-pointer"
                       : "opacity-50 cursor-not-allowed"
                   )}
                 >
                   <Move size={14} />
                   <span className="hidden sm:inline">{t('fileManager.move')}</span>
                 </button>
-                <button 
+                <button
                   onClick={() => setIsDeleteModalOpen(true)}
                   disabled={!hasSelectedFiles}
                   className={cn(
                     "px-2.5 py-1.5 text-xs bg-au-white text-au-grey-text border border-gray-300 rounded-lg transition-colors flex items-center space-x-1.5",
-                    hasSelectedFiles 
-                      ? "hover:bg-au-red/10 hover:text-au-red hover:border-au-red cursor-pointer" 
+                    hasSelectedFiles
+                      ? "hover:bg-au-red/10 hover:text-au-red hover:border-au-red cursor-pointer"
                       : "opacity-50 cursor-not-allowed"
                   )}
                 >
@@ -890,140 +923,152 @@ export default function FileManager({
                   <span className="hidden sm:inline">{t('fileManager.delete')}</span>
                 </button>
               </div>
-            {/* View and Sort Options */}
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
-              <div className="flex items-center gap-2">
-                <select
-                  className="px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-xs md:text-sm"
-                  value={sortKey}
-                  onChange={(e) => {
-                    const val = e.target.value as 'name' | 'date' | 'size';
-                    setSortKey(val);
-                  }}
-                >
-                  <option value="name">Name</option>
-                  <option value="date">Date</option>
-                  <option value="size">Size</option>
-                </select>
-                <button
-                  onClick={() => setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                  className="px-2 py-2 border border-gray-300 rounded-lg text-xs md:text-sm text-au-grey-text hover:bg-gray-100"
-                  aria-label="Toggle sort direction"
-                  title={`Sort ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
-                >
-                  {sortDir === 'asc' ? 'ASC' : 'DESC'}
+              {/* View and Sort Options */}
+              <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-2">
+                  <select
+                    className="px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-xs md:text-sm"
+                    value={sortKey}
+                    onChange={(e) => {
+                      const val = e.target.value as 'name' | 'date' | 'size';
+                      setSortKey(val);
+                    }}
+                  >
+                    <option value="name">Name</option>
+                    <option value="date">Date</option>
+                    <option value="size">Size</option>
+                  </select>
+                  <button
+                    onClick={() => setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                    className="px-2 py-2 border border-gray-300 rounded-lg text-xs md:text-sm text-au-grey-text hover:bg-gray-100"
+                    aria-label="Toggle sort direction"
+                    title={`Sort ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+                  >
+                    {sortDir === 'asc' ? 'ASC' : 'DESC'}
+                  </button>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => dispatch(setViewMode('grid'))}
+                    className={cn(
+                      'p-2 rounded-lg transition-colors',
+                      viewMode === 'grid' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
+                    )}
+                    aria-label="Grid view"
+                  >
+                    <Grid3X3 size={16} />
+                  </button>
+                  <button
+                    onClick={() => dispatch(setViewMode('list'))}
+                    className={cn(
+                      'p-2 rounded-lg transition-colors',
+                      viewMode === 'list' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
+                    )}
+                    aria-label="List view"
+                  >
+                    <List size={16} />
+                  </button>
+                </div>
+                <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden md:block">
+                  <HelpCircle size={16} className="text-gray-400" />
                 </button>
               </div>
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => dispatch(setViewMode('grid'))}
-                  className={cn(
-                    'p-2 rounded-lg transition-colors',
-                    viewMode === 'grid' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
-                  )}
-                  aria-label="Grid view"
-                >
-                  <Grid3X3 size={16} />
-                </button>
-                <button
-                  onClick={() => dispatch(setViewMode('list'))}
-                  className={cn(
-                    'p-2 rounded-lg transition-colors',
-                    viewMode === 'list' ? 'bg-au-green text-white' : 'text-gray-400 hover:text-gray-600'
-                  )}
-                  aria-label="List view"
-                >
-                  <List size={16} />
-                </button>
-              </div>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden md:block">
-                <HelpCircle size={16} className="text-gray-400" />
-              </button>
             </div>
-          </div>
           )}
 
           {/* Recent Files Section */}
           {mode !== 'picker' && recentFiles.length > 0 && (
-          <div className="mb-6 md:mb-8">
-            <h2 className="text-base md:text-lg font-semibold text-au-grey-text mb-3 md:mb-4">Recent Files</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
-              {recentFiles.map((file) => (
-                <div
-                  key={file?.id || Math.random().toString()}
-                  className="relative bg-white rounded-lg border border-gray-200 p-2 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => handleFileClick(file)}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                      {getFileIcon({
-                        icon: file?.mimeType?.split('/')?.[0] || '',
-                        type: file?.mimeType?.split('/')?.[0] || ''
-                      })}
+            <div className="mb-6 md:mb-8">
+              <h2 className="text-base md:text-lg font-semibold text-au-grey-text mb-3 md:mb-4">Recent Files</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
+                {recentFiles.map((file) => (
+                  <div
+                    key={file?.id || Math.random().toString()}
+                    className="relative bg-white rounded-lg border border-gray-200 p-2 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => handleFileClick(file)}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center overflow-hidden border border-gray-100 group-hover:border-au-green/20 transition-colors">
+                        {file.thumbnailUrl ? (
+                          <img
+                            src={file.thumbnailUrl}
+                            alt={file.originalName}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          getFileIcon({
+                            icon: file?.mimeType?.split('/')?.[0] || '',
+                            type: file?.mimeType?.split('/')?.[0] || '',
+                            data: { mimeType: file?.mimeType }
+                          }, 'lg')
+                        )}
+                      </div>
+                      <button
+                        className="p-0.5 hover:bg-gray-100 rounded"
+                        onClick={(e) => { e.stopPropagation(); setRecentMenuId(recentMenuId === file.id ? null : file.id); }}
+                        aria-label="More actions"
+                      >
+                        <MoreVertical size={12} className="text-gray-400" />
+                      </button>
                     </div>
-                    <button
-                      className="p-0.5 hover:bg-gray-100 rounded"
-                      onClick={(e) => { e.stopPropagation(); setRecentMenuId(recentMenuId === file.id ? null : file.id); }}
-                      aria-label="More actions"
-                    >
-                      <MoreVertical size={12} className="text-gray-400" />
-                    </button>
-                  </div>
-                  <h3 className="text-xs font-medium text-gray-900 truncate mb-0.5">{file?.originalName || ''}</h3>
-                  <p className="text-[10px] text-gray-500">{file?.mimeType?.split('/')?.[0]?.toUpperCase() || ''}, {formatFileSize(file?.fileSize ?? 0)}</p>
+                    <h3 className="text-xs font-medium text-gray-900 truncate mb-0.5">{file?.originalName || ''}</h3>
+                    <p className="text-[10px] text-gray-500">{file?.mimeType?.split('/')?.[0]?.toUpperCase() || ''}, {formatFileSize(file?.fileSize ?? 0)}</p>
 
-                  {file && recentMenuId === file.id && (
-                    <div className="absolute right-2 top-8 z-10 w-32 bg-white border border-gray-200 rounded-md shadow-lg py-1"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                        onClick={() => {
-                          setRecentMenuId(null);
-                          // Share single file
-                          setShareFileId(file.id);
-                          setShareFolderId(null);
-                          setShareType('file');
-                          setIsShareModalOpen(true);
-                        }}
+                    {file && recentMenuId === file.id && (
+                      <div className="absolute right-2 top-8 z-10 w-32 bg-white border border-gray-200 rounded-md shadow-lg py-1"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Share
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                        onClick={() => {
-                          setRecentMenuId(null);
-                          openRenameModal(file as FileWithUrls);
-                        }}
-                      >
-                        {t('common.rename')}
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                        onClick={() => {
-                          setRecentMenuId(null);
-                          selectSingle(file.id);
-                          setIsMoveModalOpen(true);
-                        }}
-                      >
-                        Move
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 text-red-600"
-                        onClick={async () => {
-                          setRecentMenuId(null);
-                          selectSingle(file.id);
-                          setIsDeleteModalOpen(true);
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                        <button
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                          onClick={() => {
+                            setRecentMenuId(null);
+                            // Share single file
+                            setShareFileId(file.id);
+                            setShareFolderId(null);
+                            setShareType('file');
+                            setIsShareModalOpen(true);
+                          }}
+                        >
+                          Share
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                          onClick={() => {
+                            setRecentMenuId(null);
+                            openRenameModal(file as FileWithUrls);
+                          }}
+                        >
+                          {t('common.rename')}
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                          onClick={() => {
+                            setRecentMenuId(null);
+                            selectSingle(file.id);
+                            setIsMoveModalOpen(true);
+                          }}
+                        >
+                          Move
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 text-red-600"
+                          onClick={async () => {
+                            setRecentMenuId(null);
+                            selectSingle(file.id);
+                            setIsDeleteModalOpen(true);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
           )}
 
           {/* All Files Section */}
@@ -1055,142 +1100,142 @@ export default function FileManager({
               {/* Empty state - show when no files or folders */}
               {((currentFolder && currentFolderFiles.length === 0 && currentFolderSubfolders.length === 0) ||
                 (!currentFolder && rootFolders.length === 0 && rootFiles.length === 0)) ? (
-                <EmptyState 
+                <EmptyState
                   type={currentFolder ? 'folder' : 'root'}
                   icon={currentFolder ? 'folder' : 'folderPlus'}
                 />
               ) : (
-              <>
-              {viewMode === 'list' ? (
                 <>
-              {/* Table Header */}
-                  <div className="bg-gray-50 px-3 md:px-6 py-2 border-b border-gray-200">
-                    <div className="grid grid-cols-12 gap-2 md:gap-4 text-xs font-medium text-au-grey-text">
-                  <div className="col-span-1"></div>
-                  <div className="col-span-5">{t('fileManager.name')}</div>
-                  <div className="col-span-2 hidden md:block">{t('fileManager.lastModified')}</div>
-                  <div className="col-span-2 hidden sm:block">{t('fileManager.size')}</div>
-                  <div className="col-span-2 sm:col-span-1">{t('fileManager.manage')}</div>
-                </div>
-              </div>
-
-              {/* Table Body - Scrollable */}
-              <div className="max-h-96 min-h-[40vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
-                <div className="divide-y divide-gray-200">
-                  {itemsSorted.map((item) => (
-                    <FileListRow
-                      key={item.id}
-                      item={item as any}
-                      selected={selectedFileIds.has(item.id)}
-                      onToggleSelect={(id) => {
-                        console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
-                        if (mode === 'picker' && !item.isFolder) {
-                          toggleFileSelection(id);
-                          onFileSelect?.(item.data as FileWithUrls);
-                        } else {
-                          toggleFileSelection(id);
-                        }
-                      }}
-                      onOpen={(it) =>
-                        it.isFolder
-                          ? handleFolderClick(it.data as FolderWithFiles)
-                          : handleFileClick(it.data as FileWithUrls)
-                      }
-                      onShare={(it) => {
-                        if (it.isFolder) {
-                          setShareFolderId(it.id);
-                          setShareFileId(null);
-                          setShareType('folder');
-                        } else {
-                          setShareFileId(it.id);
-                          setShareFolderId(null);
-                          setShareType('file');
-                        }
-                        setIsShareModalOpen(true);
-                      }}
-                      onMove={(it) => {
-                        const single = new Set<string>();
-                        single.add(it.id);
-                        setSelectedFileIds(single);
-                        setIsMoveModalOpen(true);
-                      }}
-                      onDelete={(it) => {
-                        const single = new Set<string>();
-                        single.add(it.id);
-                        setSelectedFileIds(single);
-                        setIsDeleteModalOpen(true);
-                      }}
-                      onRename={(it) => {
-                        if (!it.isFolder) {
-                          openRenameModal(it.data as FileWithUrls);
-                        }
-                      }}
-                      icon={getFileIcon(item)}
-                      mode={mode}
-                    />
-                  ))}
+                  {viewMode === 'list' ? (
+                    <>
+                      {/* Table Header */}
+                      <div className="bg-gray-50 px-3 md:px-6 py-2 border-b border-gray-200">
+                        <div className="grid grid-cols-12 gap-2 md:gap-4 text-xs font-medium text-au-grey-text">
+                          <div className="col-span-1"></div>
+                          <div className="col-span-5">{t('fileManager.name')}</div>
+                          <div className="col-span-2 hidden md:block">{t('fileManager.lastModified')}</div>
+                          <div className="col-span-2 hidden sm:block">{t('fileManager.size')}</div>
+                          <div className="col-span-2 sm:col-span-1">{t('fileManager.manage')}</div>
                         </div>
-                          </div>
+                      </div>
+
+                      {/* Table Body - Scrollable */}
+                      <div className="max-h-96 min-h-[40vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+                        <div className="divide-y divide-gray-200">
+                          {itemsSorted.map((item) => (
+                            <FileListRow
+                              key={item.id}
+                              item={item as any}
+                              selected={selectedFileIds.has(item.id)}
+                              onToggleSelect={(id) => {
+                                console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
+                                if (mode === 'picker' && !item.isFolder) {
+                                  toggleFileSelection(id);
+                                  onFileSelect?.(item.data as FileWithUrls);
+                                } else {
+                                  toggleFileSelection(id);
+                                }
+                              }}
+                              onOpen={(it) =>
+                                it.isFolder
+                                  ? handleFolderClick(it.data as FolderWithFiles)
+                                  : handleFileClick(it.data as FileWithUrls)
+                              }
+                              onShare={(it) => {
+                                if (it.isFolder) {
+                                  setShareFolderId(it.id);
+                                  setShareFileId(null);
+                                  setShareType('folder');
+                                } else {
+                                  setShareFileId(it.id);
+                                  setShareFolderId(null);
+                                  setShareType('file');
+                                }
+                                setIsShareModalOpen(true);
+                              }}
+                              onMove={(it) => {
+                                const single = new Set<string>();
+                                single.add(it.id);
+                                setSelectedFileIds(single);
+                                setIsMoveModalOpen(true);
+                              }}
+                              onDelete={(it) => {
+                                const single = new Set<string>();
+                                single.add(it.id);
+                                setSelectedFileIds(single);
+                                setIsDeleteModalOpen(true);
+                              }}
+                              onRename={(it) => {
+                                if (!it.isFolder) {
+                                  openRenameModal(it.data as FileWithUrls);
+                                }
+                              }}
+                              icon={getFileIcon(item)}
+                              mode={mode}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-2 md:p-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
+                        {itemsSorted.map((item) => (
+                          <FileGridCard
+                            key={item.id}
+                            item={item as any}
+                            selected={selectedFileIds.has(item.id)}
+                            onToggleSelect={(id) => {
+                              console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
+                              if (mode === 'picker' && !item.isFolder) {
+                                toggleFileSelection(id);
+                                onFileSelect?.(item.data as FileWithUrls);
+                              } else {
+                                toggleFileSelection(id);
+                              }
+                            }}
+                            onOpen={(it) =>
+                              it.isFolder
+                                ? handleFolderClick(it.data as FolderWithFiles)
+                                : handleFileClick(it.data as FileWithUrls)
+                            }
+                            onShare={(it) => {
+                              if (it.isFolder) {
+                                setShareFolderId(it.id);
+                                setShareFileId(null);
+                                setShareType('folder');
+                              } else {
+                                setShareFileId(it.id);
+                                setShareFolderId(null);
+                                setShareType('file');
+                              }
+                              setIsShareModalOpen(true);
+                            }}
+                            onMove={(it) => {
+                              const single = new Set<string>();
+                              single.add(it.id);
+                              setSelectedFileIds(single);
+                              setIsMoveModalOpen(true);
+                            }}
+                            onDelete={(it) => {
+                              const single = new Set<string>();
+                              single.add(it.id);
+                              setSelectedFileIds(single);
+                              setIsDeleteModalOpen(true);
+                            }}
+                            onRename={(it) => {
+                              if (!it.isFolder) {
+                                openRenameModal(it.data as FileWithUrls);
+                              }
+                            }}
+                            icon={getFileIcon(item, 'lg')}
+                            mode={mode}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
-              ) : (
-                <div className="p-2 md:p-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
-                    {itemsSorted.map((item) => (
-                      <FileGridCard
-                        key={item.id}
-                        item={item as any}
-                        selected={selectedFileIds.has(item.id)}
-                        onToggleSelect={(id) => {
-                          console.log('FileManager - onToggleSelect called for id:', id, 'mode:', mode, 'isFolder:', item.isFolder);
-                          if (mode === 'picker' && !item.isFolder) {
-                            toggleFileSelection(id);
-                            onFileSelect?.(item.data as FileWithUrls);
-                          } else {
-                            toggleFileSelection(id);
-                          }
-                        }}
-                        onOpen={(it) =>
-                          it.isFolder
-                            ? handleFolderClick(it.data as FolderWithFiles)
-                            : handleFileClick(it.data as FileWithUrls)
-                        }
-                        onShare={(it) => {
-                          if (it.isFolder) {
-                            setShareFolderId(it.id);
-                            setShareFileId(null);
-                            setShareType('folder');
-                          } else {
-                            setShareFileId(it.id);
-                            setShareFolderId(null);
-                            setShareType('file');
-                          }
-                          setIsShareModalOpen(true);
-                        }}
-                        onMove={(it) => {
-                          const single = new Set<string>();
-                          single.add(it.id);
-                          setSelectedFileIds(single);
-                          setIsMoveModalOpen(true);
-                        }}
-                        onDelete={(it) => {
-                          const single = new Set<string>();
-                          single.add(it.id);
-                          setSelectedFileIds(single);
-                          setIsDeleteModalOpen(true);
-                        }}
-                        onRename={(it) => {
-                          if (!it.isFolder) {
-                            openRenameModal(it.data as FileWithUrls);
-                          }
-                        }}
-                        icon={getFileIcon(item)}
-                        mode={mode}
-                      />
-                    ))}
-                </div>
-              </div>
-              )}
-              </>
               )}
             </div>
           </div>
@@ -1244,29 +1289,29 @@ export default function FileManager({
               const item = allItemsMap.get(id);
               return item && !item.isFolder;
             });
-            
+
             if (selectedFiles.length === 0) {
               showWarning('Please select files (not folders) to move. Folders cannot be moved using this action.');
               setIsMoveModalOpen(false);
               return;
             }
-            
+
             // Use API client directly to move files
             console.log('Moving files:', selectedFiles, 'to folder:', destinationFolderId);
             const { apiClient } = await import('@/utils/apiClient');
             const res = await apiClient.moveFiles(selectedFiles, destinationFolderId);
             console.log('Move response:', res);
-            
+
             if (res.success) {
               const movedCount = res.data?.moved || 0;
               console.log(`Successfully moved ${movedCount} file(s)`);
-              
+
               if (movedCount === 0) {
                 showWarning('No files were moved. They may already be in the destination folder.');
               } else {
                 showSuccess(`Moved ${movedCount} file(s)`);
               }
-              
+
               setSelectedFileIds(new Set());
               // Always fetch from root to get the complete tree
               await dispatch(fetchFolderTree(null));
@@ -1278,7 +1323,7 @@ export default function FileManager({
                   if (res.success && res.data?.files) {
                     setRootFiles(res.data.files as FileWithUrls[]);
                   }
-                } catch {}
+                } catch { }
               }
 
               // If viewing Shared, reload shared folders/files
@@ -1297,7 +1342,7 @@ export default function FileManager({
                     }));
                     setSharedFolders(foldersWithFiles);
                   }
-                } catch {}
+                } catch { }
               }
 
               // Close modal after successful refresh

@@ -7,11 +7,11 @@ export function cn(...inputs: ClassValue[]) {
 
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
-  
+
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
+
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
@@ -68,27 +68,27 @@ export const validateFileSize = (file: File, maxSize: number): boolean => {
  */
 export const stripHtmlTags = (html?: string | null): string => {
   if (!html) return '';
-  
+
   // Check if we're in a browser environment
   if (typeof document === 'undefined') {
     // Fallback for server-side: use regex to remove HTML tags
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
-  
+
   // Create a temporary div element to parse HTML
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = html;
-  
+
   // Get plain text content
   const plainText = tempDiv.textContent || tempDiv.innerText || '';
-  
+
   // Clean up multiple spaces and newlines
   return plainText.replace(/\s+/g, ' ').trim();
 };
 
 export const truncateText = (value?: string | null, maxLength = 32): string => {
   if (!value) return '';
-  
+
   // Strip HTML tags first if present
   const plainText = stripHtmlTags(value);
   const trimmed = plainText.trim();
@@ -123,25 +123,25 @@ export const PLACEHOLDER_IMAGE_PATH = 'uploads/placeholder-image.jpg';
  */
 export const getFileUrl = (filePath?: string | null): string => {
   if (!filePath) return '';
-  
+
   // If it's already a full URL (http:// or https://), return as-is
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     return filePath;
   }
-  
+
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  
+
   // Normalize path: replace backslashes with forward slashes (Windows paths)
   const normalizedPath = filePath.replace(/\\/g, '/');
-  
+
   // Remove leading slash if present to avoid double slashes
   const cleanPath = normalizedPath.startsWith('/') ? normalizedPath.slice(1) : normalizedPath;
-  
-  // If path already includes 'uploads/', use it directly
-  if (cleanPath.startsWith('uploads/')) {
+
+  // If path already includes 'uploads/' or 'thumbnails/', use it directly
+  if (cleanPath.startsWith('uploads/') || cleanPath.startsWith('thumbnails/')) {
     return `${baseUrl}/${cleanPath}`;
   }
-  
+
   // Otherwise, assume it's a file in the uploads directory
   return `${baseUrl}/uploads/${cleanPath}`;
 };

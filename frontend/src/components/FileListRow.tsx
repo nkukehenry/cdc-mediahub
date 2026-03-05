@@ -73,13 +73,13 @@ export default function FileListRow({
   };
 
   return (
-    <div 
-      key={item.id} 
+    <div
+      key={item.id}
       className="px-6 py-2 hover:bg-gray-50 transition-colors"
     >
       <div className="grid grid-cols-12 gap-4 items-center">
         <div className="col-span-1">
-          <button 
+          <button
             onClick={handleToggleSelect}
             className="p-0.5 hover:bg-au-gold/10 rounded"
             aria-label={selected ? 'Deselect' : 'Select'}
@@ -91,11 +91,22 @@ export default function FileListRow({
             )}
           </button>
         </div>
-        <div className="col-span-5 flex items-center space-x-2">
-          <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center">
-            {icon}
+        <div className="col-span-5 flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center overflow-hidden border border-gray-100 group-hover:border-au-green/20 transition-colors">
+            {!item.isFolder && (item.data as FileWithUrls).thumbnailUrl ? (
+              <img
+                src={(item.data as FileWithUrls).thumbnailUrl!}
+                alt={item.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              icon
+            )}
           </div>
-          <button 
+          <button
             className="text-xs font-medium text-au-grey-text truncate hover:text-au-green text-left"
             onClick={handleNameClick}
             title={item.name}
