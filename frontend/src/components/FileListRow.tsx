@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckSquare, Square, MoreVertical } from 'lucide-react';
+import { CheckSquare, Square, MoreVertical, Share2 } from 'lucide-react';
 import { FileWithUrls, FolderWithFiles } from '@/types/fileManager';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -106,13 +106,28 @@ export default function FileListRow({
               icon
             )}
           </div>
-          <button
-            className="text-xs font-medium text-au-grey-text truncate hover:text-au-green text-left"
-            onClick={handleNameClick}
-            title={item.name}
-          >
-            {item.name}
-          </button>
+            <div className="flex items-center space-x-1.5 min-w-0">
+              <button
+                className="text-xs font-medium text-au-grey-text truncate hover:text-au-green text-left"
+                onClick={handleNameClick}
+                title={item.name}
+              >
+                {item.name}
+              </button>
+              {((item.data as any).accessType === 'shared' || (item.data as any).accessType === 'public') && (
+                <div className="flex items-center space-x-1 text-au-green flex-shrink-0">
+                  <Share2 size={10} />
+                  {!(item.data as any).sharedBy && (
+                    <span className="text-[10px] whitespace-nowrap">{t('fileManager.shared')}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            {(item.data as any).sharedBy && (
+              <span className="text-[10px] text-gray-400 truncate">
+                {t('fileManager.sharedBy') || 'Shared by'}: {(item.data as any).sharedBy.username}
+              </span>
+            )}
         </div>
         <div className="col-span-2 text-xs text-au-grey-text">{item.lastModified}</div>
         <div className="col-span-2 text-xs text-au-grey-text">{item.size}</div>

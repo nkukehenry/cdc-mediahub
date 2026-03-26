@@ -174,12 +174,11 @@ export class FileShareRepository implements IFileShareRepository {
         [id]
       );
 
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM file_shares WHERE id = ?',
         [id]
       );
-      const changeRow = await DatabaseUtils.findOne<any>('SELECT changes() AS changes');
-      const deleted = (changeRow?.changes ?? 0) > 0;
+      const deleted = result.changes > 0;
 
       // If deleted, check if file should revert to private
       if (deleted && share) {
@@ -207,7 +206,7 @@ export class FileShareRepository implements IFileShareRepository {
 
   async deleteByFile(fileId: string): Promise<boolean> {
     try {
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM file_shares WHERE file_id = ?',
         [fileId]
       );
@@ -218,8 +217,7 @@ export class FileShareRepository implements IFileShareRepository {
         ['private', fileId]
       );
 
-      const changeRow2 = await DatabaseUtils.findOne<any>('SELECT changes() AS changes');
-      const deleted = (changeRow2?.changes ?? 0) > 0;
+      const deleted = result.changes > 0;
       this.logger.debug('File shares deleted by file', { fileId, deleted });
       return deleted;
     } catch (error) {
@@ -231,10 +229,11 @@ export class FileShareRepository implements IFileShareRepository {
   // Delete specific share for a file and user
   async deleteByFileAndUser(fileId: string, userId: string): Promise<boolean> {
     try {
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM file_shares WHERE file_id = ? AND shared_with_user_id = ?',
         [fileId, userId]
       );
+      const deleted = result.changes > 0;
 
       // Check if any shares remain for this file
       const remainingShares = await DatabaseUtils.findMany<any>(
@@ -250,13 +249,14 @@ export class FileShareRepository implements IFileShareRepository {
         );
       }
 
-      const changeRow3 = await DatabaseUtils.findOne<any>('SELECT changes() AS changes');
-      const deleted = (changeRow3?.changes ?? 0) > 0;
       this.logger.debug('File share deleted by file and user', { fileId, userId, deleted });
       return deleted;
-    } catch (error) {
-      this.logger.error('Failed to delete file share by file and user', error as Error, { fileId, userId });
-      throw this.errorHandler.createDatabaseError('Failed to delete file share by file and user', 'delete', 'file_shares');
+    } catch (error: any) {
+      this.logger.error('Failed to delete file share by file and user', error, { 
+        fileId, 
+        userId
+      });
+      throw this.errorHandler.createDatabaseError(`Failed to delete file share by file and user: ${error.message}`, 'delete', 'file_shares');
     }
   }
 
@@ -308,4 +308,3 @@ export class FileShareRepository implements IFileShareRepository {
     };
   }
 }
-

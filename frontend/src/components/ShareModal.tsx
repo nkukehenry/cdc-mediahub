@@ -33,15 +33,57 @@ export default function ShareModal({ isOpen, onClose, onShare, fileId, folderId 
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [existingShares, setExistingShares] = useState<any[]>([]);
+  const [isLoadingShares, setIsLoadingShares] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load users on mount
+  // Load users and existing shares on mount
   useEffect(() => {
     if (isOpen) {
       loadUsers();
+      loadExistingShares();
+    } else {
+      setExistingShares([]);
+      setSelectedUsers([]);
+      setSearchQuery('');
     }
-  }, [isOpen]);
+  }, [isOpen, fileId, folderId]);
+
+  const loadExistingShares = async () => {
+    if (!fileId && !folderId) return;
+    setIsLoadingShares(true);
+    try {
+      if (fileId) {
+        const res = await apiClient.getFileShares(fileId);
+        if (res.success && res.data?.shares) {
+          setExistingShares(res.data.shares);
+        }
+      } else if (folderId) {
+        const res = await apiClient.getFolderShares(folderId);
+        if (res.success && res.data?.shares) {
+          setExistingShares(res.data.shares);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load existing shares:', error);
+    } finally {
+      setIsLoadingShares(false);
+    }
+  };
+
+  const handleRemoveExistingShare = async (userId: string) => {
+    try {
+      if (fileId) {
+        await apiClient.deleteFileShare(fileId, userId);
+      } else if (folderId) {
+        await apiClient.deleteFolderShare(folderId, userId);
+      }
+      setExistingShares(prev => prev.filter(share => share.sharedWithUserId !== userId));
+    } catch (error) {
+      console.error('Failed to remove share:', error);
+    }
+  };
 
   // Update access level default when folderId/fileId changes
   useEffect(() => {
@@ -89,7 +131,7 @@ export default function ShareModal({ isOpen, onClose, onShare, fileId, folderId 
       user.username.toLowerCase().includes(query) ||
       user.email.toLowerCase().includes(query) ||
       name.includes(query)
-    ) && !selectedUsers.find(su => su.id === user.id);
+    ) && !selectedUsers.find(su => su.id === user.id) && !existingShares.find(es => es.sharedWithUserId === user.id);
   });
 
   // Add user to selection
@@ -115,7 +157,8 @@ export default function ShareModal({ isOpen, onClose, onShare, fileId, folderId 
       await onShare(selectedUsers.map(u => u.id), accessLevel);
       setSelectedUsers([]);
       setSearchQuery('');
-      onClose();
+      // Reload existing shares after new shares are added
+      loadExistingShares();
     } catch (error) {
       console.error('Share failed:', error);
     } finally {
@@ -229,6 +272,41 @@ export default function ShareModal({ isOpen, onClose, onShare, fileId, folderId 
               </div>
             </div>
           </div>
+
+          {/* Existing Shares */}
+          {existingShares.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-au-grey-text mb-2">
+                {t('fileManager.peopleWithAccess') || 'People with access'}
+              </label>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto">
+                {existingShares.map(share => {
+                  const u = share.user;
+                  const displayName = u ? (u.firstName || u.lastName ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : u.username) : 'Unknown User';
+                  return (
+                    <div key={share.id} className="flex items-center justify-between py-2 px-2 hover:bg-white rounded border border-transparent hover:border-gray-200 transition-colors">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 rounded-full bg-au-gold/20 flex items-center justify-center text-au-green">
+                          <User size={14} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                          <p className="text-xs text-gray-500">{u?.email || ''} • {share.accessLevel}</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleRemoveExistingShare(share.sharedWithUserId)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                        title={t('common.remove') || 'Remove access'}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Access level selection */}
           <div className="mb-4">

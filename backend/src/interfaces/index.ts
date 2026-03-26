@@ -43,6 +43,7 @@ export interface IFileService {
   shareFile(fileId: string, userId: string, shareData: ShareFileData): Promise<FileShareEntity>;
   shareFileWithUsers(fileId: string, userId: string, sharedWithUserIds: string[], accessLevel?: AccessLevel): Promise<FileShareEntity[]>;
   getFilesSharedWithUser(userId: string): Promise<FileEntity[]>;
+  removeShare(fileId: string, userId: string): Promise<boolean>;
 }
 
 export interface IFolderService {
@@ -53,6 +54,7 @@ export interface IFolderService {
   deleteFolder(id: string, userId?: string): Promise<boolean>;
   shareFolderWithUsers(folderId: string, userId: string, sharedWithUserIds: string[], accessLevel?: AccessLevel): Promise<any[]>;
   getFoldersSharedWithUser(userId: string): Promise<FolderEntity[]>;
+  removeFolderShare(folderId: string, userId: string): Promise<boolean>;
 }
 
 export interface IFileManagerConfig {

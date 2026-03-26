@@ -51,6 +51,7 @@ export default {
     no: 'Non',
     filters: 'Filtres',
     all: 'Tous',
+    remove: 'Supprimer',
   },
   // Auth
   auth: {
@@ -103,6 +104,8 @@ export default {
     move: 'Déplacer',
     share: 'Partager',
     fileRenamed: 'Fichier renommé avec succès',
+    peopleWithAccess: 'Personnes ayant accès',
+    sharedBy: 'Partagé par',
     open: 'Ouvrir',
     shareWith: 'Partager avec',
     selectUsers: 'Sélectionnez les utilisateurs avec qui partager...',

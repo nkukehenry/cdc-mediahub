@@ -126,8 +126,8 @@ export default function RegisterForm() {
     resetRecaptcha();
 
     if (result.success) {
-      showSuccess('Account created successfully.');
-      router.push('/');
+      showSuccess('Account created successfully. Please log in.');
+      router.push('/login');
     } else {
       showError(result.error || 'Registration failed.');
     }

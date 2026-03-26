@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckSquare, Square, MoreVertical } from 'lucide-react';
+import { CheckSquare, Square, MoreVertical, Share2 } from 'lucide-react';
 import { FileWithUrls, FolderWithFiles } from '@/types/fileManager';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/utils/fileUtils';
@@ -191,7 +191,22 @@ export default function FileGridCard({
       </div>
 
       <div className="mt-auto">
-        <div className="text-xs font-semibold text-au-grey-text truncate group-hover:text-au-green transition-colors">{item.name}</div>
+        <div className="flex items-center space-x-1.5 min-w-0">
+          <div className="text-xs font-semibold text-au-grey-text truncate group-hover:text-au-green transition-colors">{item.name}</div>
+          {((item.data as any).accessType === 'shared' || (item.data as any).accessType === 'public') && (
+            <div className="flex items-center space-x-1 text-au-green flex-shrink-0">
+              <Share2 size={10} />
+              {!(item.data as any).sharedBy && (
+                <span className="text-[10px] whitespace-nowrap">{t('fileManager.shared')}</span>
+              )}
+            </div>
+          )}
+        </div>
+        {(item.data as any).sharedBy && (
+          <div className="text-[10px] text-gray-400 mt-1 truncate">
+            {t('fileManager.sharedBy') || 'Shared by'}: {(item.data as any).sharedBy.username}
+          </div>
+        )}
         <div className="text-[10px] text-au-grey-text/50 mt-1.5 flex items-center justify-between">
           <span>{item.lastModified}</span>
           {!item.isFolder && <span>{item.size}</span>}

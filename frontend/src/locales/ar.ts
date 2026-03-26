@@ -51,6 +51,7 @@ export default {
     no: 'لا',
     filters: 'المرشحات',
     all: 'الكل',
+    remove: 'إزالة',
   },
   // Auth
   auth: {
@@ -122,6 +123,8 @@ export default {
       description: 'قم برفع أول ملف أو إنشاء مجلد للبدء.'
     },
     fileRenamed: 'تمت إعادة تسمية الملف بنجاح',
+    peopleWithAccess: 'الأشخاص الذين لديهم صلاحية الوصول',
+    sharedBy: 'تمت المشاركة بواسطة',
   },
   // Publications
   publications: {

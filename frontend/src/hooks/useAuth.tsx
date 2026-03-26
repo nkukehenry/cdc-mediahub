@@ -142,25 +142,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const response = await apiClient.register(data);
 
-      if (response.success && response.data?.user) {
-        const userData = response.data.user as User;
-        const roles = response.data?.roles || [];
-        const permissions = response.data?.permissions || [];
-        const isAdmin = response.data?.isAdmin ?? false;
-
-        setState({
-          user: {
-            ...userData,
-            language: userData.language || 'en',
-            roles: roles as string[],
-            permissions: permissions as string[],
-            isAdmin,
-          },
-          loading: false,
-          error: null,
-        });
-
-        return { success: true, isAdmin };
+      if (response.success) {
+        setState(prev => ({ ...prev, loading: false, error: null }));
+        return { success: true, isAdmin: false };
       } else {
         const errorMessage = response.error?.message || 'Registration failed';
         setState(prev => ({ ...prev, loading: false, error: errorMessage }));

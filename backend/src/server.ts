@@ -248,7 +248,8 @@ export class FileManagerServer {
       appConfig.thumbnailPath,
       appConfig.maxFileSize,
       appConfig.allowedMimeTypes,
-      this.fileShareRepository
+      this.fileShareRepository,
+      this.folderShareRepository
     );
     this.folderService = new FolderService(appConfig.uploadPath, this.folderShareRepository);
     this.authService = new AuthService(
@@ -417,7 +418,7 @@ export class FileManagerServer {
       // Handle OPTIONS preflight requests for static files
       this.app.options('/uploads/:filename(*)', (req, res) => {
         const serverConfig = this.config.getServerConfig();
-        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
@@ -428,7 +429,7 @@ export class FileManagerServer {
       // Handle OPTIONS preflight requests for thumbnail files
       this.app.options('/thumbnails/:filename(*)', (req, res) => {
         const serverConfig = this.config.getServerConfig();
-        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+        res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
@@ -468,7 +469,7 @@ export class FileManagerServer {
           }
 
           // Set CORS headers explicitly
-          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin);
           res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
           res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
@@ -534,7 +535,7 @@ export class FileManagerServer {
           }
 
           // Set CORS headers explicitly
-          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin || '*');
+          res.setHeader('Access-Control-Allow-Origin', serverConfig.cors.origin);
           res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
           res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // Allow cross-origin access
@@ -1130,6 +1131,122 @@ export class FileManagerServer {
 
       /**
        * @swagger
+       * /api/files/{id}/shares:
+       *   get:
+       *     summary: Get users a file is shared with
+       *     description: Get the list of users a file is explicitly shared with (owner only)
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: id
+       *         required: true
+       *         schema:
+       *           type: string
+       *         description: File ID
+       *     responses:
+       *       200:
+       *         description: List of shares
+       *       401:
+       *         description: Unauthorized
+       *       500:
+       *         description: Internal server error
+       */
+      this.app.get('/api/files/:id/shares',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id } = req.params;
+            const userId = (req as any).user?.userId;
+
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+
+            // Verify file ownership
+            const file = await this.fileRepository.findById(id);
+            if (!file || file.userId !== userId) {
+              return res.status(403).json({ success: false, error: { message: 'Forbidden: You do not own this file', code: 'FORBIDDEN' } });
+            }
+
+            const shares = await this.fileShareRepository.findByFile(id);
+            
+            // Enrich with user details
+            const enrichedShares = [];
+            for (const share of shares) {
+              if (share.sharedWithUserId) {
+                const u = await this.userRepository.findById(share.sharedWithUserId);
+                if (u) {
+                  enrichedShares.push({
+                    ...share,
+                    user: { id: u.id, username: u.username, email: u.email, firstName: u.firstName, lastName: u.lastName }
+                  });
+                }
+              }
+            }
+
+            return res.json({ success: true, data: { shares: enrichedShares } });
+          } catch (error) {
+            this.logger.error('Fetch file shares failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/files/{id}/shares/{userId}:
+       *   delete:
+       *     summary: Remove a user's access to a file
+       *     description: Revoke a specific user's access to a shared file (owner only)
+       *     tags: [Files]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: id
+       *         required: true
+       *       - in: path
+       *         name: targetUserId
+       *         required: true
+       *     responses:
+       *       200:
+       *         description: Access revoked successfully
+       */
+      this.app.delete('/api/files/:id/shares/:targetUserId',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id, targetUserId } = req.params;
+            const userId = (req as any).user?.userId;
+
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+
+            // Verify file ownership
+            const file = await this.fileRepository.findById(id);
+            if (!file || file.userId !== userId) {
+              return res.status(403).json({ success: false, error: { message: 'Forbidden: You do not own this file', code: 'FORBIDDEN' } });
+            }
+
+            const deleted = await this.fileShareRepository.deleteByFileAndUser(id, targetUserId);
+            
+            // Evict caches
+            await this.cacheDelPattern('files', userId);
+            await this.cacheDelPattern('files', targetUserId);
+
+            return res.json({ success: true, data: { deleted } });
+          } catch (error) {
+            this.logger.error('Delete file share failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      /**
+       * @swagger
        * /api/folders/{id}/share:
        *   post:
        *     summary: Share folder with multiple users
@@ -1209,6 +1326,117 @@ export class FileManagerServer {
             });
           } catch (error) {
             this.logger.error('Folder share failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/folders/{id}/shares:
+       *   get:
+       *     summary: Get users a folder is shared with
+       *     description: Get the list of users a folder is explicitly shared with (owner only)
+       *     tags: [Folders]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: id
+       *         required: true
+       *     responses:
+       *       200:
+       *         description: List of shares
+       */
+      this.app.get('/api/folders/:id/shares',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id } = req.params;
+            const userId = (req as any).user?.userId;
+
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+
+            // Verify folder ownership
+            const folder = await this.folderRepository.findById(id);
+            if (!folder || folder.userId !== userId) {
+              return res.status(403).json({ success: false, error: { message: 'Forbidden: You do not own this folder', code: 'FORBIDDEN' } });
+            }
+
+            const shares = await this.folderShareRepository.findByFolder(id);
+            
+            // Enrich with user details
+            const enrichedShares = [];
+            for (const share of shares) {
+              if (share.sharedWithUserId) {
+                const u = await this.userRepository.findById(share.sharedWithUserId);
+                if (u) {
+                  enrichedShares.push({
+                    ...share,
+                    user: { id: u.id, username: u.username, email: u.email, firstName: u.firstName, lastName: u.lastName }
+                  });
+                }
+              }
+            }
+
+            return res.json({ success: true, data: { shares: enrichedShares } });
+          } catch (error) {
+            this.logger.error('Fetch folder shares failed', error as Error);
+            return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
+          }
+        }
+      );
+
+      /**
+       * @swagger
+       * /api/folders/{id}/shares/{userId}:
+       *   delete:
+       *     summary: Remove a user's access to a folder
+       *     description: Revoke a specific user's access to a shared folder (owner only)
+       *     tags: [Folders]
+       *     security:
+       *       - bearerAuth: []
+       *     parameters:
+       *       - in: path
+       *         name: id
+       *         required: true
+       *       - in: path
+       *         name: userId
+       *         required: true
+       *     responses:
+       *       200:
+       *         description: Access revoked successfully
+       */
+      this.app.delete('/api/folders/:id/shares/:targetUserId',
+        this.authMiddleware.authenticate,
+        async (req, res) => {
+          try {
+            const { id, targetUserId } = req.params;
+            const userId = (req as any).user?.userId;
+
+            if (!userId) {
+              return res.status(401).json({ success: false, error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } });
+            }
+
+            // Verify folder ownership
+            const folder = await this.folderRepository.findById(id);
+            if (!folder || folder.userId !== userId) {
+              return res.status(403).json({ success: false, error: { message: 'Forbidden: You do not own this folder', code: 'FORBIDDEN' } });
+            }
+
+            const deleted = await this.folderShareRepository.deleteByFolderAndUser(id, targetUserId);
+            
+            // Evict caches
+            await this.cacheDelPattern('folders', userId);
+            await this.cacheDelPattern('folders-tree', userId);
+            await this.cacheDelPattern('folders', targetUserId);
+            await this.cacheDelPattern('folders-tree', targetUserId);
+
+            return res.json({ success: true, data: { deleted } });
+          } catch (error) {
+            this.logger.error('Delete folder share failed', error as Error);
             return res.status(500).json(this.errorHandler.formatErrorResponse(error as Error));
           }
         }
@@ -4462,7 +4690,6 @@ export class FileManagerServer {
         createdAt: folder.createdAt instanceof Date ? folder.createdAt.toISOString() : folder.createdAt,
         updatedAt: folder.updatedAt instanceof Date ? folder.updatedAt.toISOString() : folder.updatedAt,
         createdBy,
-        sharedBy: createdBy,
         files: (folder.files || []).map(mapFile),
         subfolders: (folder.subfolders || []).map(mapFolder)
       };

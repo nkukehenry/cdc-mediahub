@@ -125,10 +125,6 @@ class ApiClient {
       }),
     });
 
-    if (response.success && response.data?.token) {
-      this.setToken(response.data.token);
-    }
-
     return response;
   }
 
@@ -235,6 +231,27 @@ class ApiClient {
 
   async deleteFile(fileId: string): Promise<ApiResponse> {
     return this.request(`/api/files/${fileId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getFileShares(fileId: string): Promise<ApiResponse<{ shares: any[] }>> {
+    return this.request<{ shares: any[] }>(`/api/files/${fileId}/shares`);
+  }
+
+  async deleteFileShare(fileId: string, userId: string): Promise<ApiResponse> {
+    return this.request(`/api/files/${fileId}/shares/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Folder endpoints (assuming similar structure exists)
+  async getFolderShares(folderId: string): Promise<ApiResponse<{ shares: any[] }>> {
+    return this.request<{ shares: any[] }>(`/api/folders/${folderId}/shares`);
+  }
+
+  async deleteFolderShare(folderId: string, userId: string): Promise<ApiResponse> {
+    return this.request(`/api/folders/${folderId}/shares/${userId}`, {
       method: 'DELETE',
     });
   }

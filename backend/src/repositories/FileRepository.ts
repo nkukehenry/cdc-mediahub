@@ -149,12 +149,11 @@ export class FileRepository implements IFileRepository {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM files WHERE id = ?',
         [id]
       );
-      const changeRow = await DatabaseUtils.findOne<any>('SELECT changes() AS changes');
-      const deleted = (changeRow?.changes ?? 0) > 0;
+      const deleted = result.changes > 0;
       this.logger.debug('File delete attempt', { fileId: id, deleted });
       return deleted;
     } catch (error) {

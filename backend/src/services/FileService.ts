@@ -9,6 +9,7 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import { pdf } from 'pdf-to-img';
 import { IFileService, IFileShareRepository, FileEntity, CreateFileData, ShareFileData, FileShareEntity, AccessLevel } from '../interfaces';
+import { IFolderShareRepository } from '../repositories/FolderShareRepository';
 
 // Configure ffmpeg to use static binaries
 if (ffmpegPath) {
@@ -31,7 +32,8 @@ export class FileService implements IFileService {
     private thumbnailPath: string,
     private maxFileSize: number,
     private allowedMimeTypes: string[],
-    private fileShareRepository?: IFileShareRepository
+    private fileShareRepository?: IFileShareRepository,
+    private folderShareRepository?: IFolderShareRepository
   ) {
     this.ensureDirectories();
   }
@@ -695,12 +697,39 @@ export class FileService implements IFileService {
     // Check sharing if repository is available
     if (this.fileShareRepository) {
       const hasAccess = await this.fileShareRepository.checkAccess(fileId, userId);
-      this.logger.debug('File access check via share repository', { fileId, userId, hasAccess });
-      return hasAccess;
+      if (hasAccess) {
+        this.logger.debug('File access granted: direct share', { fileId, userId });
+        return true;
+      }
+    }
+
+    // Check if any parent folder is shared with the user
+    if (userId && (file as any).folderId) {
+      try {
+        let currentFolderId = (file as any).folderId;
+        const ShareRepo = this.folderShareRepository;
+        
+        // Traverse up the folder hierarchy (limit to 10 levels to prevent infinite loops/too many queries)
+        for (let i = 0; i < 10 && currentFolderId; i++) {
+          if (ShareRepo) {
+            const hasFolderAccess = await ShareRepo.checkAccess(currentFolderId, userId);
+            if (hasFolderAccess) {
+              this.logger.debug('File access granted: parent folder share', { fileId: userId, folderId: currentFolderId });
+              return true;
+            }
+          }
+
+          // Move up to parent folder
+          const parentFolder = await DatabaseUtils.findOne<any>('SELECT parent_id FROM folders WHERE id = ?', [currentFolderId]);
+          currentFolderId = parentFolder?.parent_id;
+        }
+      } catch (e) {
+        this.logger.error('Error checking parent folder access', e as Error);
+      }
     }
 
     // If no share repository and file is not public, deny access
-    this.logger.debug('File access denied: no share repository', { fileId, userId, fileUserId: file.userId });
+    this.logger.debug('File access denied: no permission found', { fileId, userId, fileUserId: file.userId });
     return false;
   }
 
@@ -780,5 +809,12 @@ export class FileService implements IFileService {
 
   private async updateFileInDatabase(id: string, data: Partial<FileEntity>): Promise<FileEntity> {
     throw new Error('FileRepository not injected');
+  }
+
+  async removeShare(fileId: string, userId: string): Promise<boolean> {
+    if (!this.fileShareRepository) {
+      throw this.errorHandler.createConfigurationError('File share repository not configured');
+    }
+    return this.fileShareRepository.deleteByFileAndUser(fileId, userId);
   }
 }

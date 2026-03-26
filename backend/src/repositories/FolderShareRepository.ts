@@ -49,13 +49,19 @@ export class FolderShareRepository implements IFolderShareRepository {
         id: share.id,
         folder_id: share.folderId,
         shared_with_user_id: share.sharedWithUserId,
-        access_level: share.accessLevel,
+        access_type: share.accessLevel,
         created_at: now
       });
 
       await DatabaseUtils.executeQuery(
         `INSERT INTO folder_shares (${columns}) VALUES (${placeholders})`,
         values
+      );
+
+      // Update folder access_type to 'shared'
+      await DatabaseUtils.executeQuery(
+        'UPDATE folders SET access_type = ? WHERE id = ?',
+        ['shared', shareData.folderId]
       );
 
       this.logger.debug('Folder share created', { shareId: id, folderId: shareData.folderId });
@@ -88,7 +94,7 @@ export class FolderShareRepository implements IFolderShareRepository {
         if (existing) {
           // Update existing share access level
           await DatabaseUtils.executeQuery(
-            'UPDATE folder_shares SET access_level = ? WHERE id = ?',
+            'UPDATE folder_shares SET access_type = ? WHERE id = ?',
             [shareData.accessLevel || 'write', existing.id]
           );
           shares.push(this.mapToFolderShareEntity(existing));
@@ -108,7 +114,7 @@ export class FolderShareRepository implements IFolderShareRepository {
           id: share.id,
           folder_id: share.folderId,
           shared_with_user_id: share.sharedWithUserId,
-          access_level: share.accessLevel,
+          access_type: share.accessLevel,
           created_at: now
         });
 
@@ -119,6 +125,12 @@ export class FolderShareRepository implements IFolderShareRepository {
 
         shares.push(share);
       }
+
+      // Update folder access_type to 'shared'
+      await DatabaseUtils.executeQuery(
+        'UPDATE folders SET access_type = ? WHERE id = ?',
+        ['shared', folderId]
+      );
 
       this.logger.debug('Multiple folder shares created', { count: shares.length, folderId });
       return shares;
@@ -165,13 +177,29 @@ export class FolderShareRepository implements IFolderShareRepository {
         return false;
       }
 
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM folder_shares WHERE id = ?',
         [id]
       );
+      const deleted = result.changes > 0;
 
-      this.logger.debug('Folder share deleted', { shareId: id });
-      return true;
+
+      // Check if any shares remain for this folder
+      const remainingShares = await DatabaseUtils.findMany<any>(
+        'SELECT * FROM folder_shares WHERE folder_id = ?',
+        [share.folder_id]
+      );
+
+      // If no shares remain, set folder back to private
+      if (remainingShares.length === 0) {
+        await DatabaseUtils.executeQuery(
+          'UPDATE folders SET access_type = ? WHERE id = ?',
+          ['private', share.folder_id]
+        );
+      }
+
+      this.logger.debug('Folder share deleted', { shareId: id, deleted });
+      return deleted;
     } catch (error) {
       this.logger.error('Failed to delete folder share', error as Error);
       throw this.errorHandler.createDatabaseError('Failed to delete folder share', 'delete', 'folder_shares');
@@ -189,13 +217,21 @@ export class FolderShareRepository implements IFolderShareRepository {
         return false;
       }
 
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM folder_shares WHERE folder_id = ?',
         [folderId]
       );
+      const deleted = result.changes > 0;
 
-      this.logger.debug('Folder shares deleted by folder', { folderId, count: shares.length });
-      return true;
+
+      // Set folder back to private
+      await DatabaseUtils.executeQuery(
+        'UPDATE folders SET access_type = ? WHERE id = ?',
+        ['private', folderId]
+      );
+
+      this.logger.debug('Folder shares deleted by folder', { folderId, count: shares.length, deleted });
+      return deleted;
     } catch (error) {
       this.logger.error('Failed to delete folder shares by folder', error as Error);
       throw this.errorHandler.createDatabaseError('Failed to delete folder shares by folder', 'delete', 'folder_shares');
@@ -213,16 +249,35 @@ export class FolderShareRepository implements IFolderShareRepository {
         return false;
       }
 
-      await DatabaseUtils.executeQuery(
+      const result = await DatabaseUtils.executeQuery(
         'DELETE FROM folder_shares WHERE folder_id = ? AND shared_with_user_id = ?',
         [folderId, userId]
       );
+      const deleted = result.changes > 0;
 
-      this.logger.debug('Folder share deleted by folder and user', { folderId, userId });
-      return true;
-    } catch (error) {
-      this.logger.error('Failed to delete folder share by folder and user', error as Error);
-      throw this.errorHandler.createDatabaseError('Failed to delete folder share by folder and user', 'delete', 'folder_shares');
+
+      // Check if any shares remain for this folder
+      const remainingShares = await DatabaseUtils.findMany<any>(
+        'SELECT * FROM folder_shares WHERE folder_id = ?',
+        [folderId]
+      );
+
+      // If no shares remain, set folder back to private
+      if (remainingShares.length === 0) {
+        await DatabaseUtils.executeQuery(
+          'UPDATE folders SET access_type = ? WHERE id = ?',
+          ['private', folderId]
+        );
+      }
+
+      this.logger.debug('Folder share deleted by folder and user', { folderId, userId, deleted });
+      return deleted;
+    } catch (error: any) {
+      this.logger.error('Failed to delete folder share by folder and user', error, { 
+        folderId, 
+        userId
+      });
+      throw this.errorHandler.createDatabaseError(`Failed to delete folder share by folder and user: ${error.message}`, 'delete', 'folder_shares');
     }
   }
 
@@ -266,7 +321,7 @@ export class FolderShareRepository implements IFolderShareRepository {
       id: dbShare.id,
       folderId: dbShare.folder_id,
       sharedWithUserId: dbShare.shared_with_user_id,
-      accessLevel: dbShare.access_level,
+      accessLevel: dbShare.access_type,
       createdAt: new Date(dbShare.created_at)
     };
   }

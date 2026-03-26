@@ -50,6 +50,7 @@ export default {
     no: 'Hapana',
     filters: 'Vichungi',
     all: 'Zote',
+    remove: 'Ondoa',
   },
   // Auth
   auth: {
@@ -121,6 +122,8 @@ export default {
       description: 'Pakia faili lako la kwanza au unda folda kuanza.'
     },
     fileRenamed: 'Faili limebadilishwa jina kwa mafanikio',
+    peopleWithAccess: 'Watu wenye ufikiaji',
+    sharedBy: 'Imeshirikiwa na',
   },
   // Publications
   publications: {

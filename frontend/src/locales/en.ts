@@ -179,6 +179,7 @@ export default {
     no: 'No',
     filters: 'Filters',
     all: 'All',
+    remove: 'Remove',
   },
   // Auth
   auth: {
@@ -250,6 +251,8 @@ export default {
       description: 'Upload your first file or create a folder to get started.'
     },
     fileRenamed: 'File renamed successfully',
+    peopleWithAccess: 'People with access',
+    sharedBy: 'Shared by',
   },
   // Modals
   modals: {

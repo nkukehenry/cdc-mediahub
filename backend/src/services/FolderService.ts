@@ -5,6 +5,7 @@ import { getLogger } from '../utils/Logger';
 import { getErrorHandler } from '../utils/ErrorHandler';
 import { ValidationError } from '../interfaces';
 import { IFolderShareRepository } from '../repositories/FolderShareRepository';
+import { DatabaseUtils } from '../utils/DatabaseUtils';
 
 export class FolderService implements IFolderService {
   private logger = getLogger('FolderService');
@@ -63,11 +64,21 @@ export class FolderService implements IFolderService {
     }
   }
 
-  async getFolders(parentId?: string): Promise<FolderEntity[]> {
+  async getFolders(parentId?: string, userId?: string): Promise<FolderEntity[]> {
     try {
       const folders = await this.findFoldersByParent(parentId);
-      this.logger.debug('Folders retrieved', { parentId, count: folders.length });
-      return folders;
+      
+      // Filter folders based on access
+      const accessibleFolders = await Promise.all(
+        folders.map(async (folder) => {
+          const hasAccess = await this.checkFolderAccess(folder.id, userId, folder);
+          return hasAccess ? folder : null;
+        })
+      );
+
+      const filtered = accessibleFolders.filter((f): f is FolderEntity => f !== null);
+      this.logger.debug('Folders retrieved', { parentId, count: filtered.length, userId });
+      return filtered;
     } catch (error) {
       this.logger.error('Failed to get folders', error as Error, { parentId });
       throw error;
@@ -76,21 +87,16 @@ export class FolderService implements IFolderService {
 
   async getFoldersWithFiles(parentId?: string, userId?: string): Promise<FolderWithFiles[]> {
     try {
-      const folders = userId 
-        ? await this.findFoldersByParentForUser(parentId || null, userId)
-        : await this.findFoldersByParent(parentId);
+      // Use getFolders to get accessible folders
+      const folders = await this.getFolders(parentId, userId);
       const foldersWithFiles: FolderWithFiles[] = [];
 
       for (const folder of folders) {
-        // Get files in this folder - access filtering happens via dependency injection
-        // The findFilesInFolder is injected from FileRepository
-        // We'll filter files based on access if userId is provided
+        // Get files in this folder - findFilesInFolder is injected from FileRepository
         let files = await this.findFilesInFolder(folder.id);
         
-        // If userId provided, we need to filter files based on access
-        // For now, include all files - the frontend will handle access control
-        // Or we can inject fileService here if needed
-        // Files will be filtered by the folder ownership (user owns folder = can see files)
+        // Files will be filtered by the folder ownership/share check if we use fileService
+        // But here we just include them because we already know the folder is accessible
         
         // Get subfolders recursively
         const subfolders = await this.getFoldersWithFiles(folder.id, userId);
@@ -245,6 +251,49 @@ export class FolderService implements IFolderService {
     }
   }
 
+  async checkFolderAccess(folderId: string, userId: string | undefined, folder?: FolderEntity): Promise<boolean> {
+    if (!userId) {
+      // In this module, folders without authentication might be allowed if public
+      // But usually UI access requires a user. Let's assume public access for now if marked.
+      return true; 
+    }
+
+    const currentFolder = folder || await this.findFolderById(folderId);
+    if (!currentFolder) return false;
+
+    // Owner always has access
+    if (currentFolder.userId === userId) return true;
+
+    // Check direct share
+    if (this.folderShareRepository) {
+      const hasAccess = await this.folderShareRepository.checkAccess(folderId, userId);
+      if (hasAccess) return true;
+    }
+
+    // Check inherited access from parent folders
+    if (currentFolder.parentId) {
+      try {
+        let parentId: string | undefined = currentFolder.parentId;
+        for (let i = 0; i < 10 && parentId; i++) {
+          if (this.folderShareRepository) {
+            const hasParentAccess = await this.folderShareRepository.checkAccess(parentId, userId);
+            if (hasParentAccess) return true;
+          }
+
+          // Move up
+          const parent: any = await DatabaseUtils.findOne<any>('SELECT parent_id, user_id FROM folders WHERE id = ?', [parentId]);
+          if (!parent) break;
+          if (parent.user_id === userId) return true; // Owner of parent folder has access to all subfolders
+          parentId = parent.parent_id;
+        }
+      } catch (e) {
+        this.logger.error('Error checking parent folder access', e as Error);
+      }
+    }
+
+    return false;
+  }
+
   // Small, reusable utility functions
   private validateFolderName(name: string): void {
     if (!name || name.trim().length === 0) {
@@ -368,5 +417,12 @@ export class FolderService implements IFolderService {
 
     const parentPath = await this.getFullFolderPath(parentFolder);
     return path.join(parentPath, folder.id);
+  }
+
+  async removeFolderShare(folderId: string, userId: string): Promise<boolean> {
+    if (!this.folderShareRepository) {
+      throw this.errorHandler.createConfigurationError('Folder share repository not configured');
+    }
+    return this.folderShareRepository.deleteByFolderAndUser(folderId, userId);
   }
 }

@@ -146,7 +146,15 @@ export class ConfigurationService {
       port: parseInt(process.env.PORT || '3001'),
       host: process.env.HOST || '0.0.0.0',
       cors: {
-        origin: process.env.CORS_ORIGIN || '*',
+        origin: (() => {
+          const origin = process.env.ALLOWED_ORIGIN || process.env.CORS_ORIGIN || 'mediahub.africacdc.org';
+          if (origin === '*') return '*';
+          // If no protocol specified, default to https://
+          if (origin && !origin.includes('://')) {
+            return `https://${origin}`;
+          }
+          return origin;
+        })(),
         credentials: process.env.CORS_CREDENTIALS === 'true'
       },
       rateLimit: {

@@ -51,6 +51,7 @@ export default {
     no: 'No',
     filters: 'Filtros',
     all: 'Todos',
+    remove: 'Quitar',
   },
   // Auth
   auth: {
@@ -122,6 +123,8 @@ export default {
       description: 'Sube tu primer archivo o crea una carpeta para comenzar.'
     },
     fileRenamed: 'Archivo renombrado exitosamente',
+    peopleWithAccess: 'Personas con acceso',
+    sharedBy: 'Compartido por',
   },
   // Publications
   publications: {
